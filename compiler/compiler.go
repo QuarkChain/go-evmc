@@ -9,6 +9,7 @@ import (
 	"os"
 	"unsafe"
 
+	"github.com/holiman/uint256"
 	"tinygo.org/x/go-llvm"
 )
 
@@ -584,12 +585,9 @@ func (c *EVMCompiler) createUint256ConstantFromBytes(data []byte) llvm.Value {
 		return llvm.ConstInt(c.ctx.IntType(256), 0, false)
 	}
 
-	var value uint64 = 0
-	for i := len(data) - 1; i >= 0 && i >= len(data)-8; i-- {
-		value = (value << 8) | uint64(data[i])
-	}
+	v := uint256.NewInt(0).SetBytes(data)
 
-	return llvm.ConstInt(c.ctx.IntType(256), value, false)
+	return llvm.ConstIntFromString(c.ctx.IntType(256), v.String(), 10)
 }
 
 func (c *EVMCompiler) loadFromMemory(memory, offset llvm.Value) llvm.Value {

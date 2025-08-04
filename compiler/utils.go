@@ -2,6 +2,8 @@ package compiler
 
 import (
 	"unsafe"
+
+	"github.com/holiman/uint256"
 )
 
 func Reverse(b []byte) []byte {
@@ -27,6 +29,13 @@ func FromMachineToBig32Bytes(b [32]byte) [32]byte {
 	return Reverse32Bytes(b)
 }
 
+func FromMachineToUint256(b [32]byte) *uint256.Int {
+	if IsMachineBigEndian() {
+		return uint256.NewInt(0).SetBytes32(b[:])
+	}
+	return uint256.NewInt(0).SetBytes32(Reverse(b[:]))
+}
+
 var isMachineBigEndian *bool
 
 func IsMachineBigEndian() bool {
@@ -47,4 +56,14 @@ func IsMachineBigEndian() bool {
 	}
 	isMachineBigEndian = &isBig
 	return isBig
+}
+
+func Fib(n int) *uint256.Int {
+	a := uint256.NewInt(0)
+	b := uint256.NewInt(1)
+	for i := 0; i < n; i++ {
+		a = a.Add(a, b)
+		a, b = b, a
+	}
+	return a
 }

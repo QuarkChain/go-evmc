@@ -194,8 +194,8 @@ func TestEVMExecuteStackPushN(t *testing.T) {
 	comp := NewEVMCompiler()
 	defer comp.Dispose()
 
-	// PUSH2 0x1122, PUSH4 0xaabbccdd, STOP
-	bytecode := []byte{0x61, 0x22, 0x11, 0x63, 0x06, 0x02, 0x41, 0x12, 0x00}
+	// PUSH2 0x1122, PUSH4 0xaabbccdd, PUSH12 0x0102030405060708090a0b0c, STOP
+	bytecode := []byte{0x61, 0x11, 0x22, 0x63, 0xaa, 0xbb, 0xcc, 0xdd, 0x6b, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 0x00}
 
 	result, err := comp.ExecuteCompiled(bytecode)
 	if err != nil {
@@ -211,15 +211,19 @@ func TestEVMExecuteStackPushN(t *testing.T) {
 	// 	t.Fatalf("Expected 1 stack item, got %d", len(result.Stack))
 	// }
 
-	// Check if the result is 0x1122, 0xaabbccdd
-	expected := uint256.NewInt(0x1122).Bytes32()
+	// Check if the result is 0x1122, 0xaabbccdd, 0x0102030405060708090a0b0c
+	expected := uint256.NewInt(0x1122)
 
-	if FromMachineToBig32Bytes(result.Stack[0]) != expected {
+	if FromMachineToUint256(result.Stack[0]).Cmp(expected) != 0 {
 		t.Fatalf("Expected stack top to be 0x1122, got %v", result.Stack[0])
 	}
 
-	if FromMachineToBig32Bytes(result.Stack[1]) != uint256.NewInt(0xaabbccdd).Bytes32() {
-		t.Fatalf("Expected stack top to be 0xaabbccdd, got %v", result.Stack[0])
+	if FromMachineToUint256(result.Stack[1]).Cmp(uint256.NewInt(0xaabbccdd)) != 0 {
+		t.Fatalf("Expected stack top to be 0xaabbccdd, got %v", result.Stack[1])
+	}
+
+	if FromMachineToUint256(result.Stack[2]).Cmp(uint256.MustFromHex("0x102030405060708090a0b0c")) != 0 {
+		t.Fatalf("Expected stack top to be 0x0102030405060708090a0b0c, got %v", result.Stack[2])
 	}
 }
 
