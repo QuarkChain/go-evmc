@@ -190,6 +190,39 @@ func TestEVMExecuteMultiplication(t *testing.T) {
 	}
 }
 
+func TestEVMExecuteStackPushN(t *testing.T) {
+	comp := NewEVMCompiler()
+	defer comp.Dispose()
+
+	// PUSH2 0x1122, PUSH4 0xaabbccdd, STOP
+	bytecode := []byte{0x61, 0x22, 0x11, 0x63, 0x06, 0x02, 0x41, 0x12, 0x00}
+
+	result, err := comp.ExecuteCompiled(bytecode)
+	if err != nil {
+		t.Fatalf("Execution failed: %v", err)
+	}
+
+	if result.Status != ExecutionSuccess {
+		t.Fatalf("Expected success status, got %v", result.Status)
+	}
+
+	// TODO:
+	// if len(result.Stack) != 1 {
+	// 	t.Fatalf("Expected 1 stack item, got %d", len(result.Stack))
+	// }
+
+	// Check if the result is 0x1122, 0xaabbccdd
+	expected := uint256.NewInt(0x1122).Bytes32()
+
+	if FromMachineToBig32Bytes(result.Stack[0]) != expected {
+		t.Fatalf("Expected stack top to be 0x1122, got %v", result.Stack[0])
+	}
+
+	if FromMachineToBig32Bytes(result.Stack[1]) != uint256.NewInt(0xaabbccdd).Bytes32() {
+		t.Fatalf("Expected stack top to be 0xaabbccdd, got %v", result.Stack[0])
+	}
+}
+
 func TestEVMExecuteMemoryOperations(t *testing.T) {
 	comp := NewEVMCompiler()
 	defer comp.Dispose()

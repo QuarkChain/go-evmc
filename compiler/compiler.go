@@ -89,8 +89,6 @@ const (
 	MSIZE          EVMOpcode = 0x59
 	GAS            EVMOpcode = 0x5A
 	JUMPDEST       EVMOpcode = 0x5B
-	PUSH1          EVMOpcode = 0x60
-	PUSH32         EVMOpcode = 0x7F
 	DUP1           EVMOpcode = 0x80
 	DUP16          EVMOpcode = 0x8F
 	SWAP1          EVMOpcode = 0x90
@@ -107,6 +105,41 @@ const (
 	REVERT         EVMOpcode = 0xFD
 	INVALID        EVMOpcode = 0xFE
 	SELFDESTRUCT   EVMOpcode = 0xFF
+)
+
+const (
+	PUSH1 EVMOpcode = 0x60 + iota
+	PUSH2
+	PUSH3
+	PUSH4
+	PUSH5
+	PUSH6
+	PUSH7
+	PUSH8
+	PUSH9
+	PUSH10
+	PUSH11
+	PUSH12
+	PUSH13
+	PUSH14
+	PUSH15
+	PUSH16
+	PUSH17
+	PUSH18
+	PUSH19
+	PUSH20
+	PUSH21
+	PUSH22
+	PUSH23
+	PUSH24
+	PUSH25
+	PUSH26
+	PUSH27
+	PUSH28
+	PUSH29
+	PUSH30
+	PUSH31
+	PUSH32
 )
 
 type EVMInstruction struct {
