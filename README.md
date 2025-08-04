@@ -154,22 +154,8 @@ The compiler is designed for high performance:
 ## Dependencies
 
 - Go 1.23.1+
-- LLVM (via tinygo.org/x/go-llvm)
+- LLVM14+ (via tinygo.org/x/go-llvm)
 - CGO for EVMC integration
-
-## Building
-
-```bash
-# Initialize module
-go mod init go-evmc
-go mod tidy
-
-# Build
-go build
-
-# Install dependencies
-go get tinygo.org/x/go-llvm
-```
 
 ## Contributing
 

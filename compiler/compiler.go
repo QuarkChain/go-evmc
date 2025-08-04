@@ -1,8 +1,13 @@
 package compiler
 
+// #include <stdint.h>
+// typedef void (*func)(void* memory, void* stack, void* code, uint64_t gas);
+// static void execute(uint64_t f, void* memory, void* stack, void* code, uint64_t gas) { ((func)f)(memory, stack, code, gas); }
+import "C"
 import (
 	"fmt"
 	"os"
+	"unsafe"
 
 	"tinygo.org/x/go-llvm"
 )
@@ -110,6 +115,21 @@ type EVMInstruction struct {
 	PC     uint64
 }
 
+type EVMExecutionResult struct {
+	Stack  [][32]byte
+	Memory []byte
+	Status ExecutionStatus
+	Error  error
+}
+
+type ExecutionStatus int
+
+const (
+	ExecutionSuccess ExecutionStatus = iota
+	ExecutionRevert
+	ExecutionError
+)
+
 func NewEVMCompiler() *EVMCompiler {
 	llvm.InitializeNativeTarget()
 	llvm.InitializeNativeAsmPrinter()
@@ -140,7 +160,7 @@ func NewEVMCompiler() *EVMCompiler {
 
 func (c *EVMCompiler) Dispose() {
 	c.builder.Dispose()
-	c.module.Dispose()
+	// c.module.Dispose() TODO: segfault after execute() - does engine take the ownership of the module
 	c.ctx.Dispose()
 }
 
@@ -589,5 +609,95 @@ func (c *EVMCompiler) CompileAndOptimize(bytecode []byte) error {
 	}
 
 	c.OptimizeModule()
+	return nil
+}
+
+func (c *EVMCompiler) CreateExecutionEngine() (llvm.ExecutionEngine, error) {
+	engine, err := llvm.NewJITCompiler(c.module, 2)
+	if err != nil {
+		return llvm.ExecutionEngine{}, fmt.Errorf("failed to create JIT compiler: %v", err)
+	}
+	return engine, nil
+}
+
+// ExecuteCompiled executes compiled EVM code using function pointer for better performance
+func (c *EVMCompiler) ExecuteCompiled(bytecode []byte) (*EVMExecutionResult, error) {
+	// Compile if needed
+	err := c.CompileAndOptimize(bytecode)
+	if err != nil {
+		return nil, fmt.Errorf("compilation failed: %v", err)
+	}
+
+	// Create execution engine
+	engine, err := c.CreateExecutionEngine()
+	if err != nil {
+		return nil, err
+	}
+	defer engine.Dispose()
+
+	// Get function pointer for direct execution
+	funcPtr := engine.GetFunctionAddress("execute")
+	if funcPtr == 0 {
+		return nil, fmt.Errorf("execute function address not found")
+	}
+
+	// Prepare execution environment
+	// TODO: support dynamic size growth
+	const stackSize = 1024
+	const memorySize = 1024 * 32
+
+	stack := make([][32]byte, stackSize)
+	memory := make([]byte, memorySize)
+
+	// Execute using function pointer
+	err = c.callNativeFunction(funcPtr, unsafe.Pointer(&memory[0]), unsafe.Pointer(&stack[0]),
+		unsafe.Pointer(&bytecode[0]), uint64(1000000))
+	if err != nil {
+		return &EVMExecutionResult{
+			Stack:  nil,
+			Memory: nil,
+			Status: ExecutionError,
+			Error:  err,
+		}, nil
+	}
+
+	// Process results same as ExecuteCompiled
+	stackDepth := 0
+	for i := stackSize - 1; i >= 0; i-- {
+		allZero := true
+		for j := 0; j < 32; j++ {
+			if stack[i][j] != 0 {
+				allZero = false
+				break
+			}
+		}
+		if !allZero {
+			stackDepth = i + 1
+			break
+		}
+	}
+
+	resultStack := make([][32]byte, stackDepth)
+	copy(resultStack, stack[:stackDepth])
+
+	memoryUsed := len(memory)
+	for i := len(memory) - 1; i >= 0; i-- {
+		if memory[i] != 0 {
+			memoryUsed = i + 1
+			break
+		}
+	}
+
+	return &EVMExecutionResult{
+		Stack:  resultStack,
+		Memory: memory[:memoryUsed],
+		Status: ExecutionSuccess,
+		Error:  nil,
+	}, nil
+}
+
+// Helper function to call native function pointer (requires CGO)
+func (c *EVMCompiler) callNativeFunction(funcPtr uint64, memory, stack, code unsafe.Pointer, gas uint64) error {
+	C.execute(C.uint64_t(funcPtr), memory, stack, code, C.uint64_t(gas))
 	return nil
 }
