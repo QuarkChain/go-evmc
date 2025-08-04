@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"encoding/binary"
 	"unsafe"
 
 	"github.com/holiman/uint256"
@@ -65,5 +66,51 @@ func Fib(n int) *uint256.Int {
 		a = a.Add(a, b)
 		a, b = b, a
 	}
-	return a
+	return b
+}
+
+func GetFibCode(n uint32) []byte {
+	nbs := make([]byte, 4)
+	binary.BigEndian.PutUint32(nbs, n)
+	bytecode := []EVMOpcode{
+		PUSH4, EVMOpcode(nbs[0]), EVMOpcode(nbs[1]), EVMOpcode(nbs[2]), EVMOpcode(nbs[3]),
+		PUSH1, 0,
+		PUSH1, 1,
+		// off 9
+		// MAINLOOP:
+		JUMPDEST,
+		DUP3,
+		ISZERO,
+		PUSH1, 30,
+		JUMPI,
+
+		DUP2,
+		DUP2,
+		ADD,
+		SWAP2,
+		POP,
+		SWAP1,
+		// off 21
+
+		SWAP2,
+		PUSH1, 1,
+		SWAP1,
+		SUB,
+		SWAP2,
+		PUSH1, 9,
+		JUMP,
+		// off 30
+
+		JUMPDEST,
+		SWAP2,
+		POP,
+		POP,
+		STOP,
+	}
+
+	bytes := make([]byte, len(bytecode))
+	for i := 0; i < len(bytecode); i++ {
+		bytes[i] = byte(bytecode[i])
+	}
+	return bytes
 }

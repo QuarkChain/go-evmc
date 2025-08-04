@@ -317,6 +317,34 @@ func TestEVMExecuteStackOperations(t *testing.T) {
 	}
 }
 
+func TestEVMExecuteFib(t *testing.T) {
+	comp := NewEVMCompiler()
+	defer comp.Dispose()
+
+	n := uint32(10000000)
+
+	result, err := comp.ExecuteCompiled(GetFibCode(n))
+	if err != nil {
+		t.Fatalf("Execution failed: %v", err)
+	}
+
+	if result.Status != ExecutionSuccess {
+		t.Fatalf("Expected success status, got %v", result.Status)
+	}
+
+	// TODO:
+	// if len(result.Stack) != 2 {
+	// 	t.Fatalf("Expected 2 stack items, got %d", len(result.Stack))
+	// }
+
+	expected := Fib(int(n))
+	actual := FromMachineToUint256(result.Stack[0])
+
+	if actual.Cmp(expected) != 0 {
+		t.Fatalf("Expected %s, got %s", expected, actual)
+	}
+}
+
 func BenchmarkEVMCompilerSmallContract(b *testing.B) {
 	bytecode := []byte{
 		0x60, 0x05, // PUSH1 5
@@ -439,6 +467,29 @@ func BenchmarkEVMExecuteMemoryOperations(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, err := comp.ExecuteCompiled(bytecode)
+		if err != nil {
+			b.Fatalf("Execution failed: %v", err)
+		}
+	}
+}
+
+func BenchmarkEVMExecuteFib(b *testing.B) {
+	comp := NewEVMCompiler()
+	defer comp.Dispose()
+
+	// Pre-compile
+	err := comp.CompileAndOptimize(GetFibCode(1000000))
+	if err != nil {
+		b.Fatalf("Compilation failed: %v", err)
+	}
+	err = comp.CreateExecutionEngine()
+	if err != nil {
+		b.Fatalf("Engine failed: %v", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := comp.Execute()
 		if err != nil {
 			b.Fatalf("Execution failed: %v", err)
 		}

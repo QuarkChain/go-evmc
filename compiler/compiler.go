@@ -1,8 +1,8 @@
 package compiler
 
 // #include <stdint.h>
-// typedef void (*func)(void* memory, void* stack, void* code, uint64_t gas);
-// static void execute(uint64_t f, void* memory, void* stack, void* code, uint64_t gas) { ((func)f)(memory, stack, code, gas); }
+// typedef void (*func)(void* memory, void* stack, uint64_t gas);
+// static void execute(uint64_t f, void* memory, void* stack, uint64_t gas) { ((func)f)(memory, stack, gas); }
 import "C"
 import (
 	"fmt"
@@ -21,6 +21,7 @@ type EVMCompiler struct {
 	machine   llvm.TargetMachine
 	stackType llvm.Type
 	memType   llvm.Type
+	engine    *llvm.ExecutionEngine
 }
 
 type EVMOpcode uint8
@@ -677,31 +678,19 @@ func (c *EVMCompiler) CompileAndOptimize(bytecode []byte) error {
 	return nil
 }
 
-func (c *EVMCompiler) CreateExecutionEngine() (llvm.ExecutionEngine, error) {
+func (c *EVMCompiler) CreateExecutionEngine() error {
 	engine, err := llvm.NewJITCompiler(c.module, 2)
 	if err != nil {
-		return llvm.ExecutionEngine{}, fmt.Errorf("failed to create JIT compiler: %v", err)
+		return fmt.Errorf("failed to create JIT compiler: %v", err)
 	}
-	return engine, nil
+	c.engine = &engine
+	return nil
 }
 
-// ExecuteCompiled executes compiled EVM code using function pointer for better performance
-func (c *EVMCompiler) ExecuteCompiled(bytecode []byte) (*EVMExecutionResult, error) {
-	// Compile if needed
-	err := c.CompileAndOptimize(bytecode)
-	if err != nil {
-		return nil, fmt.Errorf("compilation failed: %v", err)
-	}
-
-	// Create execution engine
-	engine, err := c.CreateExecutionEngine()
-	if err != nil {
-		return nil, err
-	}
-	defer engine.Dispose()
-
+// Execute the compiled EVM code
+func (c *EVMCompiler) Execute() (*EVMExecutionResult, error) {
 	// Get function pointer for direct execution
-	funcPtr := engine.GetFunctionAddress("execute")
+	funcPtr := c.engine.GetFunctionAddress("execute")
 	if funcPtr == 0 {
 		return nil, fmt.Errorf("execute function address not found")
 	}
@@ -715,8 +704,7 @@ func (c *EVMCompiler) ExecuteCompiled(bytecode []byte) (*EVMExecutionResult, err
 	memory := make([]byte, memorySize)
 
 	// Execute using function pointer
-	err = c.callNativeFunction(funcPtr, unsafe.Pointer(&memory[0]), unsafe.Pointer(&stack[0]),
-		unsafe.Pointer(&bytecode[0]), uint64(1000000))
+	err := c.callNativeFunction(funcPtr, unsafe.Pointer(&memory[0]), unsafe.Pointer(&stack[0]), uint64(1000000))
 	if err != nil {
 		return &EVMExecutionResult{
 			Stack:  nil,
@@ -761,8 +749,25 @@ func (c *EVMCompiler) ExecuteCompiled(bytecode []byte) (*EVMExecutionResult, err
 	}, nil
 }
 
+// ExecuteCompiled executes compiled EVM code using function pointer for better performance
+func (c *EVMCompiler) ExecuteCompiled(bytecode []byte) (*EVMExecutionResult, error) {
+	// Compile if needed
+	err := c.CompileAndOptimize(bytecode)
+	if err != nil {
+		return nil, fmt.Errorf("compilation failed: %v", err)
+	}
+
+	// Create execution engine
+	err = c.CreateExecutionEngine()
+	if err != nil {
+		return nil, err
+	}
+
+	return c.Execute()
+}
+
 // Helper function to call native function pointer (requires CGO)
-func (c *EVMCompiler) callNativeFunction(funcPtr uint64, memory, stack, code unsafe.Pointer, gas uint64) error {
-	C.execute(C.uint64_t(funcPtr), memory, stack, code, C.uint64_t(gas))
+func (c *EVMCompiler) callNativeFunction(funcPtr uint64, memory, stack unsafe.Pointer, gas uint64) error {
+	C.execute(C.uint64_t(funcPtr), memory, stack, C.uint64_t(gas))
 	return nil
 }
