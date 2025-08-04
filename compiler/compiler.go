@@ -262,74 +262,8 @@ func (c *EVMCompiler) ParseBytecode(bytecode []byte) ([]EVMInstruction, error) {
 }
 
 func (c *EVMCompiler) CompileBytecode(bytecode []byte) (llvm.Module, error) {
-	instructions, err := c.ParseBytecode(bytecode)
-	if err != nil {
-		return llvm.Module{}, err
-	}
-
-	uint256Type := c.ctx.IntType(256)
-	uint8PtrType := llvm.PointerType(c.ctx.Int8Type(), 0)
-	uint256PtrType := llvm.PointerType(uint256Type, 0)
-
-	execType := llvm.FunctionType(c.ctx.VoidType(), []llvm.Type{
-		uint8PtrType,      // memory
-		uint256PtrType,    // stack
-		uint8PtrType,      // code (unused but kept for signature)
-		c.ctx.Int64Type(), // gas (unused but kept for signature)
-	}, false)
-
-	execFunc := llvm.AddFunction(c.module, "execute", execType)
-	execFunc.SetFunctionCallConv(llvm.CCallConv)
-
-	memoryParam := execFunc.Param(0)
-	stackParam := execFunc.Param(1)
-
-	entryBlock := llvm.AddBasicBlock(execFunc, "entry")
-	c.builder.SetInsertPointAtEnd(entryBlock)
-
-	stackPtr := c.builder.CreateAlloca(c.ctx.Int32Type(), "stack_ptr")
-	c.builder.CreateStore(llvm.ConstInt(c.ctx.Int32Type(), 0, false), stackPtr)
-
-	pcPtr := c.builder.CreateAlloca(c.ctx.Int64Type(), "pc")
-	c.builder.CreateStore(llvm.ConstInt(c.ctx.Int64Type(), 0, false), pcPtr)
-
-	mainLoop := llvm.AddBasicBlock(execFunc, "main_loop")
-	c.builder.CreateBr(mainLoop)
-	c.builder.SetInsertPointAtEnd(mainLoop)
-
-	pc := c.builder.CreateLoad(c.ctx.Int64Type(), pcPtr, "pc_val")
-	codeSize := llvm.ConstInt(c.ctx.Int64Type(), uint64(len(bytecode)), false)
-	cond := c.builder.CreateICmp(llvm.IntULT, pc, codeSize, "pc_check")
-
-	exitBlock := llvm.AddBasicBlock(execFunc, "exit")
-	loopBody := llvm.AddBasicBlock(execFunc, "loop_body")
-	c.builder.CreateCondBr(cond, loopBody, exitBlock)
-
-	c.builder.SetInsertPointAtEnd(loopBody)
-
-	// Create instruction dispatch
-	switchInstr := c.builder.CreateSwitch(pc, exitBlock, len(instructions))
-
-	for i, instr := range instructions {
-		blockName := fmt.Sprintf("instr_%d", i)
-		instrBlock := llvm.AddBasicBlock(execFunc, blockName)
-
-		pcVal := llvm.ConstInt(c.ctx.Int64Type(), instr.PC, false)
-		switchInstr.AddCase(pcVal, instrBlock)
-
-		c.builder.SetInsertPointAtEnd(instrBlock)
-		c.compileInstruction(instr, stackParam, stackPtr, memoryParam, pcPtr, mainLoop, exitBlock)
-	}
-
-	c.builder.SetInsertPointAtEnd(exitBlock)
-	c.builder.CreateRetVoid()
-
-	err = llvm.VerifyModule(c.module, llvm.ReturnStatusAction)
-	if err != nil {
-		return llvm.Module{}, fmt.Errorf("module verification failed: %s", err)
-	}
-
-	return c.module, nil
+	// Use static analysis approach by default
+	return c.CompileBytecodeStatic(bytecode)
 }
 
 func (c *EVMCompiler) compileInstruction(instr EVMInstruction, stack, stackPtr, memory, pcPtr llvm.Value, mainLoop, exitBlock llvm.BasicBlock) {
@@ -670,13 +604,8 @@ func (c *EVMCompiler) OptimizeModule() {
 }
 
 func (c *EVMCompiler) CompileAndOptimize(bytecode []byte) error {
-	_, err := c.CompileBytecode(bytecode)
-	if err != nil {
-		return err
-	}
-
-	c.OptimizeModule()
-	return nil
+	// Use static analysis approach by default
+	return c.CompileAndOptimizeStatic(bytecode)
 }
 
 func (c *EVMCompiler) CreateExecutionEngine() error {
