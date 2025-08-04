@@ -1,0 +1,593 @@
+package compiler
+
+import (
+	"fmt"
+	"os"
+
+	"tinygo.org/x/go-llvm"
+)
+
+type EVMCompiler struct {
+	ctx       llvm.Context
+	module    llvm.Module
+	builder   llvm.Builder
+	target    llvm.Target
+	machine   llvm.TargetMachine
+	stackType llvm.Type
+	memType   llvm.Type
+}
+
+type EVMOpcode uint8
+
+const (
+	STOP           EVMOpcode = 0x00
+	ADD            EVMOpcode = 0x01
+	MUL            EVMOpcode = 0x02
+	SUB            EVMOpcode = 0x03
+	DIV            EVMOpcode = 0x04
+	SDIV           EVMOpcode = 0x05
+	MOD            EVMOpcode = 0x06
+	SMOD           EVMOpcode = 0x07
+	ADDMOD         EVMOpcode = 0x08
+	MULMOD         EVMOpcode = 0x09
+	EXP            EVMOpcode = 0x0A
+	SIGNEXTEND     EVMOpcode = 0x0B
+	LT             EVMOpcode = 0x10
+	GT             EVMOpcode = 0x11
+	SLT            EVMOpcode = 0x12
+	SGT            EVMOpcode = 0x13
+	EQ             EVMOpcode = 0x14
+	ISZERO         EVMOpcode = 0x15
+	AND            EVMOpcode = 0x16
+	OR             EVMOpcode = 0x17
+	XOR            EVMOpcode = 0x18
+	NOT            EVMOpcode = 0x19
+	BYTE           EVMOpcode = 0x1A
+	SHL            EVMOpcode = 0x1B
+	SHR            EVMOpcode = 0x1C
+	SAR            EVMOpcode = 0x1D
+	SHA3           EVMOpcode = 0x20
+	ADDRESS        EVMOpcode = 0x30
+	BALANCE        EVMOpcode = 0x31
+	ORIGIN         EVMOpcode = 0x32
+	CALLER         EVMOpcode = 0x33
+	CALLVALUE      EVMOpcode = 0x34
+	CALLDATALOAD   EVMOpcode = 0x35
+	CALLDATASIZE   EVMOpcode = 0x36
+	CALLDATACOPY   EVMOpcode = 0x37
+	CODESIZE       EVMOpcode = 0x38
+	CODECOPY       EVMOpcode = 0x39
+	GASPRICE       EVMOpcode = 0x3A
+	EXTCODESIZE    EVMOpcode = 0x3B
+	EXTCODECOPY    EVMOpcode = 0x3C
+	RETURNDATASIZE EVMOpcode = 0x3D
+	RETURNDATACOPY EVMOpcode = 0x3E
+	EXTCODEHASH    EVMOpcode = 0x3F
+	BLOCKHASH      EVMOpcode = 0x40
+	COINBASE       EVMOpcode = 0x41
+	TIMESTAMP      EVMOpcode = 0x42
+	NUMBER         EVMOpcode = 0x43
+	PREVRANDAO     EVMOpcode = 0x44
+	GASLIMIT       EVMOpcode = 0x45
+	CHAINID        EVMOpcode = 0x46
+	SELFBALANCE    EVMOpcode = 0x47
+	BASEFEE        EVMOpcode = 0x48
+	POP            EVMOpcode = 0x50
+	MLOAD          EVMOpcode = 0x51
+	MSTORE         EVMOpcode = 0x52
+	MSTORE8        EVMOpcode = 0x53
+	SLOAD          EVMOpcode = 0x54
+	SSTORE         EVMOpcode = 0x55
+	JUMP           EVMOpcode = 0x56
+	JUMPI          EVMOpcode = 0x57
+	PC             EVMOpcode = 0x58
+	MSIZE          EVMOpcode = 0x59
+	GAS            EVMOpcode = 0x5A
+	JUMPDEST       EVMOpcode = 0x5B
+	PUSH1          EVMOpcode = 0x60
+	PUSH32         EVMOpcode = 0x7F
+	DUP1           EVMOpcode = 0x80
+	DUP16          EVMOpcode = 0x8F
+	SWAP1          EVMOpcode = 0x90
+	SWAP16         EVMOpcode = 0x9F
+	LOG0           EVMOpcode = 0xA0
+	LOG4           EVMOpcode = 0xA4
+	CREATE         EVMOpcode = 0xF0
+	CALL           EVMOpcode = 0xF1
+	CALLCODE       EVMOpcode = 0xF2
+	RETURN         EVMOpcode = 0xF3
+	DELEGATECALL   EVMOpcode = 0xF4
+	CREATE2        EVMOpcode = 0xF5
+	STATICCALL     EVMOpcode = 0xFA
+	REVERT         EVMOpcode = 0xFD
+	INVALID        EVMOpcode = 0xFE
+	SELFDESTRUCT   EVMOpcode = 0xFF
+)
+
+type EVMInstruction struct {
+	Opcode EVMOpcode
+	Data   []byte
+	PC     uint64
+}
+
+func NewEVMCompiler() *EVMCompiler {
+	llvm.InitializeNativeTarget()
+	llvm.InitializeNativeAsmPrinter()
+
+	ctx := llvm.NewContext()
+	module := ctx.NewModule("evm_module")
+	builder := ctx.NewBuilder()
+
+	target, err := llvm.GetTargetFromTriple(llvm.DefaultTargetTriple())
+	if err != nil {
+		panic(fmt.Sprintf("Failed to get target: %s", err))
+	}
+
+	machine := target.CreateTargetMachine(
+		llvm.DefaultTargetTriple(), "generic", "",
+		llvm.CodeGenLevelDefault, llvm.RelocDefault, llvm.CodeModelDefault)
+
+	return &EVMCompiler{
+		ctx:       ctx,
+		module:    module,
+		builder:   builder,
+		target:    target,
+		machine:   machine,
+		stackType: llvm.PointerType(ctx.IntType(256), 0),
+		memType:   llvm.PointerType(ctx.Int8Type(), 0),
+	}
+}
+
+func (c *EVMCompiler) Dispose() {
+	c.builder.Dispose()
+	c.module.Dispose()
+	c.ctx.Dispose()
+}
+
+func (c *EVMCompiler) ParseBytecode(bytecode []byte) ([]EVMInstruction, error) {
+	instructions := make([]EVMInstruction, 0)
+	pc := uint64(0)
+
+	for pc < uint64(len(bytecode)) {
+		opcode := EVMOpcode(bytecode[pc])
+		instr := EVMInstruction{
+			Opcode: opcode,
+			PC:     pc,
+		}
+
+		if opcode >= PUSH1 && opcode <= PUSH32 {
+			dataSize := int(opcode - PUSH1 + 1)
+			if pc+uint64(dataSize) >= uint64(len(bytecode)) {
+				return nil, fmt.Errorf("invalid PUSH instruction at PC %d", pc)
+			}
+			instr.Data = make([]byte, dataSize)
+			copy(instr.Data, bytecode[pc+1:pc+1+uint64(dataSize)])
+			pc += uint64(dataSize)
+		}
+		instructions = append(instructions, instr)
+		pc++
+	}
+
+	return instructions, nil
+}
+
+func (c *EVMCompiler) CompileBytecode(bytecode []byte) (llvm.Module, error) {
+	instructions, err := c.ParseBytecode(bytecode)
+	if err != nil {
+		return llvm.Module{}, err
+	}
+
+	uint256Type := c.ctx.IntType(256)
+	uint8PtrType := llvm.PointerType(c.ctx.Int8Type(), 0)
+	uint256PtrType := llvm.PointerType(uint256Type, 0)
+
+	execType := llvm.FunctionType(c.ctx.VoidType(), []llvm.Type{
+		uint8PtrType,      // memory
+		uint256PtrType,    // stack
+		uint8PtrType,      // code (unused but kept for signature)
+		c.ctx.Int64Type(), // gas (unused but kept for signature)
+	}, false)
+
+	execFunc := llvm.AddFunction(c.module, "execute", execType)
+	execFunc.SetFunctionCallConv(llvm.CCallConv)
+
+	memoryParam := execFunc.Param(0)
+	stackParam := execFunc.Param(1)
+
+	entryBlock := llvm.AddBasicBlock(execFunc, "entry")
+	c.builder.SetInsertPointAtEnd(entryBlock)
+
+	stackPtr := c.builder.CreateAlloca(c.ctx.Int32Type(), "stack_ptr")
+	c.builder.CreateStore(llvm.ConstInt(c.ctx.Int32Type(), 0, false), stackPtr)
+
+	pcPtr := c.builder.CreateAlloca(c.ctx.Int64Type(), "pc")
+	c.builder.CreateStore(llvm.ConstInt(c.ctx.Int64Type(), 0, false), pcPtr)
+
+	mainLoop := llvm.AddBasicBlock(execFunc, "main_loop")
+	c.builder.CreateBr(mainLoop)
+	c.builder.SetInsertPointAtEnd(mainLoop)
+
+	pc := c.builder.CreateLoad(c.ctx.Int64Type(), pcPtr, "pc_val")
+	codeSize := llvm.ConstInt(c.ctx.Int64Type(), uint64(len(bytecode)), false)
+	cond := c.builder.CreateICmp(llvm.IntULT, pc, codeSize, "pc_check")
+
+	exitBlock := llvm.AddBasicBlock(execFunc, "exit")
+	loopBody := llvm.AddBasicBlock(execFunc, "loop_body")
+	c.builder.CreateCondBr(cond, loopBody, exitBlock)
+
+	c.builder.SetInsertPointAtEnd(loopBody)
+
+	// Create instruction dispatch
+	switchInstr := c.builder.CreateSwitch(pc, exitBlock, len(instructions))
+
+	for i, instr := range instructions {
+		blockName := fmt.Sprintf("instr_%d", i)
+		instrBlock := llvm.AddBasicBlock(execFunc, blockName)
+
+		pcVal := llvm.ConstInt(c.ctx.Int64Type(), instr.PC, false)
+		switchInstr.AddCase(pcVal, instrBlock)
+
+		c.builder.SetInsertPointAtEnd(instrBlock)
+		c.compileInstruction(instr, stackParam, stackPtr, memoryParam, pcPtr, mainLoop, exitBlock)
+	}
+
+	c.builder.SetInsertPointAtEnd(exitBlock)
+	c.builder.CreateRetVoid()
+
+	err = llvm.VerifyModule(c.module, llvm.ReturnStatusAction)
+	if err != nil {
+		return llvm.Module{}, fmt.Errorf("module verification failed: %s", err)
+	}
+
+	return c.module, nil
+}
+
+func (c *EVMCompiler) compileInstruction(instr EVMInstruction, stack, stackPtr, memory, pcPtr llvm.Value, mainLoop, exitBlock llvm.BasicBlock) {
+	uint256Type := c.ctx.IntType(256)
+
+	switch instr.Opcode {
+	case STOP:
+		c.builder.CreateBr(exitBlock)
+
+	case ADD:
+		a := c.popStack(stack, stackPtr)
+		b := c.popStack(stack, stackPtr)
+		result := c.builder.CreateAdd(a, b, "add_result")
+		c.pushStack(stack, stackPtr, result)
+		c.incrementPC(pcPtr, 1)
+		c.builder.CreateBr(mainLoop)
+
+	case MUL:
+		a := c.popStack(stack, stackPtr)
+		b := c.popStack(stack, stackPtr)
+		result := c.builder.CreateMul(a, b, "mul_result")
+		c.pushStack(stack, stackPtr, result)
+		c.incrementPC(pcPtr, 1)
+		c.builder.CreateBr(mainLoop)
+
+	case SUB:
+		a := c.popStack(stack, stackPtr)
+		b := c.popStack(stack, stackPtr)
+		result := c.builder.CreateSub(a, b, "sub_result")
+		c.pushStack(stack, stackPtr, result)
+		c.incrementPC(pcPtr, 1)
+		c.builder.CreateBr(mainLoop)
+
+	case DIV:
+		a := c.popStack(stack, stackPtr)
+		b := c.popStack(stack, stackPtr)
+		zero := llvm.ConstInt(uint256Type, 0, false)
+		isZero := c.builder.CreateICmp(llvm.IntEQ, b, zero, "div_by_zero")
+		result := c.builder.CreateSelect(isZero, zero, c.builder.CreateUDiv(a, b, "div_result"), "div_safe")
+		c.pushStack(stack, stackPtr, result)
+		c.incrementPC(pcPtr, 1)
+		c.builder.CreateBr(mainLoop)
+
+	case LT:
+		a := c.popStack(stack, stackPtr)
+		b := c.popStack(stack, stackPtr)
+		cmp := c.builder.CreateICmp(llvm.IntULT, a, b, "lt_cmp")
+		result := c.builder.CreateZExt(cmp, uint256Type, "lt_result")
+		c.pushStack(stack, stackPtr, result)
+		c.incrementPC(pcPtr, 1)
+		c.builder.CreateBr(mainLoop)
+
+	case GT:
+		a := c.popStack(stack, stackPtr)
+		b := c.popStack(stack, stackPtr)
+		cmp := c.builder.CreateICmp(llvm.IntUGT, a, b, "gt_cmp")
+		result := c.builder.CreateZExt(cmp, uint256Type, "gt_result")
+		c.pushStack(stack, stackPtr, result)
+		c.incrementPC(pcPtr, 1)
+		c.builder.CreateBr(mainLoop)
+
+	case EQ:
+		a := c.popStack(stack, stackPtr)
+		b := c.popStack(stack, stackPtr)
+		cmp := c.builder.CreateICmp(llvm.IntEQ, a, b, "eq_cmp")
+		result := c.builder.CreateZExt(cmp, uint256Type, "eq_result")
+		c.pushStack(stack, stackPtr, result)
+		c.incrementPC(pcPtr, 1)
+		c.builder.CreateBr(mainLoop)
+
+	case ISZERO:
+		a := c.popStack(stack, stackPtr)
+		zero := llvm.ConstInt(uint256Type, 0, false)
+		cmp := c.builder.CreateICmp(llvm.IntEQ, a, zero, "iszero_cmp")
+		result := c.builder.CreateZExt(cmp, uint256Type, "iszero_result")
+		c.pushStack(stack, stackPtr, result)
+		c.incrementPC(pcPtr, 1)
+		c.builder.CreateBr(mainLoop)
+
+	case AND:
+		a := c.popStack(stack, stackPtr)
+		b := c.popStack(stack, stackPtr)
+		result := c.builder.CreateAnd(a, b, "and_result")
+		c.pushStack(stack, stackPtr, result)
+		c.incrementPC(pcPtr, 1)
+		c.builder.CreateBr(mainLoop)
+
+	case OR:
+		a := c.popStack(stack, stackPtr)
+		b := c.popStack(stack, stackPtr)
+		result := c.builder.CreateOr(a, b, "or_result")
+		c.pushStack(stack, stackPtr, result)
+		c.incrementPC(pcPtr, 1)
+		c.builder.CreateBr(mainLoop)
+
+	case XOR:
+		a := c.popStack(stack, stackPtr)
+		b := c.popStack(stack, stackPtr)
+		result := c.builder.CreateXor(a, b, "xor_result")
+		c.pushStack(stack, stackPtr, result)
+		c.incrementPC(pcPtr, 1)
+		c.builder.CreateBr(mainLoop)
+
+	case NOT:
+		a := c.popStack(stack, stackPtr)
+		allOnes := llvm.ConstInt(uint256Type, ^uint64(0), false)
+		result := c.builder.CreateXor(a, allOnes, "not_result")
+		c.pushStack(stack, stackPtr, result)
+		c.incrementPC(pcPtr, 1)
+		c.builder.CreateBr(mainLoop)
+
+	case POP:
+		c.popStack(stack, stackPtr)
+		c.incrementPC(pcPtr, 1)
+		c.builder.CreateBr(mainLoop)
+
+	case JUMP:
+		target := c.popStack(stack, stackPtr)
+		targetPC := c.builder.CreateTrunc(target, c.ctx.Int64Type(), "jump_target")
+		c.builder.CreateStore(targetPC, pcPtr)
+		c.builder.CreateBr(mainLoop)
+
+	case JUMPI:
+		target := c.popStack(stack, stackPtr)
+		condition := c.popStack(stack, stackPtr)
+		zero := llvm.ConstInt(uint256Type, 0, false)
+		isNonZero := c.builder.CreateICmp(llvm.IntNE, condition, zero, "jumpi_cond")
+
+		targetPC := c.builder.CreateTrunc(target, c.ctx.Int64Type(), "jumpi_target")
+		currentPC := c.builder.CreateLoad(c.ctx.Int64Type(), pcPtr, "current_pc")
+		nextPC := c.builder.CreateAdd(currentPC, llvm.ConstInt(c.ctx.Int64Type(), 1, false), "next_pc")
+
+		selectedPC := c.builder.CreateSelect(isNonZero, targetPC, nextPC, "selected_pc")
+		c.builder.CreateStore(selectedPC, pcPtr)
+		c.builder.CreateBr(mainLoop)
+
+	case JUMPDEST:
+		c.incrementPC(pcPtr, 1)
+		c.builder.CreateBr(mainLoop)
+
+	case PC:
+		currentPC := c.builder.CreateLoad(c.ctx.Int64Type(), pcPtr, "current_pc")
+		pcValue := c.builder.CreateZExt(currentPC, uint256Type, "pc_value")
+		c.pushStack(stack, stackPtr, pcValue)
+		c.incrementPC(pcPtr, 1)
+		c.builder.CreateBr(mainLoop)
+
+	case MLOAD:
+		offset := c.popStack(stack, stackPtr)
+		value := c.loadFromMemory(memory, offset)
+		c.pushStack(stack, stackPtr, value)
+		c.incrementPC(pcPtr, 1)
+		c.builder.CreateBr(mainLoop)
+
+	case MSTORE:
+		offset := c.popStack(stack, stackPtr)
+		value := c.popStack(stack, stackPtr)
+		c.storeToMemory(memory, offset, value)
+		c.incrementPC(pcPtr, 1)
+		c.builder.CreateBr(mainLoop)
+
+	case MSTORE8:
+		offset := c.popStack(stack, stackPtr)
+		value := c.popStack(stack, stackPtr)
+		c.storeByteToMemory(memory, offset, value)
+		c.incrementPC(pcPtr, 1)
+		c.builder.CreateBr(mainLoop)
+
+	case RETURN:
+		_ = c.popStack(stack, stackPtr) // offset
+		_ = c.popStack(stack, stackPtr) // size
+		c.builder.CreateBr(exitBlock)
+
+	case REVERT:
+		_ = c.popStack(stack, stackPtr) // offset
+		_ = c.popStack(stack, stackPtr) // size
+		c.builder.CreateBr(exitBlock)
+
+	default:
+		if instr.Opcode >= PUSH1 && instr.Opcode <= PUSH32 {
+			c.compilePush(instr, stack, stackPtr, pcPtr, mainLoop)
+		} else if instr.Opcode >= DUP1 && instr.Opcode <= DUP16 {
+			c.compileDup(instr, stack, stackPtr, pcPtr, mainLoop)
+		} else if instr.Opcode >= SWAP1 && instr.Opcode <= SWAP16 {
+			c.compileSwap(instr, stack, stackPtr, pcPtr, mainLoop)
+		} else {
+			c.incrementPC(pcPtr, 1)
+			c.builder.CreateBr(mainLoop)
+		}
+	}
+}
+
+func (c *EVMCompiler) compilePush(instr EVMInstruction, stack, stackPtr, pcPtr llvm.Value, mainLoop llvm.BasicBlock) {
+	dataSize := int(instr.Opcode - PUSH1 + 1)
+	llvmValue := c.createUint256ConstantFromBytes(instr.Data)
+	c.pushStack(stack, stackPtr, llvmValue)
+	c.incrementPC(pcPtr, uint64(1+dataSize))
+	c.builder.CreateBr(mainLoop)
+}
+
+func (c *EVMCompiler) compileDup(instr EVMInstruction, stack, stackPtr, pcPtr llvm.Value, mainLoop llvm.BasicBlock) {
+	n := int(instr.Opcode - DUP1 + 1)
+	stackPtrVal := c.builder.CreateLoad(c.ctx.Int32Type(), stackPtr, "stack_ptr_val")
+	index := c.builder.CreateSub(stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), uint64(n), false), "dup_index")
+	stackElem := c.builder.CreateGEP(c.ctx.IntType(256), stack, []llvm.Value{index}, "stack_elem")
+	value := c.builder.CreateLoad(c.ctx.IntType(256), stackElem, "dup_value")
+	c.pushStack(stack, stackPtr, value)
+	c.incrementPC(pcPtr, 1)
+	c.builder.CreateBr(mainLoop)
+}
+
+func (c *EVMCompiler) compileSwap(instr EVMInstruction, stack, stackPtr, pcPtr llvm.Value, mainLoop llvm.BasicBlock) {
+	n := int(instr.Opcode - SWAP1 + 1)
+	stackPtrVal := c.builder.CreateLoad(c.ctx.Int32Type(), stackPtr, "stack_ptr_val")
+
+	index1 := c.builder.CreateSub(stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), 1, false), "swap_index1")
+	index2 := c.builder.CreateSub(stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), uint64(n+1), false), "swap_index2")
+
+	elem1 := c.builder.CreateGEP(c.ctx.IntType(256), stack, []llvm.Value{index1}, "swap_elem1")
+	elem2 := c.builder.CreateGEP(c.ctx.IntType(256), stack, []llvm.Value{index2}, "swap_elem2")
+
+	value1 := c.builder.CreateLoad(c.ctx.IntType(256), elem1, "swap_value1")
+	value2 := c.builder.CreateLoad(c.ctx.IntType(256), elem2, "swap_value2")
+
+	c.builder.CreateStore(value2, elem1)
+	c.builder.CreateStore(value1, elem2)
+	c.incrementPC(pcPtr, 1)
+	c.builder.CreateBr(mainLoop)
+}
+
+func (c *EVMCompiler) pushStack(stack, stackPtr, value llvm.Value) {
+	stackPtrVal := c.builder.CreateLoad(c.ctx.Int32Type(), stackPtr, "stack_ptr_val")
+	stackElem := c.builder.CreateGEP(c.ctx.IntType(256), stack, []llvm.Value{stackPtrVal}, "stack_elem")
+	c.builder.CreateStore(value, stackElem)
+	newStackPtr := c.builder.CreateAdd(stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), 1, false), "new_stack_ptr")
+	c.builder.CreateStore(newStackPtr, stackPtr)
+}
+
+func (c *EVMCompiler) popStack(stack, stackPtr llvm.Value) llvm.Value {
+	stackPtrVal := c.builder.CreateLoad(c.ctx.Int32Type(), stackPtr, "stack_ptr_val")
+	newStackPtr := c.builder.CreateSub(stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), 1, false), "new_stack_ptr")
+	c.builder.CreateStore(newStackPtr, stackPtr)
+	stackElem := c.builder.CreateGEP(c.ctx.IntType(256), stack, []llvm.Value{newStackPtr}, "stack_elem")
+	return c.builder.CreateLoad(c.ctx.IntType(256), stackElem, "stack_value")
+}
+
+func (c *EVMCompiler) incrementPC(pcPtr llvm.Value, increment uint64) {
+	pcVal := c.builder.CreateLoad(c.ctx.Int64Type(), pcPtr, "pc_val")
+	newPC := c.builder.CreateAdd(pcVal, llvm.ConstInt(c.ctx.Int64Type(), increment, false), "new_pc")
+	c.builder.CreateStore(newPC, pcPtr)
+}
+
+func (c *EVMCompiler) createUint256ConstantFromBytes(data []byte) llvm.Value {
+	if len(data) == 0 {
+		return llvm.ConstInt(c.ctx.IntType(256), 0, false)
+	}
+
+	var value uint64 = 0
+	for i := len(data) - 1; i >= 0 && i >= len(data)-8; i-- {
+		value = (value << 8) | uint64(data[i])
+	}
+
+	return llvm.ConstInt(c.ctx.IntType(256), value, false)
+}
+
+func (c *EVMCompiler) loadFromMemory(memory, offset llvm.Value) llvm.Value {
+	offsetTrunc := c.builder.CreateTrunc(offset, c.ctx.Int64Type(), "mem_offset")
+	memPtr := c.builder.CreateGEP(c.ctx.Int8Type(), memory, []llvm.Value{offsetTrunc}, "mem_ptr")
+
+	value := llvm.ConstInt(c.ctx.IntType(256), 0, false)
+	for i := 0; i < 32; i++ {
+		byteOffset := llvm.ConstInt(c.ctx.Int64Type(), uint64(i), false)
+		bytePtr := c.builder.CreateGEP(c.ctx.Int8Type(), memPtr, []llvm.Value{byteOffset}, "byte_ptr")
+		byteVal := c.builder.CreateLoad(c.ctx.Int8Type(), bytePtr, "byte_val")
+		byteValExt := c.builder.CreateZExt(byteVal, c.ctx.IntType(256), "byte_ext")
+		shift := c.builder.CreateShl(byteValExt, llvm.ConstInt(c.ctx.IntType(256), uint64(8*(31-i)), false), "byte_shift")
+		value = c.builder.CreateOr(value, shift, "mem_value")
+	}
+
+	return value
+}
+
+func (c *EVMCompiler) storeToMemory(memory, offset, value llvm.Value) {
+	offsetTrunc := c.builder.CreateTrunc(offset, c.ctx.Int64Type(), "mem_offset")
+	memPtr := c.builder.CreateGEP(c.ctx.Int8Type(), memory, []llvm.Value{offsetTrunc}, "mem_ptr")
+
+	for i := 0; i < 32; i++ {
+		shift := llvm.ConstInt(c.ctx.IntType(256), uint64(8*(31-i)), false)
+		shiftedValue := c.builder.CreateLShr(value, shift, "shifted_value")
+		byteVal := c.builder.CreateTrunc(shiftedValue, c.ctx.Int8Type(), "byte_val")
+
+		byteOffset := llvm.ConstInt(c.ctx.Int64Type(), uint64(i), false)
+		bytePtr := c.builder.CreateGEP(c.ctx.Int8Type(), memPtr, []llvm.Value{byteOffset}, "byte_ptr")
+		c.builder.CreateStore(byteVal, bytePtr)
+	}
+}
+
+func (c *EVMCompiler) storeByteToMemory(memory, offset, value llvm.Value) {
+	offsetTrunc := c.builder.CreateTrunc(offset, c.ctx.Int64Type(), "mem_offset")
+	memPtr := c.builder.CreateGEP(c.ctx.Int8Type(), memory, []llvm.Value{offsetTrunc}, "mem_ptr")
+	byteVal := c.builder.CreateTrunc(value, c.ctx.Int8Type(), "byte_val")
+	c.builder.CreateStore(byteVal, memPtr)
+}
+
+func (c *EVMCompiler) EmitObjectFile(filename string) error {
+	mem, err := c.machine.EmitToMemoryBuffer(c.module, llvm.ObjectFile)
+	if err != nil {
+		return err
+	}
+
+	file, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = file.Write(mem.Bytes())
+	return err
+}
+
+func (c *EVMCompiler) EmitLLVMIR(filename string) error {
+	file, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = file.WriteString(c.module.String())
+	return err
+}
+
+func (c *EVMCompiler) OptimizeModule() {
+	passManager := llvm.NewFunctionPassManagerForModule(c.module)
+	defer passManager.Dispose()
+
+	passManager.InitializeFunc()
+	for fn := c.module.FirstFunction(); !fn.IsNil(); fn = llvm.NextFunction(fn) {
+		passManager.RunFunc(fn)
+	}
+	passManager.FinalizeFunc()
+}
+
+func (c *EVMCompiler) CompileAndOptimize(bytecode []byte) error {
+	_, err := c.CompileBytecode(bytecode)
+	if err != nil {
+		return err
+	}
+
+	c.OptimizeModule()
+	return nil
+}
