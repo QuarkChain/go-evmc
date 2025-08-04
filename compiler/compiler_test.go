@@ -495,3 +495,12 @@ func BenchmarkEVMExecuteFib(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkNativeExecuteFib(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		a := Fib(1000000)
+		if a.CmpUint64(0) == 0 {
+			b.Fatal()
+		}
+	}
+}

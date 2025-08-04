@@ -22,6 +22,7 @@ type EVMCompiler struct {
 	stackType llvm.Type
 	memType   llvm.Type
 	engine    *llvm.ExecutionEngine
+	funcPtr   uint64
 }
 
 type EVMOpcode uint8
@@ -683,18 +684,19 @@ func (c *EVMCompiler) CreateExecutionEngine() error {
 	if err != nil {
 		return fmt.Errorf("failed to create JIT compiler: %v", err)
 	}
+
+	// Get function pointer for direct execution
+	funcPtr := engine.GetFunctionAddress("execute")
+	if funcPtr == 0 {
+		return fmt.Errorf("execute function address not found")
+	}
 	c.engine = &engine
+	c.funcPtr = funcPtr
 	return nil
 }
 
 // Execute the compiled EVM code
 func (c *EVMCompiler) Execute() (*EVMExecutionResult, error) {
-	// Get function pointer for direct execution
-	funcPtr := c.engine.GetFunctionAddress("execute")
-	if funcPtr == 0 {
-		return nil, fmt.Errorf("execute function address not found")
-	}
-
 	// Prepare execution environment
 	// TODO: support dynamic size growth
 	const stackSize = 1024
@@ -704,7 +706,7 @@ func (c *EVMCompiler) Execute() (*EVMExecutionResult, error) {
 	memory := make([]byte, memorySize)
 
 	// Execute using function pointer
-	err := c.callNativeFunction(funcPtr, unsafe.Pointer(&memory[0]), unsafe.Pointer(&stack[0]), uint64(1000000))
+	err := c.callNativeFunction(c.funcPtr, unsafe.Pointer(&memory[0]), unsafe.Pointer(&stack[0]), uint64(1000000))
 	if err != nil {
 		return &EVMExecutionResult{
 			Stack:  nil,
