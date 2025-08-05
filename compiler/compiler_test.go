@@ -323,7 +323,7 @@ func TestEVMExecuteFib(t *testing.T) {
 
 	n := uint32(10000000)
 
-	result, err := comp.ExecuteCompiledWithOpts(GetFibCode(n), &EVMExecutionOpts{GasLimit: uint64(n) * 100})
+	result, err := comp.ExecuteCompiledWithOpts(GetFibCode(n), DefaultEVMCompilationOpts(), &EVMExecutionOpts{GasLimit: uint64(n) * 100})
 	if err != nil {
 		t.Fatalf("Execution failed: %v", err)
 	}
@@ -473,13 +473,37 @@ func BenchmarkEVMExecuteMemoryOperations(b *testing.B) {
 	}
 }
 
-func BenchmarkEVMExecuteFib(b *testing.B) {
+func BenchmarkEVMExecuteFibWithGas(b *testing.B) {
 	comp := NewEVMCompiler()
 	defer comp.Dispose()
 
 	// Pre-compile
 	n := uint32(1000000)
 	err := comp.CompileAndOptimize(GetFibCode(n))
+	if err != nil {
+		b.Fatalf("Compilation failed: %v", err)
+	}
+	err = comp.CreateExecutionEngine()
+	if err != nil {
+		b.Fatalf("Engine failed: %v", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := comp.Execute(&EVMExecutionOpts{GasLimit: uint64(n) * 100})
+		if err != nil {
+			b.Fatalf("Execution failed: %v", err)
+		}
+	}
+}
+
+func BenchmarkEVMExecuteFibWithoutGas(b *testing.B) {
+	comp := NewEVMCompiler()
+	defer comp.Dispose()
+
+	// Pre-compile
+	n := uint32(1000000)
+	err := comp.CompileAndOptimizeWithOpts(GetFibCode(n), &EVMCompilationOpts{DisableGas: true})
 	if err != nil {
 		b.Fatalf("Compilation failed: %v", err)
 	}

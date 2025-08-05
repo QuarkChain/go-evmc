@@ -14,7 +14,7 @@ type PCAnalysis struct {
 }
 
 // CompileBytecodeStatic compiles EVM bytecode using static PC analysis
-func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte) (llvm.Module, error) {
+func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilationOpts) (llvm.Module, error) {
 	instructions, err := c.ParseBytecode(bytecode)
 	if err != nil {
 		return llvm.Module{}, err
@@ -50,11 +50,17 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte) (llvm.Module, error
 	c.builder.CreateStore(llvm.ConstInt(c.ctx.Int32Type(), 0, false), stackPtr)
 
 	// Initialize gas tracking
-	gas := c.builder.CreateAlloca(c.ctx.Int64Type(), "gas_used")
-	c.builder.CreateStore(gasLimitParam, gas)
+	var gas llvm.Value
+	if !opts.DisableGas {
+		gas = c.builder.CreateAlloca(c.ctx.Int64Type(), "gas_used")
+		c.builder.CreateStore(gasLimitParam, gas)
+	}
 
 	// Create out-of-gas block
-	outOfGasBlock := llvm.AddBasicBlock(execFunc, "out_of_gas")
+	var outOfGasBlock llvm.BasicBlock
+	if !opts.DisableGas {
+		outOfGasBlock = llvm.AddBasicBlock(execFunc, "out_of_gas")
+	}
 
 	// Create exit block
 	exitBlock := llvm.AddBasicBlock(execFunc, "exit")
@@ -87,17 +93,23 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte) (llvm.Module, error
 			}
 		}
 
-		c.compileInstructionStatic(instr, stackParam, stackPtr, memoryParam, gasLimitParam, gas, analysis, nextBlock, exitBlock, outOfGasBlock)
+		c.compileInstructionStatic(instr, stackParam, stackPtr, memoryParam, gas, analysis, nextBlock, exitBlock, outOfGasBlock, opts.DisableGas)
 	}
 
 	// Finalize out-of-gas block
-	c.builder.SetInsertPointAtEnd(outOfGasBlock)
-	c.builder.CreateRet(llvm.ConstInt(c.ctx.Int64Type(), ^uint64(0), false)) // Return -1 for out of gas
+	if !opts.DisableGas {
+		c.builder.SetInsertPointAtEnd(outOfGasBlock)
+		c.builder.CreateRet(llvm.ConstInt(c.ctx.Int64Type(), ^uint64(0), false)) // Return -1 for out of gas
+	}
 
 	// Finalize exit block
 	c.builder.SetInsertPointAtEnd(exitBlock)
-	finalGasUsed := c.builder.CreateLoad(c.ctx.Int64Type(), gas, "final_gas_used")
-	c.builder.CreateRet(finalGasUsed)
+	if opts.DisableGas {
+		c.builder.CreateRet(gasLimitParam)
+	} else {
+		finalGasUsed := c.builder.CreateLoad(c.ctx.Int64Type(), gas, "final_gas_used")
+		c.builder.CreateRet(finalGasUsed)
+	}
 
 	err = llvm.VerifyModule(c.module, llvm.ReturnStatusAction)
 	if err != nil {
@@ -139,11 +151,13 @@ func (c *EVMCompiler) getNextPC(currentInstr EVMInstruction, instructions []EVMI
 }
 
 // compileInstructionStatic compiles an instruction using static analysis with gas metering
-func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stackPtr, memory, gasLimit, gas llvm.Value, analysis *PCAnalysis, nextBlock, exitBlock, outOfGasBlock llvm.BasicBlock) {
+func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stackPtr, memory, gas llvm.Value, analysis *PCAnalysis, nextBlock, exitBlock, outOfGasBlock llvm.BasicBlock, disableGasMetering bool) {
 	uint256Type := c.ctx.IntType(256)
 
 	// Add gas consumption for this instruction
-	c.consumeGas(instr.Opcode, gasLimit, gas, outOfGasBlock)
+	if !disableGasMetering {
+		c.consumeGas(instr.Opcode, gas, outOfGasBlock)
+	}
 
 	switch instr.Opcode {
 	case STOP:
@@ -369,7 +383,7 @@ func (c *EVMCompiler) compileSwapStatic(instr EVMInstruction, stack, stackPtr ll
 }
 
 // consumeGas adds gas consumption for an opcode and checks for out-of-gas condition
-func (c *EVMCompiler) consumeGas(opcode EVMOpcode, gasLimit, gas llvm.Value, outOfGasBlock llvm.BasicBlock) {
+func (c *EVMCompiler) consumeGas(opcode EVMOpcode, gas llvm.Value, outOfGasBlock llvm.BasicBlock) {
 	// Get gas cost for this opcode
 	gasCost := getGasCost(opcode)
 	if gasCost == 0 {
@@ -397,8 +411,8 @@ func (c *EVMCompiler) consumeGas(opcode EVMOpcode, gasLimit, gas llvm.Value, out
 }
 
 // CompileAndOptimizeStatic compiles using static analysis
-func (c *EVMCompiler) CompileAndOptimizeStatic(bytecode []byte) error {
-	_, err := c.CompileBytecodeStatic(bytecode)
+func (c *EVMCompiler) CompileAndOptimizeStatic(bytecode []byte, opts *EVMCompilationOpts) error {
+	_, err := c.CompileBytecodeStatic(bytecode, opts)
 	if err != nil {
 		return err
 	}

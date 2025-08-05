@@ -96,7 +96,7 @@ func TestGasConsumptionBasic(t *testing.T) {
 			defer comp.Dispose()
 
 			opts := &EVMExecutionOpts{GasLimit: tc.gasLimit}
-			result, err := comp.ExecuteCompiledWithOpts(tc.bytecode, opts)
+			result, err := comp.ExecuteCompiledWithOpts(tc.bytecode, DefaultEVMCompilationOpts(), opts)
 			if err != nil {
 				t.Fatalf("Execution failed: %v", err)
 			}
@@ -163,7 +163,7 @@ func TestGasMemoryOperations(t *testing.T) {
 			defer comp.Dispose()
 
 			opts := &EVMExecutionOpts{GasLimit: tc.gasLimit}
-			result, err := comp.ExecuteCompiledWithOpts(tc.bytecode, opts)
+			result, err := comp.ExecuteCompiledWithOpts(tc.bytecode, DefaultEVMCompilationOpts(), opts)
 			if err != nil {
 				if !tc.expectError {
 					t.Fatalf("Unexpected execution error: %v", err)
@@ -220,7 +220,7 @@ func TestGasStackOperations(t *testing.T) {
 			defer comp.Dispose()
 
 			opts := &EVMExecutionOpts{GasLimit: tc.gasLimit}
-			result, err := comp.ExecuteCompiledWithOpts(tc.bytecode, opts)
+			result, err := comp.ExecuteCompiledWithOpts(tc.bytecode, DefaultEVMCompilationOpts(), opts)
 			if err != nil {
 				t.Fatalf("Execution failed: %v", err)
 			}
@@ -270,7 +270,7 @@ func TestGasJumpOperations(t *testing.T) {
 			defer comp.Dispose()
 
 			opts := &EVMExecutionOpts{GasLimit: tc.gasLimit}
-			result, err := comp.ExecuteCompiledWithOpts(tc.bytecode, opts)
+			result, err := comp.ExecuteCompiledWithOpts(tc.bytecode, DefaultEVMCompilationOpts(), opts)
 			if err != nil {
 				t.Fatalf("Execution failed: %v", err)
 			}
@@ -336,7 +336,7 @@ func TestGasComplexContract(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			opts := &EVMExecutionOpts{GasLimit: tc.gasLimit}
-			result, err := comp.ExecuteCompiledWithOpts(bytecode, opts)
+			result, err := comp.ExecuteCompiledWithOpts(bytecode, DefaultEVMCompilationOpts(), opts)
 			if err != nil {
 				t.Fatalf("Execution failed: %v", err)
 			}

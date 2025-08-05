@@ -319,6 +319,16 @@ type EVMExecutionOpts struct {
 	GasLimit uint64
 }
 
+type EVMCompilationOpts struct {
+	DisableGas bool
+}
+
+func DefaultEVMCompilationOpts() *EVMCompilationOpts {
+	return &EVMCompilationOpts{
+		DisableGas: false,
+	}
+}
+
 type ExecutionStatus int
 
 const (
@@ -391,7 +401,7 @@ func (c *EVMCompiler) ParseBytecode(bytecode []byte) ([]EVMInstruction, error) {
 
 func (c *EVMCompiler) CompileBytecode(bytecode []byte) (llvm.Module, error) {
 	// Use static analysis approach by default
-	return c.CompileBytecodeStatic(bytecode)
+	return c.CompileBytecodeStatic(bytecode, &EVMCompilationOpts{DisableGas: false})
 }
 
 func (c *EVMCompiler) pushStack(stack, stackPtr, value llvm.Value) {
@@ -495,7 +505,12 @@ func (c *EVMCompiler) OptimizeModule() {
 
 func (c *EVMCompiler) CompileAndOptimize(bytecode []byte) error {
 	// Use static analysis approach by default
-	return c.CompileAndOptimizeStatic(bytecode)
+	return c.CompileAndOptimizeStatic(bytecode, &EVMCompilationOpts{DisableGas: false})
+}
+
+func (c *EVMCompiler) CompileAndOptimizeWithOpts(bytecode []byte, opts *EVMCompilationOpts) error {
+	// Use static analysis approach by default
+	return c.CompileAndOptimizeStatic(bytecode, opts)
 }
 
 func (c *EVMCompiler) CreateExecutionEngine() error {
@@ -598,11 +613,11 @@ func (c *EVMCompiler) ExecuteCompiled(bytecode []byte) (*EVMExecutionResult, err
 		1000000,
 	}
 
-	return c.ExecuteCompiledWithOpts(bytecode, opts)
+	return c.ExecuteCompiledWithOpts(bytecode, DefaultEVMCompilationOpts(), opts)
 }
 
 // ExecuteCompiled executes compiled EVM code using function pointer for better performance
-func (c *EVMCompiler) ExecuteCompiledWithOpts(bytecode []byte, opts *EVMExecutionOpts) (*EVMExecutionResult, error) {
+func (c *EVMCompiler) ExecuteCompiledWithOpts(bytecode []byte, copts *EVMCompilationOpts, opts *EVMExecutionOpts) (*EVMExecutionResult, error) {
 	// Compile if needed
 	err := c.CompileAndOptimize(bytecode)
 	if err != nil {
