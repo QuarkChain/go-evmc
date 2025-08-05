@@ -49,11 +49,11 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 	stackPtr := c.builder.CreateAlloca(c.ctx.Int32Type(), "stack_ptr")
 	c.builder.CreateStore(llvm.ConstInt(c.ctx.Int32Type(), 0, false), stackPtr)
 
-	// Initialize gas tracking
-	var gas llvm.Value
+	// Initialize gasPtr tracking
+	var gasPtr llvm.Value
 	if !opts.DisableGas {
-		gas = c.builder.CreateAlloca(c.ctx.Int64Type(), "gas_used")
-		c.builder.CreateStore(gasLimitParam, gas)
+		gasPtr = c.builder.CreateAlloca(c.ctx.Int64Type(), "gas_used")
+		c.builder.CreateStore(gasLimitParam, gasPtr)
 	}
 
 	// Create out-of-gas block
@@ -93,7 +93,7 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 			}
 		}
 
-		c.compileInstructionStatic(instr, stackParam, stackPtr, memoryParam, gas, analysis, nextBlock, exitBlock, outOfGasBlock, opts.DisableGas)
+		c.compileInstructionStatic(instr, stackParam, stackPtr, memoryParam, gasPtr, analysis, nextBlock, exitBlock, outOfGasBlock, opts.DisableGas)
 	}
 
 	// Finalize out-of-gas block
@@ -107,7 +107,7 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 	if opts.DisableGas {
 		c.builder.CreateRet(gasLimitParam)
 	} else {
-		finalGasUsed := c.builder.CreateLoad(c.ctx.Int64Type(), gas, "final_gas_used")
+		finalGasUsed := c.builder.CreateLoad(c.ctx.Int64Type(), gasPtr, "final_gas_used")
 		c.builder.CreateRet(finalGasUsed)
 	}
 
@@ -151,12 +151,12 @@ func (c *EVMCompiler) getNextPC(currentInstr EVMInstruction, instructions []EVMI
 }
 
 // compileInstructionStatic compiles an instruction using static analysis with gas metering
-func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stackPtr, memory, gas llvm.Value, analysis *PCAnalysis, nextBlock, exitBlock, outOfGasBlock llvm.BasicBlock, disableGasMetering bool) {
+func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stackPtr, memory, gasPtr llvm.Value, analysis *PCAnalysis, nextBlock, exitBlock, outOfGasBlock llvm.BasicBlock, disableGasMetering bool) {
 	uint256Type := c.ctx.IntType(256)
 
 	// Add gas consumption for this instruction
 	if !disableGasMetering {
-		c.consumeGas(instr.Opcode, gas, outOfGasBlock)
+		c.consumeGas(instr.Opcode, gasPtr, outOfGasBlock)
 	}
 
 	switch instr.Opcode {
@@ -383,7 +383,7 @@ func (c *EVMCompiler) compileSwapStatic(instr EVMInstruction, stack, stackPtr ll
 }
 
 // consumeGas adds gas consumption for an opcode and checks for out-of-gas condition
-func (c *EVMCompiler) consumeGas(opcode EVMOpcode, gas llvm.Value, outOfGasBlock llvm.BasicBlock) {
+func (c *EVMCompiler) consumeGas(opcode EVMOpcode, gasPtr llvm.Value, outOfGasBlock llvm.BasicBlock) {
 	// Get gas cost for this opcode
 	gasCost := getGasCost(opcode)
 	if gasCost == 0 {
@@ -391,7 +391,7 @@ func (c *EVMCompiler) consumeGas(opcode EVMOpcode, gas llvm.Value, outOfGasBlock
 	}
 
 	// Load current gas used
-	currentGas := c.builder.CreateLoad(c.ctx.Int64Type(), gas, "gas_remaining")
+	currentGas := c.builder.CreateLoad(c.ctx.Int64Type(), gasPtr, "gas_remaining")
 
 	// Check if we exceed gas limit
 	gasCostValue := llvm.ConstInt(c.ctx.Int64Type(), gasCost, false)
@@ -407,7 +407,7 @@ func (c *EVMCompiler) consumeGas(opcode EVMOpcode, gas llvm.Value, outOfGasBlock
 
 	// Sub gas cost and store
 	newGas := c.builder.CreateSub(currentGas, gasCostValue, "new_gas_used")
-	c.builder.CreateStore(newGas, gas)
+	c.builder.CreateStore(newGas, gasPtr)
 }
 
 // CompileAndOptimizeStatic compiles using static analysis
