@@ -262,8 +262,8 @@ func (c *EVMCompiler) ParseBytecode(bytecode []byte) ([]EVMInstruction, error) {
 }
 
 func (c *EVMCompiler) CompileBytecode(bytecode []byte) (llvm.Module, error) {
-	// Use static stack analysis approach by default
-	return c.CompileBytecodeStaticStack(bytecode)
+	// Use static analysis approach by default
+	return c.CompileBytecodeStatic(bytecode)
 }
 
 func (c *EVMCompiler) compileInstruction(instr EVMInstruction, stack, stackPtr, memory, pcPtr llvm.Value, mainLoop, exitBlock llvm.BasicBlock) {
@@ -604,14 +604,8 @@ func (c *EVMCompiler) OptimizeModule() {
 }
 
 func (c *EVMCompiler) CompileAndOptimize(bytecode []byte) error {
-	// Use static stack analysis approach by default
-	_, err := c.CompileBytecodeStaticStack(bytecode)
-	if err != nil {
-		return err
-	}
-
-	c.OptimizeModule()
-	return nil
+	// Use static analysis approach by default
+	return c.CompileAndOptimizeStatic(bytecode)
 }
 
 func (c *EVMCompiler) CreateExecutionEngine() error {
