@@ -359,14 +359,10 @@ func (c *EVMCompiler) EmitLLVMIR(filename string) error {
 }
 
 func (c *EVMCompiler) OptimizeModule() {
-	passManager := llvm.NewFunctionPassManagerForModule(c.module)
-	defer passManager.Dispose()
+	opts := llvm.NewPassBuilderOptions()
+	defer opts.Dispose()
 
-	passManager.InitializeFunc()
-	for fn := c.module.FirstFunction(); !fn.IsNil(); fn = llvm.NextFunction(fn) {
-		passManager.RunFunc(fn)
-	}
-	passManager.FinalizeFunc()
+	c.module.RunPasses("default<O3>", c.machine, opts)
 }
 
 func (c *EVMCompiler) CompileAndOptimize(bytecode []byte) error {
