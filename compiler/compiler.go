@@ -1,8 +1,8 @@
 package compiler
 
 // #include <stdint.h>
-// typedef void (*func)(void* memory, void* stack, uint64_t gas);
-// static void execute(uint64_t f, void* memory, void* stack, uint64_t gas) { ((func)f)(memory, stack, gas); }
+// typedef int64_t (*func)(void* memory, void* stack, void* code, uint64_t gas);
+// static int64_t execute(uint64_t f, void* memory, void* stack, void* code, uint64_t gas) { return ((func)f)(memory, stack, code, gas); }
 import "C"
 import (
 	"fmt"
@@ -179,6 +179,126 @@ const (
 	SWAP16
 )
 
+// Gas costs for EVM opcodes (based on Ethereum Yellow Paper)
+var gasCosts = map[EVMOpcode]uint64{
+	// Base costs
+	STOP:       0,
+	ADD:        3,
+	MUL:        5,
+	SUB:        3,
+	DIV:        5,
+	SDIV:       5,
+	MOD:        5,
+	SMOD:       5,
+	ADDMOD:     8,
+	MULMOD:     8,
+	EXP:        10, // Base cost, additional cost for each byte in exponent
+	SIGNEXTEND: 5,
+
+	// Comparison and bitwise operations
+	LT:     3,
+	GT:     3,
+	SLT:    3,
+	SGT:    3,
+	EQ:     3,
+	ISZERO: 3,
+	AND:    3,
+	OR:     3,
+	XOR:    3,
+	NOT:    3,
+	BYTE:   3,
+	SHL:    3,
+	SHR:    3,
+	SAR:    3,
+
+	// SHA3
+	SHA3: 30, // Base cost, additional cost for each word hashed
+
+	// Environmental information
+	ADDRESS:        2,
+	BALANCE:        100, // Was 400 before EIP-1884
+	ORIGIN:         2,
+	CALLER:         2,
+	CALLVALUE:      2,
+	CALLDATALOAD:   3,
+	CALLDATASIZE:   2,
+	CALLDATACOPY:   3, // Base cost, additional cost for each byte copied
+	CODESIZE:       2,
+	CODECOPY:       3, // Base cost, additional cost for each byte copied
+	GASPRICE:       2,
+	EXTCODESIZE:    100, // Was 700 before EIP-1884
+	EXTCODECOPY:    100, // Base cost, additional cost for each byte copied
+	RETURNDATASIZE: 2,
+	RETURNDATACOPY: 3,   // Base cost, additional cost for each byte copied
+	EXTCODEHASH:    100, // Was 400 before EIP-1884
+
+	// Block information
+	BLOCKHASH:   20,
+	COINBASE:    2,
+	TIMESTAMP:   2,
+	NUMBER:      2,
+	PREVRANDAO:  2, // Formerly DIFFICULTY
+	GASLIMIT:    2,
+	CHAINID:     2,
+	SELFBALANCE: 5,
+	BASEFEE:     2,
+
+	// Stack, memory, storage and flow operations
+	POP:      2,
+	MLOAD:    3,
+	MSTORE:   3,
+	MSTORE8:  3,
+	SLOAD:    100, // Was 800 before EIP-1884, now 100
+	SSTORE:   100, // Base cost, actual cost depends on storage change
+	JUMP:     8,
+	JUMPI:    10,
+	PC:       2,
+	MSIZE:    2,
+	GAS:      2,
+	JUMPDEST: 1,
+
+	// Log operations
+	LOG0: 375,
+	LOG4: 375, // Base cost, additional cost for each topic and byte
+
+	// System operations
+	CREATE:       32000,
+	CALL:         100, // Base cost, additional costs apply
+	CALLCODE:     100, // Base cost, additional costs apply
+	RETURN:       0,
+	DELEGATECALL: 100, // Base cost, additional costs apply
+	CREATE2:      32000,
+	STATICCALL:   100, // Base cost, additional costs apply
+	REVERT:       0,
+	INVALID:      0,
+	SELFDESTRUCT: 5000, // Base cost, additional refund possible
+}
+
+// getGasCost returns the gas cost for an opcode
+func getGasCost(opcode EVMOpcode) uint64 {
+	if cost, exists := gasCosts[opcode]; exists {
+		return cost
+	}
+
+	// Handle PUSH opcodes
+	if opcode >= PUSH1 && opcode <= PUSH32 {
+		return 3
+	}
+
+	// Handle DUP opcodes
+	if opcode >= DUP1 && opcode <= DUP16 {
+		return 3
+	}
+
+	// Handle SWAP opcodes
+	if opcode >= SWAP1 && opcode <= SWAP16 {
+		return 3
+	}
+
+	// Unknown opcode
+	return 0
+}
+
 type EVMInstruction struct {
 	Opcode EVMOpcode
 	Data   []byte
@@ -186,10 +306,17 @@ type EVMInstruction struct {
 }
 
 type EVMExecutionResult struct {
-	Stack  [][32]byte
-	Memory []byte
-	Status ExecutionStatus
-	Error  error
+	Stack        [][32]byte
+	Memory       []byte
+	Status       ExecutionStatus
+	Error        error
+	GasUsed      uint64
+	GasLimit     uint64
+	GasRemaining uint64
+}
+
+type EVMExecutionOpts struct {
+	GasLimit uint64
 }
 
 type ExecutionStatus int
@@ -198,6 +325,7 @@ const (
 	ExecutionSuccess ExecutionStatus = iota
 	ExecutionRevert
 	ExecutionError
+	ExecutionOutOfGas
 )
 
 func NewEVMCompiler() *EVMCompiler {
@@ -387,7 +515,7 @@ func (c *EVMCompiler) CreateExecutionEngine() error {
 }
 
 // Execute the compiled EVM code
-func (c *EVMCompiler) Execute() (*EVMExecutionResult, error) {
+func (c *EVMCompiler) Execute(opts *EVMExecutionOpts) (*EVMExecutionResult, error) {
 	// Prepare execution environment
 	// TODO: support dynamic size growth
 	const stackSize = 1024
@@ -395,17 +523,36 @@ func (c *EVMCompiler) Execute() (*EVMExecutionResult, error) {
 
 	stack := make([][32]byte, stackSize)
 	memory := make([]byte, memorySize)
+	gasLimit := opts.GasLimit
 
 	// Execute using function pointer
-	err := c.callNativeFunction(c.funcPtr, unsafe.Pointer(&memory[0]), unsafe.Pointer(&stack[0]), uint64(1000000))
+	gasUsedResult, err := c.callNativeFunction(c.funcPtr, unsafe.Pointer(&memory[0]), unsafe.Pointer(&stack[0]), gasLimit)
 	if err != nil {
 		return &EVMExecutionResult{
-			Stack:  nil,
-			Memory: nil,
-			Status: ExecutionError,
-			Error:  err,
+			Stack:        nil,
+			Memory:       nil,
+			Status:       ExecutionError,
+			Error:        err,
+			GasUsed:      0,
+			GasLimit:     gasLimit,
+			GasRemaining: gasLimit,
 		}, nil
 	}
+
+	// Check for out-of-gas condition
+	if gasUsedResult == -1 {
+		return &EVMExecutionResult{
+			Stack:        nil,
+			Memory:       nil,
+			Status:       ExecutionOutOfGas,
+			Error:        fmt.Errorf("out of gas"),
+			GasUsed:      gasLimit,
+			GasLimit:     gasLimit,
+			GasRemaining: 0,
+		}, nil
+	}
+
+	gasUsed := uint64(gasUsedResult)
 
 	// Process results same as ExecuteCompiled
 	stackDepth := 0
@@ -435,15 +582,27 @@ func (c *EVMCompiler) Execute() (*EVMExecutionResult, error) {
 	}
 
 	return &EVMExecutionResult{
-		Stack:  resultStack,
-		Memory: memory[:memoryUsed],
-		Status: ExecutionSuccess,
-		Error:  nil,
+		Stack:        resultStack,
+		Memory:       memory[:memoryUsed],
+		Status:       ExecutionSuccess,
+		Error:        nil,
+		GasUsed:      gasUsed,
+		GasLimit:     gasLimit,
+		GasRemaining: gasLimit - gasUsed,
 	}, nil
 }
 
 // ExecuteCompiled executes compiled EVM code using function pointer for better performance
 func (c *EVMCompiler) ExecuteCompiled(bytecode []byte) (*EVMExecutionResult, error) {
+	opts := &EVMExecutionOpts{
+		1000000,
+	}
+
+	return c.ExecuteCompiledWithOpts(bytecode, opts)
+}
+
+// ExecuteCompiled executes compiled EVM code using function pointer for better performance
+func (c *EVMCompiler) ExecuteCompiledWithOpts(bytecode []byte, opts *EVMExecutionOpts) (*EVMExecutionResult, error) {
 	// Compile if needed
 	err := c.CompileAndOptimize(bytecode)
 	if err != nil {
@@ -456,11 +615,11 @@ func (c *EVMCompiler) ExecuteCompiled(bytecode []byte) (*EVMExecutionResult, err
 		return nil, err
 	}
 
-	return c.Execute()
+	return c.Execute(opts)
 }
 
 // Helper function to call native function pointer (requires CGO)
-func (c *EVMCompiler) callNativeFunction(funcPtr uint64, memory, stack unsafe.Pointer, gas uint64) error {
-	C.execute(C.uint64_t(funcPtr), memory, stack, C.uint64_t(gas))
-	return nil
+func (c *EVMCompiler) callNativeFunction(funcPtr uint64, memory, stack unsafe.Pointer, gas uint64) (int64, error) {
+	result := C.execute(C.uint64_t(funcPtr), memory, stack, nil, C.uint64_t(gas))
+	return int64(result), nil
 }

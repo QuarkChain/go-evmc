@@ -27,11 +27,11 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte) (llvm.Module, error
 	uint8PtrType := llvm.PointerType(c.ctx.Int8Type(), 0)
 	uint256PtrType := llvm.PointerType(uint256Type, 0)
 
-	execType := llvm.FunctionType(c.ctx.VoidType(), []llvm.Type{
+	execType := llvm.FunctionType(c.ctx.Int64Type(), []llvm.Type{
 		uint8PtrType,      // memory
 		uint256PtrType,    // stack
 		uint8PtrType,      // code (unused but kept for signature)
-		c.ctx.Int64Type(), // gas (unused but kept for signature)
+		c.ctx.Int64Type(), // gas limit
 	}, false)
 
 	execFunc := llvm.AddFunction(c.module, "execute", execType)
@@ -39,6 +39,7 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte) (llvm.Module, error
 
 	memoryParam := execFunc.Param(0)
 	stackParam := execFunc.Param(1)
+	gasLimitParam := execFunc.Param(3)
 
 	// Create entry block
 	entryBlock := llvm.AddBasicBlock(execFunc, "entry")
@@ -47,6 +48,13 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte) (llvm.Module, error
 	// Initialize stack pointer
 	stackPtr := c.builder.CreateAlloca(c.ctx.Int32Type(), "stack_ptr")
 	c.builder.CreateStore(llvm.ConstInt(c.ctx.Int32Type(), 0, false), stackPtr)
+
+	// Initialize gas tracking
+	gas := c.builder.CreateAlloca(c.ctx.Int64Type(), "gas_used")
+	c.builder.CreateStore(gasLimitParam, gas)
+
+	// Create out-of-gas block
+	outOfGasBlock := llvm.AddBasicBlock(execFunc, "out_of_gas")
 
 	// Create exit block
 	exitBlock := llvm.AddBasicBlock(execFunc, "exit")
@@ -79,12 +87,17 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte) (llvm.Module, error
 			}
 		}
 
-		c.compileInstructionStatic(instr, stackParam, stackPtr, memoryParam, analysis, nextBlock, exitBlock)
+		c.compileInstructionStatic(instr, stackParam, stackPtr, memoryParam, gasLimitParam, gas, analysis, nextBlock, exitBlock, outOfGasBlock)
 	}
+
+	// Finalize out-of-gas block
+	c.builder.SetInsertPointAtEnd(outOfGasBlock)
+	c.builder.CreateRet(llvm.ConstInt(c.ctx.Int64Type(), ^uint64(0), false)) // Return -1 for out of gas
 
 	// Finalize exit block
 	c.builder.SetInsertPointAtEnd(exitBlock)
-	c.builder.CreateRetVoid()
+	finalGasUsed := c.builder.CreateLoad(c.ctx.Int64Type(), gas, "final_gas_used")
+	c.builder.CreateRet(finalGasUsed)
 
 	err = llvm.VerifyModule(c.module, llvm.ReturnStatusAction)
 	if err != nil {
@@ -125,9 +138,12 @@ func (c *EVMCompiler) getNextPC(currentInstr EVMInstruction, instructions []EVMI
 	return ^uint64(0) // End of program marker
 }
 
-// compileInstructionStatic compiles an instruction using static analysis
-func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stackPtr, memory llvm.Value, analysis *PCAnalysis, nextBlock, exitBlock llvm.BasicBlock) {
+// compileInstructionStatic compiles an instruction using static analysis with gas metering
+func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stackPtr, memory, gasLimit, gas llvm.Value, analysis *PCAnalysis, nextBlock, exitBlock, outOfGasBlock llvm.BasicBlock) {
 	uint256Type := c.ctx.IntType(256)
+
+	// Add gas consumption for this instruction
+	c.consumeGas(instr.Opcode, gasLimit, gas, outOfGasBlock)
 
 	switch instr.Opcode {
 	case STOP:
@@ -350,6 +366,34 @@ func (c *EVMCompiler) compileSwapStatic(instr EVMInstruction, stack, stackPtr ll
 	c.builder.CreateStore(value2, elem1)
 	c.builder.CreateStore(value1, elem2)
 	c.builder.CreateBr(nextBlock)
+}
+
+// consumeGas adds gas consumption for an opcode and checks for out-of-gas condition
+func (c *EVMCompiler) consumeGas(opcode EVMOpcode, gasLimit, gas llvm.Value, outOfGasBlock llvm.BasicBlock) {
+	// Get gas cost for this opcode
+	gasCost := getGasCost(opcode)
+	if gasCost == 0 {
+		return // No gas consumption for this opcode
+	}
+
+	// Load current gas used
+	currentGas := c.builder.CreateLoad(c.ctx.Int64Type(), gas, "gas_remaining")
+
+	// Check if we exceed gas limit
+	gasCostValue := llvm.ConstInt(c.ctx.Int64Type(), gasCost, false)
+	exceedsLimit := c.builder.CreateICmp(llvm.IntUGT, gasCostValue, currentGas, "exceeds_gas_limit")
+
+	// Create continuation block
+	continueBlock := llvm.AddBasicBlock(c.builder.GetInsertBlock().Parent(), "gas_check_continue")
+
+	// Branch to out-of-gas block if limit exceeded, otherwise continue
+	c.builder.CreateCondBr(exceedsLimit, outOfGasBlock, continueBlock)
+
+	c.builder.SetInsertPointAtEnd(continueBlock)
+
+	// Sub gas cost and store
+	newGas := c.builder.CreateSub(currentGas, gasCostValue, "new_gas_used")
+	c.builder.CreateStore(newGas, gas)
 }
 
 // CompileAndOptimizeStatic compiles using static analysis
