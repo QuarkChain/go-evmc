@@ -80,11 +80,11 @@ func (c *EVMCompiler) getStackInput(opcode EVMOpcode) int {
 	switch opcode {
 	case STOP, JUMPDEST, PC, MSIZE, GAS:
 		return 0
-	case POP, JUMP, JUMPI, MLOAD, MSTORE8, SLOAD, SSTORE, RETURN, REVERT:
+	case ISZERO, NOT, POP, JUMP, MLOAD, SLOAD, RETURN, REVERT:
 		return 1
 	case ADD, MUL, SUB, DIV, SDIV, MOD, SMOD, EXP, SIGNEXTEND,
-		LT, GT, SLT, SGT, EQ, ISZERO, AND, OR, XOR, BYTE,
-		SHL, SHR, SAR, MSTORE:
+		LT, GT, SLT, SGT, EQ, AND, OR, XOR, BYTE,
+		SHL, SHR, SAR, MSTORE, MSTORE8, SSTORE, JUMPI:
 		return 2
 	case ADDMOD, MULMOD:
 		return 3
@@ -105,11 +105,11 @@ func (c *EVMCompiler) getStackInput(opcode EVMOpcode) int {
 // getStackOutput returns the number of stack items an opcode produces
 func (c *EVMCompiler) getStackOutput(opcode EVMOpcode) int {
 	switch opcode {
-	case STOP, JUMP, JUMPDEST, POP, MSTORE, MSTORE8, SSTORE, RETURN, REVERT:
+	case STOP, JUMP, JUMPDEST, POP, MSTORE, MSTORE8, SSTORE, JUMPI, RETURN, REVERT:
 		return 0
 	case ADD, MUL, SUB, DIV, SDIV, MOD, SMOD, EXP, SIGNEXTEND,
-		LT, GT, SLT, SGT, EQ, ISZERO, AND, OR, XOR, BYTE,
-		SHL, SHR, SAR, PC, MSIZE, GAS, MLOAD, SLOAD, JUMPI:
+		LT, GT, SLT, SGT, EQ, ISZERO, NOT, AND, OR, XOR, BYTE,
+		SHL, SHR, SAR, PC, MSIZE, GAS, MLOAD, SLOAD:
 		return 1
 	case ADDMOD, MULMOD:
 		return 1

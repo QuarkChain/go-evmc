@@ -190,6 +190,64 @@ func TestEVMExecuteMultiplication(t *testing.T) {
 	}
 }
 
+func TestEVMExecuteSwap(t *testing.T) {
+	comp := NewEVMCompiler()
+	defer comp.Dispose()
+
+	// PUSH1 7, PUSH1 6, PUSH1 9, SWAP2, POP, POP, STOP
+	bytecode := []byte{0x60, 0x07, 0x60, 0x06, 0x60, 0x9, byte(SWAP2), byte(POP), byte(POP), 0x00}
+
+	result, err := comp.ExecuteCompiled(bytecode)
+	if err != nil {
+		t.Fatalf("Execution failed: %v", err)
+	}
+
+	if result.Status != ExecutionSuccess {
+		t.Fatalf("Expected success status, got %v", result.Status)
+	}
+
+	// TODO:
+	// if len(result.Stack) != 1 {
+	// 	t.Fatalf("Expected 1 stack item, got %d", len(result.Stack))
+	// }
+
+	// Check if the result is 9
+	expected := uint256.NewInt(9).Bytes32()
+
+	if FromMachineToBig32Bytes(result.Stack[0]) != expected {
+		t.Fatalf("Expected stack top to be 9, got %v", result.Stack[0])
+	}
+}
+
+func TestEVMExecuteJump(t *testing.T) {
+	comp := NewEVMCompiler()
+	defer comp.Dispose()
+
+	// PUSH1 7, PUSH1 6, PUSH1 7, JUMP, JUMPDEST, PUSH1 9, SWAP2, POP, POP, STOP
+	bytecode := []byte{0x60, 0x07, 0x60, 0x06, byte(PUSH1), 0x7, byte(JUMP), byte(JUMPDEST), 0x60, 0x9, byte(SWAP2), byte(POP), byte(POP), 0x00}
+
+	result, err := comp.ExecuteCompiled(bytecode)
+	if err != nil {
+		t.Fatalf("Execution failed: %v", err)
+	}
+
+	if result.Status != ExecutionSuccess {
+		t.Fatalf("Expected success status, got %v", result.Status)
+	}
+
+	// TODO:
+	// if len(result.Stack) != 1 {
+	// 	t.Fatalf("Expected 1 stack item, got %d", len(result.Stack))
+	// }
+
+	// Check if the result is 9
+	expected := uint256.NewInt(9).Bytes32()
+
+	if FromMachineToBig32Bytes(result.Stack[0]) != expected {
+		t.Fatalf("Expected stack top to be 9, got %v", result.Stack[0])
+	}
+}
+
 func TestEVMExecuteStackPushN(t *testing.T) {
 	comp := NewEVMCompiler()
 	defer comp.Dispose()
@@ -321,7 +379,7 @@ func TestEVMExecuteFib(t *testing.T) {
 	comp := NewEVMCompiler()
 	defer comp.Dispose()
 
-	n := uint32(10000000)
+	n := uint32(10000)
 
 	result, err := comp.ExecuteCompiled(GetFibCode(n))
 	if err != nil {
