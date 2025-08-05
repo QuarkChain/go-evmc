@@ -541,7 +541,7 @@ func (c *EVMCompiler) Execute(opts *EVMExecutionOpts) (*EVMExecutionResult, erro
 	gasLimit := opts.GasLimit
 
 	// Execute using function pointer
-	gasUsedResult, err := c.callNativeFunction(c.funcPtr, unsafe.Pointer(&memory[0]), unsafe.Pointer(&stack[0]), gasLimit)
+	gasRemainingResult, err := c.callNativeFunction(c.funcPtr, unsafe.Pointer(&memory[0]), unsafe.Pointer(&stack[0]), gasLimit)
 	if err != nil {
 		return &EVMExecutionResult{
 			Stack:        nil,
@@ -555,7 +555,7 @@ func (c *EVMCompiler) Execute(opts *EVMExecutionOpts) (*EVMExecutionResult, erro
 	}
 
 	// Check for out-of-gas condition
-	if gasUsedResult == -1 {
+	if gasRemainingResult == -1 {
 		return &EVMExecutionResult{
 			Stack:        nil,
 			Memory:       nil,
@@ -567,7 +567,7 @@ func (c *EVMCompiler) Execute(opts *EVMExecutionOpts) (*EVMExecutionResult, erro
 		}, nil
 	}
 
-	gasUsed := uint64(gasUsedResult)
+	gasRemaining := uint64(gasRemainingResult)
 
 	// Process results same as ExecuteCompiled
 	stackDepth := 0
@@ -601,9 +601,9 @@ func (c *EVMCompiler) Execute(opts *EVMExecutionOpts) (*EVMExecutionResult, erro
 		Memory:       memory[:memoryUsed],
 		Status:       ExecutionSuccess,
 		Error:        nil,
-		GasUsed:      gasUsed,
+		GasUsed:      gasLimit - gasRemaining,
 		GasLimit:     gasLimit,
-		GasRemaining: gasLimit - gasUsed,
+		GasRemaining: gasRemaining,
 	}, nil
 }
 

@@ -79,7 +79,7 @@ func TestGasConsumptionBasic(t *testing.T) {
 			bytecode:       []byte{0x60, 0x0A, 0x60, 0x05, 0x02, 0x60, 0x14, 0x03, 0x00}, // PUSH1 10, PUSH1 5, MUL, PUSH1 20, SUB, STOP
 			gasLimit:       100,
 			expectOutOfGas: false,
-			expectedGas:    14, // PUSH1(3) + PUSH1(3) + MUL(5) + PUSH1(3) + SUB(3) + STOP(0) = 17, but actual gas tracking may differ
+			expectedGas:    17, // PUSH1(3) + PUSH1(3) + MUL(5) + PUSH1(3) + SUB(3) + STOP(0) = 17, but actual gas tracking may differ
 		},
 		{
 			name:           "Comparison operations",
@@ -121,9 +121,9 @@ func TestGasConsumptionBasic(t *testing.T) {
 				t.Errorf("Expected gas limit %d, got %d", tc.gasLimit, result.GasLimit)
 			}
 
-			if !tc.expectOutOfGas && result.GasRemaining != (tc.gasLimit-result.GasUsed) {
-				t.Errorf("Gas remaining mismatch: limit=%d, used=%d, remaining=%d",
-					result.GasLimit, result.GasUsed, result.GasRemaining)
+			if !tc.expectOutOfGas && result.GasRemaining != (tc.gasLimit-tc.expectedGas) {
+				t.Errorf("Gas remaining mismatch: limit=%d, expected=%d, actual=%d",
+					result.GasLimit, tc.expectedGas, result.GasUsed)
 			}
 		})
 	}
