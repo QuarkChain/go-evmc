@@ -171,10 +171,9 @@ This project is licensed under the same terms as the parent research repository.
 
 ## Future Enhancements
 
-- [ ] WebAssembly target support
-- [ ] Advanced optimization passes
+- [x] Advanced optimization passes
 - [ ] Debugger integration
 - [ ] Profiling and tracing support
 - [ ] Formal verification capabilities
-- [ ] Gas metering integration
+- [x] Gas metering integration
 - [ ] Precompiled contracts support

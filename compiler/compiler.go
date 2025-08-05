@@ -14,15 +14,16 @@ import (
 )
 
 type EVMCompiler struct {
-	ctx       llvm.Context
-	module    llvm.Module
-	builder   llvm.Builder
-	target    llvm.Target
-	machine   llvm.TargetMachine
-	stackType llvm.Type
-	memType   llvm.Type
-	engine    *llvm.ExecutionEngine
-	funcPtr   uint64
+	ctx            llvm.Context
+	module         llvm.Module
+	builder        llvm.Builder
+	target         llvm.Target
+	machine        llvm.TargetMachine
+	stackType      llvm.Type
+	memType        llvm.Type
+	engine         *llvm.ExecutionEngine
+	funcPtr        uint64
+	initSectionGas uint64
 }
 
 type EVMOpcode uint8
@@ -320,12 +321,14 @@ type EVMExecutionOpts struct {
 }
 
 type EVMCompilationOpts struct {
-	DisableGas bool
+	DisableGas                    bool
+	DisableSectionGasOptimization bool
 }
 
 func DefaultEVMCompilationOpts() *EVMCompilationOpts {
 	return &EVMCompilationOpts{
-		DisableGas: false,
+		DisableGas:                    false,
+		DisableSectionGasOptimization: false,
 	}
 }
 

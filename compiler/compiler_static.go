@@ -9,7 +9,7 @@ import (
 // PCAnalysis holds static program counter analysis results
 type PCAnalysis struct {
 	instructionBlocks map[uint64]llvm.BasicBlock // PC -> basic block mapping
-	jumpTargets       map[uint64]bool            // Valid jump targets (JUMPDEST)
+	jumpTargets       map[uint64]uint64          // Valid jump targets (JUMPDEST)
 	pcToInstruction   map[uint64]*EVMInstruction // PC -> instruction mapping
 }
 
@@ -62,6 +62,11 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 		outOfGasBlock = llvm.AddBasicBlock(execFunc, "out_of_gas")
 	}
 
+	// Consume the initial section gas
+	if !opts.DisableGas && !opts.DisableSectionGasOptimization {
+		c.consumeSectionGas(c.initSectionGas, gasPtr, outOfGasBlock)
+	}
+
 	// Create exit block
 	exitBlock := llvm.AddBasicBlock(execFunc, "exit")
 
@@ -93,7 +98,7 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 			}
 		}
 
-		c.compileInstructionStatic(instr, stackParam, stackPtr, memoryParam, gasPtr, analysis, nextBlock, exitBlock, outOfGasBlock, opts.DisableGas)
+		c.compileInstructionStatic(instr, stackParam, stackPtr, memoryParam, gasPtr, analysis, nextBlock, exitBlock, outOfGasBlock, opts)
 	}
 
 	// Finalize out-of-gas block
@@ -123,17 +128,36 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 func (c *EVMCompiler) analyzeProgram(instructions []EVMInstruction) *PCAnalysis {
 	analysis := &PCAnalysis{
 		instructionBlocks: make(map[uint64]llvm.BasicBlock),
-		jumpTargets:       make(map[uint64]bool),
+		jumpTargets:       make(map[uint64]uint64),
 		pcToInstruction:   make(map[uint64]*EVMInstruction),
 	}
 
 	// Build PC to instruction mapping and identify jump targets
+	sectionGas := uint64(0)
+	sectionStartPC := -1
 	for i := range instructions {
 		instr := &instructions[i]
 		analysis.pcToInstruction[instr.PC] = instr
 
-		if instr.Opcode == JUMPDEST {
-			analysis.jumpTargets[instr.PC] = true
+		sectionGas += getGasCost(instr.Opcode)
+
+		// TODO: Add CALL code
+		if instr.Opcode == JUMPDEST || instr.Opcode == JUMP || instr.Opcode == JUMPI || instr.Opcode == STOP {
+			// end of section
+			if sectionStartPC == -1 {
+				c.initSectionGas = sectionGas
+			} else if sectionStartPC == -2 {
+				// section not started.  the code will never be reached
+			} else {
+				analysis.jumpTargets[uint64(sectionStartPC)] = sectionGas
+			}
+			if instr.Opcode == JUMPDEST {
+				// start of section
+				sectionStartPC = int(instr.PC)
+				sectionGas = 0
+			} else {
+				sectionStartPC = -2 // section not started yet
+			}
 		}
 	}
 
@@ -151,11 +175,11 @@ func (c *EVMCompiler) getNextPC(currentInstr EVMInstruction, instructions []EVMI
 }
 
 // compileInstructionStatic compiles an instruction using static analysis with gas metering
-func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stackPtr, memory, gasPtr llvm.Value, analysis *PCAnalysis, nextBlock, exitBlock, outOfGasBlock llvm.BasicBlock, disableGasMetering bool) {
+func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stackPtr, memory, gasPtr llvm.Value, analysis *PCAnalysis, nextBlock, exitBlock, outOfGasBlock llvm.BasicBlock, opts *EVMCompilationOpts) {
 	uint256Type := c.ctx.IntType(256)
 
 	// Add gas consumption for this instruction
-	if !disableGasMetering {
+	if !opts.DisableGas && opts.DisableSectionGasOptimization {
 		c.consumeGas(instr.Opcode, gasPtr, outOfGasBlock)
 	}
 
@@ -277,7 +301,11 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stac
 		c.createDynamicJump(target, analysis, exitBlock)
 
 	case JUMPDEST:
-		// JUMPDEST is a no-op, just continue to next instruction
+		// JUMPDEST is a no-op, charge the section gas before continue to next instruction
+		gasCost := analysis.jumpTargets[instr.PC]
+		if !opts.DisableGas && !opts.DisableSectionGasOptimization {
+			c.consumeSectionGas(gasCost, gasPtr, outOfGasBlock)
+		}
 		c.builder.CreateBr(nextBlock)
 
 	case PC:
@@ -386,6 +414,33 @@ func (c *EVMCompiler) compileSwapStatic(instr EVMInstruction, stack, stackPtr ll
 func (c *EVMCompiler) consumeGas(opcode EVMOpcode, gasPtr llvm.Value, outOfGasBlock llvm.BasicBlock) {
 	// Get gas cost for this opcode
 	gasCost := getGasCost(opcode)
+	if gasCost == 0 {
+		return // No gas consumption for this opcode
+	}
+
+	// Load current gas used
+	currentGas := c.builder.CreateLoad(c.ctx.Int64Type(), gasPtr, "gas_remaining")
+
+	// Check if we exceed gas limit
+	gasCostValue := llvm.ConstInt(c.ctx.Int64Type(), gasCost, false)
+	exceedsLimit := c.builder.CreateICmp(llvm.IntUGT, gasCostValue, currentGas, "exceeds_gas_limit")
+
+	// Create continuation block
+	continueBlock := llvm.AddBasicBlock(c.builder.GetInsertBlock().Parent(), "gas_check_continue")
+
+	// Branch to out-of-gas block if limit exceeded, otherwise continue
+	c.builder.CreateCondBr(exceedsLimit, outOfGasBlock, continueBlock)
+
+	c.builder.SetInsertPointAtEnd(continueBlock)
+
+	// Sub gas cost and store
+	newGas := c.builder.CreateSub(currentGas, gasCostValue, "new_gas_used")
+	c.builder.CreateStore(newGas, gasPtr)
+}
+
+// consumeGas adds gas consumption for an opcode and checks for out-of-gas condition
+func (c *EVMCompiler) consumeSectionGas(gasCost uint64, gasPtr llvm.Value, outOfGasBlock llvm.BasicBlock) {
+	// Get gas cost for this opcode
 	if gasCost == 0 {
 		return // No gas consumption for this opcode
 	}
