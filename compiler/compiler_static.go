@@ -313,7 +313,6 @@ func (c *EVMCompiler) createDynamicJump(target llvm.Value, analysis *PCAnalysis,
 			switchInstr.AddCase(pcConstant, block)
 		}
 	}
-	// TODO: add case if PC is not a valid JUMPDEST
 }
 
 // compilePushStatic compiles PUSH instructions with static next block
