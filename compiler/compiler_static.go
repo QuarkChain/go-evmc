@@ -105,7 +105,7 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 	// Finalize exit block
 	c.builder.SetInsertPointAtEnd(exitBlock)
 	if opts.DisableGas {
-		c.builder.CreateRet(gasLimitParam)
+		c.builder.CreateRet(llvm.ConstInt(c.ctx.Int64Type(), uint64(0), false))
 	} else {
 		finalGasUsed := c.builder.CreateLoad(c.ctx.Int64Type(), gasPtr, "final_gas_used")
 		c.builder.CreateRet(finalGasUsed)
