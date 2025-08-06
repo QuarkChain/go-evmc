@@ -18,8 +18,9 @@ var UINT256_NEGATIVE1 = uint256.MustFromHex("0xfffffffffffffffffffffffffffffffff
 // PCAnalysis holds static program counter analysis results
 type PCAnalysis struct {
 	instructionBlocks map[uint64]llvm.BasicBlock // PC -> basic block mapping
-	jumpTargets       map[uint64]uint64          // Valid jump targets (JUMPDEST)
+	jumpTargets       map[uint64]bool            // Valid jump targets (JUMPDEST)
 	pcToInstruction   map[uint64]*EVMInstruction // PC -> instruction mapping
+	sectionGas        map[uint64]uint64          // Gas cost per section
 }
 
 // setOutputValueAt sets the output value at outputPtr
@@ -150,8 +151,9 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 func (c *EVMCompiler) analyzeProgram(instructions []EVMInstruction) *PCAnalysis {
 	analysis := &PCAnalysis{
 		instructionBlocks: make(map[uint64]llvm.BasicBlock),
-		jumpTargets:       make(map[uint64]uint64),
+		jumpTargets:       make(map[uint64]bool),
 		pcToInstruction:   make(map[uint64]*EVMInstruction),
+		sectionGas:        make(map[uint64]uint64),
 	}
 
 	// Build PC to instruction mapping and identify jump targets
@@ -163,25 +165,42 @@ func (c *EVMCompiler) analyzeProgram(instructions []EVMInstruction) *PCAnalysis 
 
 		sectionGas += getGasCost(instr.Opcode)
 
+		if instr.Opcode == JUMPDEST {
+			analysis.jumpTargets[instr.PC] = true
+		}
+
 		// TODO: Add CALL code
 		if instr.Opcode == JUMPDEST || instr.Opcode == JUMP || instr.Opcode == JUMPI || instr.Opcode == STOP {
 			// end of section
+			if instr.Opcode == JUMPDEST {
+				// For JUMPDEST, the section ends at PC-1
+				// o.w., the section ends at PC.
+				sectionGas -= getGasCost(instr.Opcode)
+			}
 			if sectionStartPC == -1 {
 				c.initSectionGas = sectionGas
 			} else if sectionStartPC == -2 {
 				// section not started.  the code will never be reached
 			} else {
-				analysis.jumpTargets[uint64(sectionStartPC)] = sectionGas
+				analysis.sectionGas[uint64(sectionStartPC)] = sectionGas
 			}
-			if instr.Opcode == JUMPDEST {
+			if instr.Opcode == JUMPDEST || instr.Opcode == JUMPI {
 				// start of section
-				sectionStartPC = int(instr.PC)
-				sectionGas = 0
+				if instr.Opcode == JUMPDEST {
+					sectionStartPC = int(instr.PC)
+					sectionGas = getGasCost(instr.Opcode)
+				} else {
+					// JUMPI
+					sectionStartPC = int(instr.PC) + 1
+					sectionGas = 0
+				}
 			} else {
+				// STOP, JUMP won't start a section
 				sectionStartPC = -2 // section not started yet
 			}
 		}
 	}
+	// TODO: check if section gas is charged properly if the code does not end with STOP.
 
 	return analysis
 }
@@ -201,8 +220,13 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stac
 	uint256Type := c.ctx.IntType(256)
 
 	// Add gas consumption for this instruction
-	if !opts.DisableGas && opts.DisableSectionGasOptimization {
-		c.consumeGas(instr.Opcode, gasPtr, outOfGasBlock)
+	if !opts.DisableGas {
+		if opts.DisableSectionGasOptimization {
+			c.consumeGas(instr.Opcode, gasPtr, outOfGasBlock)
+		} else {
+			gasCost := analysis.sectionGas[instr.PC]
+			c.consumeSectionGas(gasCost, gasPtr, outOfGasBlock)
+		}
 	}
 
 	switch instr.Opcode {
@@ -338,10 +362,6 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stac
 
 	case JUMPDEST:
 		// JUMPDEST is a no-op, charge the section gas before continue to next instruction
-		gasCost := analysis.jumpTargets[instr.PC]
-		if !opts.DisableGas && !opts.DisableSectionGasOptimization {
-			c.consumeSectionGas(gasCost, gasPtr, outOfGasBlock)
-		}
 		c.builder.CreateBr(nextBlock)
 
 	case PC:

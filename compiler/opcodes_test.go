@@ -29,6 +29,7 @@ type OpcodeTestCase struct {
 	bytecode      []byte
 	expectedStack [][32]byte
 	expectError   bool
+	expectedGas   uint64
 }
 
 // Helper function to run individual opcode test
@@ -65,6 +66,11 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 				i, expected, bytes32ToUint64(expected),
 				result.Stack[i], bytes32ToUint64(result.Stack[i]))
 		}
+	}
+
+	if testCase.expectedGas != 0 && testCase.expectedGas != result.GasUsed {
+		t.Errorf("Expected gas: %v, actual gas: %v", testCase.expectedGas, result.GasUsed)
+		return
 	}
 }
 
@@ -477,6 +483,7 @@ func TestControlFlowOpcodes(t *testing.T) {
 				0x00, // STOP
 			},
 			expectedStack: [][32]byte{uint64ToBytes32(0x42)},
+			expectedGas:   3 + 3 + 10 + 1 + 3,
 		},
 		{
 			name: "JUMPI_FALSE",
@@ -490,6 +497,7 @@ func TestControlFlowOpcodes(t *testing.T) {
 				0x00, // STOP
 			},
 			expectedStack: [][32]byte{uint64ToBytes32(0xFF), uint64ToBytes32(0x42)},
+			expectedGas:   3 + 3 + 10 + 3 + 1 + 3,
 		},
 	}
 
