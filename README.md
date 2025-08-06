@@ -174,3 +174,11 @@ The compiler is designed for high performance:
 - [x] Gas metering integration
 - [ ] Precompiled contracts support
 - [ ] Dynamic memory growth
+- [ ] Missing OPCODEs
+  - [ ] SHL, SHR support
+  - [ ] SDIV, SMOD, ADDMOD, MULMOD support
+  - [ ] EXP supoort
+  - [ ] MSTORE8/MLOAD8 support
+  - [ ] SLOAD/SSTORE support
+  - [ ] CALL/CREATE support
+- [ ] Fork support
