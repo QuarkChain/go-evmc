@@ -3,14 +3,29 @@ package compiler
 import (
 	"fmt"
 
+	"github.com/holiman/uint256"
 	"tinygo.org/x/go-llvm"
 )
+
+const (
+	OUTPUT_IDX_GAS         = 0
+	OUTPUT_IDX_STACK_DEPTH = 1
+	OUTPUT_SIZE            = (OUTPUT_IDX_STACK_DEPTH + 1) * 8
+)
+
+var UINT256_NEGATIVE1 = uint256.MustFromHex("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
 
 // PCAnalysis holds static program counter analysis results
 type PCAnalysis struct {
 	instructionBlocks map[uint64]llvm.BasicBlock // PC -> basic block mapping
 	jumpTargets       map[uint64]uint64          // Valid jump targets (JUMPDEST)
 	pcToInstruction   map[uint64]*EVMInstruction // PC -> instruction mapping
+}
+
+// setOutputValueAt sets the output value at outputPtr
+func (c *EVMCompiler) setOutputValueAt(outputPtr llvm.Value, idx int, value llvm.Value) {
+	v := llvm.ConstGEP(c.ctx.Int64Type(), outputPtr, []llvm.Value{llvm.ConstInt(c.ctx.Int32Type(), uint64(idx), false)})
+	c.builder.CreateStore(value, v)
 }
 
 // CompileBytecodeStatic compiles EVM bytecode using static PC analysis
@@ -26,12 +41,14 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 	uint256Type := c.ctx.IntType(256)
 	uint8PtrType := llvm.PointerType(c.ctx.Int8Type(), 0)
 	uint256PtrType := llvm.PointerType(uint256Type, 0)
+	uint64PtrType := llvm.PointerType(c.ctx.Int64Type(), 0)
 
-	execType := llvm.FunctionType(c.ctx.Int64Type(), []llvm.Type{
+	execType := llvm.FunctionType(c.ctx.VoidType(), []llvm.Type{
 		uint8PtrType,      // memory
 		uint256PtrType,    // stack
 		uint8PtrType,      // code (unused but kept for signature)
 		c.ctx.Int64Type(), // gas limit
+		uint64PtrType,     // output args
 	}, false)
 
 	execFunc := llvm.AddFunction(c.module, "execute", execType)
@@ -40,6 +57,7 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 	memoryParam := execFunc.Param(0)
 	stackParam := execFunc.Param(1)
 	gasLimitParam := execFunc.Param(3)
+	outputPtrParam := execFunc.Param(4)
 
 	// Create entry block
 	entryBlock := llvm.AddBasicBlock(execFunc, "entry")
@@ -104,17 +122,21 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 	// Finalize out-of-gas block
 	if !opts.DisableGas {
 		c.builder.SetInsertPointAtEnd(outOfGasBlock)
-		c.builder.CreateRet(llvm.ConstInt(c.ctx.Int64Type(), ^uint64(0), false)) // Return -1 for out of gas
+		c.setOutputValueAt(outputPtrParam, OUTPUT_IDX_GAS, llvm.ConstInt(c.ctx.Int64Type(), ^uint64(0), false)) // Return -1 for out of gas
+		c.builder.CreateRetVoid()
 	}
 
 	// Finalize exit block
 	c.builder.SetInsertPointAtEnd(exitBlock)
 	if opts.DisableGas {
-		c.builder.CreateRet(llvm.ConstInt(c.ctx.Int64Type(), uint64(0), false))
+		c.setOutputValueAt(outputPtrParam, OUTPUT_IDX_GAS, llvm.ConstInt(c.ctx.Int64Type(), uint64(0), false))
 	} else {
 		finalGasUsed := c.builder.CreateLoad(c.ctx.Int64Type(), gasPtr, "final_gas_used")
-		c.builder.CreateRet(finalGasUsed)
+		c.setOutputValueAt(outputPtrParam, OUTPUT_IDX_GAS, finalGasUsed)
 	}
+	stackDepth := c.builder.CreateLoad(c.ctx.Int64Type(), stackPtr, "stack_depth")
+	c.setOutputValueAt(outputPtrParam, OUTPUT_IDX_STACK_DEPTH, stackDepth)
+	c.builder.CreateRetVoid()
 
 	err = llvm.VerifyModule(c.module, llvm.ReturnStatusAction)
 	if err != nil {
@@ -217,6 +239,20 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stac
 		c.pushStack(stack, stackPtr, result)
 		c.builder.CreateBr(nextBlock)
 
+	case MOD:
+		a := c.popStack(stack, stackPtr)
+		b := c.popStack(stack, stackPtr)
+		result := c.builder.CreateURem(a, b, "mod_result")
+		c.pushStack(stack, stackPtr, result)
+		c.builder.CreateBr(nextBlock)
+
+	// case EXP:
+	// a := c.popStack(stack, stackPtr)
+	// b := c.popStack(stack, stackPtr)
+	// result := c.builder. (a, b, "exp_result")
+	// c.pushStack(stack, stackPtr, result)
+	// c.builder.CreateBr(nextBlock)
+
 	case LT:
 		a := c.popStack(stack, stackPtr)
 		b := c.popStack(stack, stackPtr)
@@ -273,7 +309,7 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stac
 	case NOT:
 		a := c.popStack(stack, stackPtr)
 		// TODO: use all ones in uint256
-		allOnes := llvm.ConstInt(uint256Type, ^uint64(0), false)
+		allOnes := c.createUint256ConstantFromBytes(UINT256_NEGATIVE1.Bytes())
 		result := c.builder.CreateXor(a, allOnes, "not_result")
 		c.pushStack(stack, stackPtr, result)
 		c.builder.CreateBr(nextBlock)
@@ -350,8 +386,9 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stac
 		} else if instr.Opcode >= SWAP1 && instr.Opcode <= SWAP16 {
 			c.compileSwapStatic(instr, stack, stackPtr, nextBlock)
 		} else {
-			// Unknown opcode, just continue
-			c.builder.CreateBr(nextBlock)
+			// Unknown opcode, TODO: generate code to return err
+			panic(fmt.Sprintf("unsupported op %d", instr.Opcode))
+			// c.builder.CreateBr(nextBlock)
 		}
 	}
 }
@@ -371,6 +408,7 @@ func (c *EVMCompiler) createDynamicJump(target llvm.Value, analysis *PCAnalysis,
 			switchInstr.AddCase(pcConstant, block)
 		}
 	}
+	// TODO: add invalid JUMPDEST
 }
 
 // compilePushStatic compiles PUSH instructions with static next block

@@ -1,10 +1,11 @@
 package compiler
 
 // #include <stdint.h>
-// typedef int64_t (*func)(void* memory, void* stack, void* code, uint64_t gas);
-// static int64_t execute(uint64_t f, void* memory, void* stack, void* code, uint64_t gas) { return ((func)f)(memory, stack, code, gas); }
+// typedef void (*func)(void* memory, void* stack, void* code, uint64_t gas, void* output);
+// static void execute(uint64_t f, void* memory, void* stack, void* code, uint64_t gas, void* output) { ((func)f)(memory, stack, code, gas, output); }
 import "C"
 import (
+	"encoding/binary"
 	"fmt"
 	"os"
 	"unsafe"
@@ -544,7 +545,7 @@ func (c *EVMCompiler) Execute(opts *EVMExecutionOpts) (*EVMExecutionResult, erro
 	gasLimit := opts.GasLimit
 
 	// Execute using function pointer
-	gasRemainingResult, err := c.callNativeFunction(c.funcPtr, unsafe.Pointer(&memory[0]), unsafe.Pointer(&stack[0]), gasLimit)
+	gasRemainingResult, stackDepth, err := c.callNativeFunction(c.funcPtr, unsafe.Pointer(&memory[0]), unsafe.Pointer(&stack[0]), gasLimit)
 	if err != nil {
 		return &EVMExecutionResult{
 			Stack:        nil,
@@ -572,25 +573,6 @@ func (c *EVMCompiler) Execute(opts *EVMExecutionOpts) (*EVMExecutionResult, erro
 
 	gasRemaining := uint64(gasRemainingResult)
 
-	// Process results same as ExecuteCompiled
-	stackDepth := 0
-	for i := stackSize - 1; i >= 0; i-- {
-		allZero := true
-		for j := 0; j < 32; j++ {
-			if stack[i][j] != 0 {
-				allZero = false
-				break
-			}
-		}
-		if !allZero {
-			stackDepth = i + 1
-			break
-		}
-	}
-
-	resultStack := make([][32]byte, stackDepth)
-	copy(resultStack, stack[:stackDepth])
-
 	memoryUsed := len(memory)
 	for i := len(memory) - 1; i >= 0; i-- {
 		if memory[i] != 0 {
@@ -600,7 +582,7 @@ func (c *EVMCompiler) Execute(opts *EVMExecutionOpts) (*EVMExecutionResult, erro
 	}
 
 	return &EVMExecutionResult{
-		Stack:        resultStack,
+		Stack:        stack[:stackDepth],
 		Memory:       memory[:memoryUsed],
 		Status:       ExecutionSuccess,
 		Error:        nil,
@@ -637,7 +619,10 @@ func (c *EVMCompiler) ExecuteCompiledWithOpts(bytecode []byte, copts *EVMCompila
 }
 
 // Helper function to call native function pointer (requires CGO)
-func (c *EVMCompiler) callNativeFunction(funcPtr uint64, memory, stack unsafe.Pointer, gas uint64) (int64, error) {
-	result := C.execute(C.uint64_t(funcPtr), memory, stack, nil, C.uint64_t(gas))
-	return int64(result), nil
+func (c *EVMCompiler) callNativeFunction(funcPtr uint64, memory, stack unsafe.Pointer, gas uint64) (int64, int64, error) {
+	var output [OUTPUT_SIZE]byte
+	C.execute(C.uint64_t(funcPtr), memory, stack, nil, C.uint64_t(gas), unsafe.Pointer(&output[0]))
+	gasUsed := binary.LittleEndian.Uint64(output[OUTPUT_IDX_GAS*8:])
+	stackDepth := binary.LittleEndian.Uint64(output[OUTPUT_IDX_STACK_DEPTH*8:])
+	return int64(gasUsed), int64(stackDepth), nil
 }
