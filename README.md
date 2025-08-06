@@ -165,10 +165,6 @@ The compiler is designed for high performance:
 4. Ensure all tests pass
 5. Submit a pull request
 
-## License
-
-This project is licensed under the same terms as the parent research repository.
-
 ## Future Enhancements
 
 - [x] Advanced optimization passes
