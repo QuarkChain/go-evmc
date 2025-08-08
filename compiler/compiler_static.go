@@ -222,7 +222,7 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stac
 	// Add gas consumption for this instruction
 	if !opts.DisableGas {
 		if opts.DisableSectionGasOptimization {
-			c.consumeGas(instr.Opcode, gasPtr, outOfGasBlock)
+			c.consumeGas(instr.Opcode, gasPtr, outOfGasBlock, stack, stackPtr)
 		} else {
 			gasCost := analysis.sectionGas[instr.PC]
 			c.consumeSectionGas(gasCost, gasPtr, outOfGasBlock)
@@ -270,12 +270,12 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stac
 		c.pushStack(stack, stackPtr, result)
 		c.builder.CreateBr(nextBlock)
 
-	// case EXP:
-	// a := c.popStack(stack, stackPtr)
-	// b := c.popStack(stack, stackPtr)
-	// result := c.builder. (a, b, "exp_result")
-	// c.pushStack(stack, stackPtr, result)
-	// c.builder.CreateBr(nextBlock)
+	case EXP:
+		a := c.popStack(stack, stackPtr)
+		b := c.popStack(stack, stackPtr)
+		result := c.computeExponentiation(a, b)
+		c.pushStack(stack, stackPtr, result)
+		c.builder.CreateBr(nextBlock)
 
 	case LT:
 		a := c.popStack(stack, stackPtr)
@@ -468,19 +468,38 @@ func (c *EVMCompiler) compileSwapStatic(instr EVMInstruction, stack, stackPtr ll
 	c.builder.CreateBr(nextBlock)
 }
 
+func (c *EVMCompiler) getStackItem(stack llvm.Value, stackPtr llvm.Value, idx int) llvm.Value {
+	// stackPtr points to next free slot, so top item is stackPtr-1
+	stackPtrVal := c.builder.CreateLoad(c.ctx.Int32Type(), stackPtr, "stack_ptr_val")
+	index := c.builder.CreateSub(stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), uint64(idx+1), false), "stack_index")
+	elem := c.builder.CreateGEP(c.ctx.IntType(256), stack, []llvm.Value{index}, "stack_elem")
+	return c.builder.CreateLoad(c.ctx.IntType(256), elem, "stack_item")
+}
+
 // consumeGas adds gas consumption for an opcode and checks for out-of-gas condition
-func (c *EVMCompiler) consumeGas(opcode EVMOpcode, gasPtr llvm.Value, outOfGasBlock llvm.BasicBlock) {
+func (c *EVMCompiler) consumeGas(opcode EVMOpcode, gasPtr llvm.Value, outOfGasBlock llvm.BasicBlock, stack, stackPtr llvm.Value) {
 	// Get gas cost for this opcode
 	gasCost := getGasCost(opcode)
 	if gasCost == 0 {
 		return // No gas consumption for this opcode
 	}
 
+	// For EXP, add dynamic gas: 50 * (number of bytes in exponent)
+	var gasCostValue llvm.Value
+	if opcode == EXP {
+		// Assume exponent is on stack top (modify as needed)
+		exponent := c.getStackItem(stack, stackPtr, 1) // Or pass exponent as argument
+		byteCount := c.countExpBytes(exponent)
+		dynamicGas := c.builder.CreateMul(byteCount, llvm.ConstInt(c.ctx.Int64Type(), 50, false), "exp_dynamic_gas")
+		gasCostValue = c.builder.CreateAdd(llvm.ConstInt(c.ctx.Int64Type(), gasCost, false), dynamicGas, "exp_total_gas")
+	} else {
+		gasCostValue = llvm.ConstInt(c.ctx.Int64Type(), gasCost, false)
+	}
+
 	// Load current gas used
 	currentGas := c.builder.CreateLoad(c.ctx.Int64Type(), gasPtr, "gas_remaining")
 
 	// Check if we exceed gas limit
-	gasCostValue := llvm.ConstInt(c.ctx.Int64Type(), gasCost, false)
 	exceedsLimit := c.builder.CreateICmp(llvm.IntUGT, gasCostValue, currentGas, "exceeds_gas_limit")
 
 	// Create continuation block
@@ -494,6 +513,76 @@ func (c *EVMCompiler) consumeGas(opcode EVMOpcode, gasPtr llvm.Value, outOfGasBl
 	// Sub gas cost and store
 	newGas := c.builder.CreateSub(currentGas, gasCostValue, "new_gas_used")
 	c.builder.CreateStore(newGas, gasPtr)
+}
+
+// computeExponentiation computes a^b using repeated squaring algorithm
+func (c *EVMCompiler) computeExponentiation(base, exponent llvm.Value) llvm.Value {
+	uint256Type := c.ctx.IntType(256)
+	zero := llvm.ConstInt(uint256Type, 0, false)
+	one := llvm.ConstInt(uint256Type, 1, false)
+
+	// Handle special cases
+	isExpZero := c.builder.CreateICmp(llvm.IntEQ, exponent, zero, "exp_is_zero")
+	isBaseZero := c.builder.CreateICmp(llvm.IntEQ, base, zero, "base_is_zero")
+
+	// If exponent is 0, result is 1 (even for 0^0)
+	// If base is 0 and exponent > 0, result is 0
+	baseZeroExpPos := c.builder.CreateAnd(isBaseZero, c.builder.CreateICmp(llvm.IntUGT, exponent, zero, "exp_gt_zero"), "base_zero_exp_pos")
+
+	// Create blocks for the exponentiation loop
+	currentBlock := c.builder.GetInsertBlock()
+	loopBlock := llvm.AddBasicBlock(currentBlock.Parent(), "exp_loop")
+	exitBlock := llvm.AddBasicBlock(currentBlock.Parent(), "exp_exit")
+
+	// Branch to loop or handle special cases
+	c.builder.CreateCondBr(isExpZero, exitBlock, loopBlock)
+
+	// Set up loop block
+	c.builder.SetInsertPointAtEnd(loopBlock)
+
+	// PHI nodes for loop variables
+	resultPhi := c.builder.CreatePHI(uint256Type, "result_phi")
+	basePhi := c.builder.CreatePHI(uint256Type, "base_phi")
+	expPhi := c.builder.CreatePHI(uint256Type, "exp_phi")
+
+	// Add incoming values for PHI nodes
+	resultPhi.AddIncoming([]llvm.Value{one}, []llvm.BasicBlock{currentBlock})
+	basePhi.AddIncoming([]llvm.Value{base}, []llvm.BasicBlock{currentBlock})
+	expPhi.AddIncoming([]llvm.Value{exponent}, []llvm.BasicBlock{currentBlock})
+
+	// Check if exponent is odd (lowest bit set)
+	isOdd := c.builder.CreateAnd(expPhi, one, "exp_is_odd")
+	isOddBool := c.builder.CreateICmp(llvm.IntEQ, isOdd, one, "exp_is_odd_bool")
+
+	// If exponent is odd, multiply result by current base
+	newResult := c.builder.CreateSelect(isOddBool, c.builder.CreateMul(resultPhi, basePhi, "mul_result"), resultPhi, "new_result")
+
+	// Square the base and halve the exponent
+	newBase := c.builder.CreateMul(basePhi, basePhi, "square_base")
+	newExp := c.builder.CreateLShr(expPhi, one, "halve_exp")
+
+	// Update PHI nodes for next iteration
+	resultPhi.AddIncoming([]llvm.Value{newResult}, []llvm.BasicBlock{loopBlock})
+	basePhi.AddIncoming([]llvm.Value{newBase}, []llvm.BasicBlock{loopBlock})
+	expPhi.AddIncoming([]llvm.Value{newExp}, []llvm.BasicBlock{loopBlock})
+
+	// Check if we're done (exponent == 0)
+	isDone := c.builder.CreateICmp(llvm.IntEQ, newExp, zero, "exp_is_done")
+	c.builder.CreateCondBr(isDone, exitBlock, loopBlock)
+
+	// Exit block - handle results
+	c.builder.SetInsertPointAtEnd(exitBlock)
+	finalResultPhi := c.builder.CreatePHI(uint256Type, "final_result")
+
+	// Add incoming values: 1 if exp was 0, 0 if base was 0 and exp > 0, otherwise loop result
+	finalResultPhi.AddIncoming([]llvm.Value{one}, []llvm.BasicBlock{currentBlock})
+	finalResultPhi.AddIncoming([]llvm.Value{newResult}, []llvm.BasicBlock{loopBlock})
+
+	// Handle base=0, exp>0 case
+	finalResult := c.builder.CreateSelect(baseZeroExpPos, zero, finalResultPhi, "final_exp_result")
+
+	// finalResult is little-endian formatted
+	return finalResult
 }
 
 // consumeGas adds gas consumption for an opcode and checks for out-of-gas condition
@@ -521,6 +610,20 @@ func (c *EVMCompiler) consumeSectionGas(gasCost uint64, gasPtr llvm.Value, outOf
 	// Sub gas cost and store
 	newGas := c.builder.CreateSub(currentGas, gasCostValue, "new_gas_used")
 	c.builder.CreateStore(newGas, gasPtr)
+}
+
+// countExpBytes returns the number of non-zero bytes in the exponent (uint256 value)
+func (c *EVMCompiler) countExpBytes(exponent llvm.Value) llvm.Value {
+	uint256Type := c.ctx.IntType(256)
+	byteCount := llvm.ConstInt(c.ctx.Int64Type(), 0, false)
+	for i := 0; i < 32; i++ {
+		shift := llvm.ConstInt(uint256Type, uint64(i*8), false)
+		byteVal := c.builder.CreateLShr(exponent, shift, "")
+		byteVal8 := c.builder.CreateTrunc(byteVal, c.ctx.Int8Type(), "")
+		isNonZero := c.builder.CreateICmp(llvm.IntNE, byteVal8, llvm.ConstInt(c.ctx.Int8Type(), 0, false), "")
+		byteCount = c.builder.CreateAdd(byteCount, c.builder.CreateZExt(isNonZero, c.ctx.Int64Type(), ""), "")
+	}
+	return byteCount
 }
 
 // CompileAndOptimizeStatic compiles using static analysis

@@ -17,7 +17,7 @@ func TestEVMCompilerBasic(t *testing.T) {
 		0x00, // STOP
 	}
 
-	err := comp.CompileAndOptimize(bytecode)
+	err := comp.CompileAndOptimize(bytecode, DefaultEVMCompilationOpts())
 	if err != nil {
 		t.Fatalf("Compilation failed: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestEVMCompilerArithmetic(t *testing.T) {
 		0x00, // STOP
 	}
 
-	err := comp.CompileAndOptimize(bytecode)
+	err := comp.CompileAndOptimize(bytecode, DefaultEVMCompilationOpts())
 	if err != nil {
 		t.Fatalf("Compilation failed: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestEVMCompilerControlFlow(t *testing.T) {
 		0x00, // STOP
 	}
 
-	err := comp.CompileAndOptimize(bytecode)
+	err := comp.CompileAndOptimize(bytecode, DefaultEVMCompilationOpts())
 	if err != nil {
 		t.Fatalf("Compilation failed: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestEVMCompilerMemoryOperations(t *testing.T) {
 		0x00, // STOP
 	}
 
-	err := comp.CompileAndOptimize(bytecode)
+	err := comp.CompileAndOptimize(bytecode, DefaultEVMCompilationOpts())
 	if err != nil {
 		t.Fatalf("Compilation failed: %v", err)
 	}
@@ -396,7 +396,7 @@ func BenchmarkEVMCompilerSmallContract(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		comp := NewEVMCompiler()
-		err := comp.CompileAndOptimize(bytecode)
+		err := comp.CompileAndOptimize(bytecode, DefaultEVMCompilationOpts())
 		if err != nil {
 			b.Fatalf("Compilation failed: %v", err)
 		}
@@ -419,7 +419,7 @@ func BenchmarkEVMCompilerMediumContract(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		comp := NewEVMCompiler()
-		err := comp.CompileAndOptimize(bytecode)
+		err := comp.CompileAndOptimize(bytecode, DefaultEVMCompilationOpts())
 		if err != nil {
 			b.Fatalf("Compilation failed: %v", err)
 		}
@@ -434,7 +434,7 @@ func BenchmarkEVMExecuteSimpleAddition(b *testing.B) {
 	defer comp.Dispose()
 
 	// Pre-compile
-	err := comp.CompileAndOptimize(bytecode)
+	err := comp.CompileAndOptimize(bytecode, DefaultEVMCompilationOpts())
 	if err != nil {
 		b.Fatalf("Compilation failed: %v", err)
 	}
@@ -467,7 +467,7 @@ func BenchmarkEVMExecuteComplexArithmetic(b *testing.B) {
 	defer comp.Dispose()
 
 	// Pre-compile
-	err := comp.CompileAndOptimize(bytecode)
+	err := comp.CompileAndOptimize(bytecode, DefaultEVMCompilationOpts())
 	if err != nil {
 		b.Fatalf("Compilation failed: %v", err)
 	}
@@ -500,7 +500,7 @@ func BenchmarkEVMExecuteMemoryOperations(b *testing.B) {
 	defer comp.Dispose()
 
 	// Pre-compile
-	err := comp.CompileAndOptimize(bytecode)
+	err := comp.CompileAndOptimize(bytecode, DefaultEVMCompilationOpts())
 	if err != nil {
 		b.Fatalf("Compilation failed: %v", err)
 	}
@@ -520,7 +520,7 @@ func BenchmarkEVMExecuteFibWithSectionGasOptimization(b *testing.B) {
 
 	// Pre-compile
 	n := uint32(1000000)
-	err := comp.CompileAndOptimize(GetFibCode(n))
+	err := comp.CompileAndOptimize(GetFibCode(n), DefaultEVMCompilationOpts())
 	if err != nil {
 		b.Fatalf("Compilation failed: %v", err)
 	}

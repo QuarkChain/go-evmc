@@ -2,6 +2,8 @@ package compiler
 
 import (
 	"testing"
+
+	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
 // Helper function to create a 32-byte value from a uint64
@@ -137,16 +139,60 @@ func TestArithmeticOpcodes(t *testing.T) {
 			},
 			expectedStack: [][32]byte{uint64ToBytes32(2)},
 		},
-		// {
-		// 	name: "EXP",
-		// 	bytecode: []byte{
-		// 		0x60, 0x02, // PUSH1 2
-		// 		0x60, 0x03, // PUSH1 3
-		// 		0x0A, // EXP
-		// 		0x00, // STOP
-		// 	},
-		// 	expectedStack: [][32]byte{uint64ToBytes32(8)},
-		// },
+		{
+			name: "EXP",
+			bytecode: []byte{
+				0x60, 0x03, // PUSH1 3: exponent
+				0x60, 0x03, // PUSH1 3: base
+				0x0A, // EXP
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(27)},
+			expectedGas:   3 + 3 + 10 + 50*1,
+		},
+		{
+			name: "EXP_ZERO_BASE",
+			bytecode: []byte{
+				0x60, 0x00, // PUSH1 0: exponent
+				0x60, 0x03, // PUSH1 3: base
+				0x0A, // EXP
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(1)},
+			expectedGas:   3 + 3 + 10 + 50*0,
+		},
+		{
+			name: "EXP_ZERO_EXP",
+			bytecode: []byte{
+				0x60, 0x02, // PUSH1 2: exponent
+				0x60, 0x00, // PUSH1 0: base
+				0x0A, // EXP
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0)},
+			expectedGas:   3 + 3 + 10 + 50*1,
+		},
+		{
+			name: "EXP_OVERFLOW",
+			bytecode: []byte{
+				0x60, 0xa2, // PUSH1 162: exponent
+				0x60, 0x03, // PUSH1 3: base
+				0x0A, // EXP
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{func() [32]byte {
+				b := hexutil.MustDecode("0xb2b6f77a278b4d09d6fd8182a7987cba5cc1c94195d05dc0786c0065f8db7c89")
+				// convert from big-endian to little-endian
+				for i, j := 0, len(b)-1; i < j; i, j = i+1, j-1 {
+					b[i], b[j] = b[j], b[i]
+				}
+				var arr [32]byte
+				copy(arr[:], b)
+				return arr
+			}()},
+			expectedGas: 3 + 3 + 10 + 50*1,
+		},
+		// TODO: Test exponent_byte_size > 1
 	}
 
 	for _, tc := range testCases {

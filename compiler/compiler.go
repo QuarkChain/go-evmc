@@ -507,9 +507,9 @@ func (c *EVMCompiler) OptimizeModule() {
 	c.module.RunPasses("default<O3>", c.machine, opts)
 }
 
-func (c *EVMCompiler) CompileAndOptimize(bytecode []byte) error {
+func (c *EVMCompiler) CompileAndOptimize(bytecode []byte, copts *EVMCompilationOpts) error {
 	// Use static analysis approach by default
-	return c.CompileAndOptimizeStatic(bytecode, &EVMCompilationOpts{DisableGas: false})
+	return c.CompileAndOptimizeStatic(bytecode, copts)
 }
 
 func (c *EVMCompiler) CompileAndOptimizeWithOpts(bytecode []byte, opts *EVMCompilationOpts) error {
@@ -597,14 +597,17 @@ func (c *EVMCompiler) ExecuteCompiled(bytecode []byte) (*EVMExecutionResult, err
 	opts := &EVMExecutionOpts{
 		1000000,
 	}
+	compileOpts := &EVMCompilationOpts{
+		DisableSectionGasOptimization: true,
+	}
 
-	return c.ExecuteCompiledWithOpts(bytecode, DefaultEVMCompilationOpts(), opts)
+	return c.ExecuteCompiledWithOpts(bytecode, compileOpts, opts)
 }
 
 // ExecuteCompiled executes compiled EVM code using function pointer for better performance
 func (c *EVMCompiler) ExecuteCompiledWithOpts(bytecode []byte, copts *EVMCompilationOpts, opts *EVMExecutionOpts) (*EVMExecutionResult, error) {
 	// Compile if needed
-	err := c.CompileAndOptimize(bytecode)
+	err := c.CompileAndOptimize(bytecode, copts)
 	if err != nil {
 		return nil, fmt.Errorf("compilation failed: %v", err)
 	}

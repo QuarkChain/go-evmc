@@ -385,7 +385,7 @@ func BenchmarkGasConsumption(b *testing.B) {
 	opts := &EVMExecutionOpts{GasLimit: 1000000}
 
 	// Pre-compile
-	err := comp.CompileAndOptimize(bytecode)
+	err := comp.CompileAndOptimize(bytecode, DefaultEVMCompilationOpts())
 	if err != nil {
 		b.Fatalf("Compilation failed: %v", err)
 	}
@@ -431,7 +431,7 @@ func BenchmarkGasComplexContract(b *testing.B) {
 	opts := &EVMExecutionOpts{GasLimit: 1000000}
 
 	// Pre-compile
-	err := comp.CompileAndOptimize(bytecode)
+	err := comp.CompileAndOptimize(bytecode, DefaultEVMCompilationOpts())
 	if err != nil {
 		b.Fatalf("Compilation failed: %v", err)
 	}
