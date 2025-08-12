@@ -2,6 +2,8 @@ package compiler
 
 import (
 	"testing"
+
+	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
 // Helper function to create a 32-byte value from a uint64
@@ -20,6 +22,17 @@ func bytes32ToUint64(b [32]byte) uint64 {
 	for i := 0; i < 8 && i < 32; i++ {
 		result |= uint64(b[i]) << (8 * i)
 	}
+	return result
+}
+
+// Helper function to decode a hex string (big-endian) and return its
+// little-endian representation as a fixed-length [32]byte array
+func hexToLittleEndianBytes32(val string) [32]byte {
+	b := hexutil.MustDecode(val)
+	// convert from big-endian to little-endian
+	b = Reverse(b)
+	var result [32]byte
+	copy(result[:], b)
 	return result
 }
 
@@ -293,6 +306,46 @@ func TestBitwiseOpcodes(t *testing.T) {
 				}
 				return result
 			}()},
+		},
+		{
+			name: "SHL",
+			bytecode: []byte{
+				0x60, 0x01, // PUSH1 0x01, shift
+				0x60, 0xFF, // PUSH1 0xFF, value
+				0x1B, // SHL
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0x1fe)},
+		},
+		{
+			name: "SHL_255",
+			bytecode: []byte{
+				0x60, 0xFF, // PUSH1 0xFF, shift
+				0x60, 0xFF, // PUSH1 0xFF, value
+				0x1B, // SHL
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{hexToLittleEndianBytes32("0x8000000000000000000000000000000000000000000000000000000000000000")},
+		},
+		{
+			name: "SHR",
+			bytecode: []byte{
+				0x60, 0x01, // PUSH1 0x01, shift
+				0x60, 0xFF, // PUSH1 0xFF, value
+				0x1C, // SHR
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0x7f)},
+		},
+		{
+			name: "SHR_255",
+			bytecode: []byte{
+				0x60, 0xFF, // PUSH1 0xFF, shift
+				0x60, 0xFF, // PUSH1 0xFF, value
+				0x1C, // SHR
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0x00)},
 		},
 	}
 
