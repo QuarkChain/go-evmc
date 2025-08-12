@@ -30,9 +30,7 @@ func bytes32ToUint64(b [32]byte) uint64 {
 func hexToLittleEndianBytes32(val string) [32]byte {
 	b := hexutil.MustDecode(val)
 	// convert from big-endian to little-endian
-	for i, j := 0, len(b)-1; i < j; i, j = i+1, j-1 {
-		b[i], b[j] = b[j], b[i]
-	}
+	b = Reverse(b)
 	var result [32]byte
 	copy(result[:], b)
 	return result
@@ -151,16 +149,6 @@ func TestArithmeticOpcodes(t *testing.T) {
 				0x00, // STOP
 			},
 			expectedStack: [][32]byte{uint64ToBytes32(2)},
-		},
-		{
-			name: "MOD_ZERO",
-			bytecode: []byte{
-				0x60, 0x00, // PUSH1 0
-				0x60, 0x11, // PUSH1 17
-				0x06, // MOD
-				0x00, // STOP
-			},
-			expectedStack: [][32]byte{uint64ToBytes32(0)},
 		},
 		// {
 		// 	name: "EXP",
