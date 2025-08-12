@@ -322,8 +322,8 @@ func TestBitwiseOpcodes(t *testing.T) {
 		{
 			name: "SHL",
 			bytecode: []byte{
-				0x60, 0x01, // PUSH1 0x01
-				0x60, 0xFF, // PUSH1 0xFF
+				0x60, 0x01, // PUSH1 0x01, shift
+				0x60, 0xFF, // PUSH1 0xFF, value
 				0x1B, // SHL
 				0x00, // STOP
 			},
@@ -332,12 +332,32 @@ func TestBitwiseOpcodes(t *testing.T) {
 		{
 			name: "SHL_255",
 			bytecode: []byte{
-				0x60, 0xFF, // PUSH1 0xFF
-				0x60, 0xFF, // PUSH1 0xFF
+				0x60, 0xFF, // PUSH1 0xFF, shift
+				0x60, 0xFF, // PUSH1 0xFF, value
 				0x1B, // SHL
 				0x00, // STOP
 			},
 			expectedStack: [][32]byte{hexToLittleEndianBytes32("0x8000000000000000000000000000000000000000000000000000000000000000")},
+		},
+		{
+			name: "SHR",
+			bytecode: []byte{
+				0x60, 0x01, // PUSH1 0x01, shift
+				0x60, 0xFF, // PUSH1 0xFF, value
+				0x1C, // SHR
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0x7f)},
+		},
+		{
+			name: "SHR_255",
+			bytecode: []byte{
+				0x60, 0xFF, // PUSH1 0xFF, shift
+				0x60, 0xFF, // PUSH1 0xFF, value
+				0x1C, // SHR
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0x00)},
 		},
 	}
 

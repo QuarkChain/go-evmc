@@ -345,6 +345,13 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stac
 		c.pushStack(stack, stackPtr, result)
 		c.builder.CreateBr(nextBlock)
 
+	case SHR:
+		a := c.popStack(stack, stackPtr)
+		b := c.popStack(stack, stackPtr)
+		result := c.builder.CreateLShr(a, b, "shr_result")
+		c.pushStack(stack, stackPtr, result)
+		c.builder.CreateBr(nextBlock)
+
 	case POP:
 		c.popStack(stack, stackPtr)
 		c.builder.CreateBr(nextBlock)
