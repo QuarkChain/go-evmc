@@ -218,6 +218,9 @@ func (c *EVMCompiler) getNextPC(currentInstr EVMInstruction, instructions []EVMI
 // compileInstructionStatic compiles an instruction using static analysis with gas metering
 func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stackPtr, memory, gasPtr llvm.Value, analysis *PCAnalysis, nextBlock, exitBlock, outOfGasBlock llvm.BasicBlock, opts *EVMCompilationOpts) {
 	uint256Type := c.ctx.IntType(256)
+	zero := llvm.ConstInt(uint256Type, 0, false)
+	int256Min := llvm.ConstIntFromString(uint256Type, "-57896044618658097711785492504343953926634992332820282019728792003956564819968", 10) // -2^255
+	negOne := llvm.ConstInt(uint256Type, ^uint64(0), true)                                                                                  // -1
 
 	// Add gas consumption for this instruction
 	if !opts.DisableGas {
@@ -263,10 +266,37 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stac
 		c.pushStack(stack, stackPtr, result)
 		c.builder.CreateBr(nextBlock)
 
+	case SDIV:
+		a := c.popStack(stack, stackPtr)
+		b := c.popStack(stack, stackPtr)
+		isDivByZero := c.builder.CreateICmp(llvm.IntEQ, b, zero, "div_by_zero")
+		isOverflow := c.builder.CreateAnd(
+			c.builder.CreateICmp(llvm.IntEQ, a, int256Min, "equal_neg2^255"),
+			c.builder.CreateICmp(llvm.IntEQ, b, negOne, "equal_neg1"),
+			"overflow",
+		)
+		// sdiv result
+		sdiv := c.builder.CreateSDiv(a, b, "sdiv_result")
+		result := c.builder.CreateSelect(
+			isDivByZero,
+			zero, // division by zero → 0
+			c.builder.CreateSelect(isOverflow, int256Min, sdiv, "sdiv_safe"), // overflow → int256Min
+			"",
+		)
+		c.pushStack(stack, stackPtr, result)
+		c.builder.CreateBr(nextBlock)
+
 	case MOD:
 		a := c.popStack(stack, stackPtr)
 		b := c.popStack(stack, stackPtr)
-		result := c.builder.CreateURem(a, b, "mod_result")
+		result := c.builder.CreateURem(a, b, "mod_result") // mod by zero is already supported
+		c.pushStack(stack, stackPtr, result)
+		c.builder.CreateBr(nextBlock)
+
+	case SMOD:
+		a := c.popStack(stack, stackPtr)
+		b := c.popStack(stack, stackPtr)
+		result := c.builder.CreateSRem(a, b, "smod_result") // mod by zero is already supported
 		c.pushStack(stack, stackPtr, result)
 		c.builder.CreateBr(nextBlock)
 

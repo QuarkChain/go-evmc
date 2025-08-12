@@ -175,8 +175,7 @@ The compiler is designed for high performance:
 - [ ] Precompiled contracts support
 - [ ] Dynamic memory growth
 - [ ] Missing OPCODEs
-  - [ ] SHL, SHR support
-  - [ ] SDIV, SMOD, ADDMOD, MULMOD support
+  - [ ] ADDMOD, MULMOD support
   - [ ] EXP supoort
   - [ ] MSTORE8/MLOAD8 support
   - [ ] SLOAD/SSTORE support

@@ -141,6 +141,62 @@ func TestArithmeticOpcodes(t *testing.T) {
 			expectedStack: [][32]byte{uint64ToBytes32(0)},
 		},
 		{
+			name: "SDIV",
+			bytecode: []byte{
+				0x60, 0x04, // PUSH32 4, denominator
+				0x60, 0x14, // PUSH32 20, numerator
+				0x05, // SDIV
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(5)},
+		},
+		{
+			name: "SDIV_BY_ZERO",
+			bytecode: []byte{
+				0x60, 0x00, // PUSH32 0, denominator
+				0x60, 0x14, // PUSH32 20, numerator
+				0x05, // SDIV
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0)},
+		},
+		{
+			name: "SDIV_NEGATIVE",
+			bytecode: append(
+				[]byte{0x7F}, // PUSH32
+				append(
+					hexutil.MustDecode("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")[:], // -1, denominator
+					append(
+						[]byte{0x7F}, // PUSH32
+						append(
+							hexutil.MustDecode("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE"), // -2, numerator
+							0x05, // SDIV
+							0x00, // STOP
+						)...,
+					)...,
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(2)},
+		},
+		{
+			name: "SDIV_OVERFLOW",
+			bytecode: append(
+				[]byte{0x7F}, // PUSH32
+				append(
+					hexutil.MustDecode("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")[:], // -1, denominator
+					append(
+						[]byte{0x7F}, // PUSH32
+						append(
+							hexutil.MustDecode("0x8000000000000000000000000000000000000000000000000000000000000000"), // -2^255, numerator
+							0x05, // SDIV
+							0x00, // STOP
+						)...,
+					)...,
+				)...,
+			),
+			expectedStack: [][32]byte{hexToLittleEndianBytes32("0x8000000000000000000000000000000000000000000000000000000000000000")}, // -2^255
+		},
+		{
 			name: "MOD",
 			bytecode: []byte{
 				0x60, 0x05, // PUSH1 5
@@ -149,6 +205,54 @@ func TestArithmeticOpcodes(t *testing.T) {
 				0x00, // STOP
 			},
 			expectedStack: [][32]byte{uint64ToBytes32(2)},
+		},
+		{
+			name: "MOD_BY_ZERO",
+			bytecode: []byte{
+				0x60, 0x00, // PUSH1 5, denominator
+				0x60, 0x11, // PUSH1 17, numerator
+				0x06, // MOD
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0)},
+		},
+		{
+			name: "SMOD",
+			bytecode: []byte{
+				0x60, 0x05, // PUSH1 5, denominator
+				0x60, 0x11, // PUSH1 17, numerator
+				0x07, // SMOD
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(2)},
+		},
+		{
+			name: "SMOD_BY_ZERO",
+			bytecode: []byte{
+				0x60, 0x00, // PUSH1 0, denominator
+				0x60, 0x11, // PUSH1 17, numerator
+				0x07, // SMOD
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0)},
+		},
+		{
+			name: "SMOD_NEGATIVE",
+			bytecode: append(
+				[]byte{0x7F}, // PUSH32
+				append(
+					hexutil.MustDecode("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFD")[:], // -3, denominator
+					append(
+						[]byte{0x7F}, // PUSH32
+						append(
+							hexutil.MustDecode("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF8"), // -8, numerator
+							0x07, // SMOD
+							0x00, // STOP
+						)...,
+					)...,
+				)...,
+			),
+			expectedStack: [][32]byte{hexToLittleEndianBytes32("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE")}, // -2
 		},
 		// {
 		// 	name: "EXP",
