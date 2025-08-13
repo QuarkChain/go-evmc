@@ -1,8 +1,8 @@
 package compiler
 
 // #include <stdint.h>
-// typedef void (*func)(void* memory, void* stack, void* code, uint64_t gas, void* output);
-// static void execute(uint64_t f, void* memory, void* stack, void* code, uint64_t gas, void* output) { ((func)f)(memory, stack, code, gas, output); }
+// typedef void (*func)(uint64_t inst, void* memory, void* stack, void* code, uint64_t gas, void* output);
+// static void execute(uint64_t f, uint64_t inst, void* memory, void* stack, void* code, uint64_t gas, void* output) { ((func)f)(inst, memory, stack, code, gas, output); }
 import "C"
 import (
 	"encoding/binary"
@@ -25,6 +25,10 @@ type EVMCompiler struct {
 	engine         *llvm.ExecutionEngine
 	funcPtr        uint64
 	initSectionGas uint64
+
+	host         EVMHost
+	hostFuncType llvm.Type
+	hostFunc     llvm.Value
 }
 
 type EVMOpcode uint8
@@ -319,6 +323,7 @@ type EVMExecutionResult struct {
 
 type EVMExecutionOpts struct {
 	GasLimit uint64
+	Host     EVMHost
 }
 
 type EVMCompilationOpts struct {
@@ -424,6 +429,12 @@ func (c *EVMCompiler) popStack(stack, stackPtr llvm.Value) llvm.Value {
 	return c.builder.CreateLoad(c.ctx.IntType(256), stackElem, "stack_value")
 }
 
+func (c *EVMCompiler) peekStackPtr(stack, stackPtr llvm.Value) llvm.Value {
+	stackPtrVal := c.builder.CreateLoad(c.ctx.Int32Type(), stackPtr, "stack_ptr_val")
+	newStackPtr := c.builder.CreateSub(stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), 1, false), "new_stack_ptr")
+	return c.builder.CreateGEP(c.ctx.IntType(256), stack, []llvm.Value{newStackPtr}, "stack_elem")
+}
+
 func (c *EVMCompiler) createUint256ConstantFromBytes(data []byte) llvm.Value {
 	if len(data) == 0 {
 		return llvm.ConstInt(c.ctx.IntType(256), 0, false)
@@ -523,12 +534,14 @@ func (c *EVMCompiler) CreateExecutionEngine() error {
 		return fmt.Errorf("failed to create JIT compiler: %v", err)
 	}
 
+	c.engine = &engine
+	c.addGlobalMappingForHostFunctions()
+
 	// Get function pointer for direct execution
 	funcPtr := engine.GetFunctionAddress("execute")
 	if funcPtr == 0 {
 		return fmt.Errorf("execute function address not found")
 	}
-	c.engine = &engine
 	c.funcPtr = funcPtr
 	return nil
 }
@@ -544,8 +557,12 @@ func (c *EVMCompiler) Execute(opts *EVMExecutionOpts) (*EVMExecutionResult, erro
 	memory := make([]byte, memorySize)
 	gasLimit := opts.GasLimit
 
+	// TODO: should decouple compiler with execution instance
 	// Execute using function pointer
-	gasRemainingResult, stackDepth, err := c.callNativeFunction(c.funcPtr, unsafe.Pointer(&memory[0]), unsafe.Pointer(&stack[0]), gasLimit)
+	inst := createExecutionInstance(c)
+	defer removeExecutionInstance(inst)
+	c.host = opts.Host
+	gasRemainingResult, stackDepth, err := c.callNativeFunction(c.funcPtr, inst, unsafe.Pointer(&memory[0]), unsafe.Pointer(&stack[0]), gasLimit)
 	if err != nil {
 		return &EVMExecutionResult{
 			Stack:        nil,
@@ -595,7 +612,8 @@ func (c *EVMCompiler) Execute(opts *EVMExecutionOpts) (*EVMExecutionResult, erro
 // ExecuteCompiled executes compiled EVM code using function pointer for better performance
 func (c *EVMCompiler) ExecuteCompiled(bytecode []byte) (*EVMExecutionResult, error) {
 	opts := &EVMExecutionOpts{
-		1000000,
+		GasLimit: 1000000,
+		Host:     NewDefaultHost(),
 	}
 
 	return c.ExecuteCompiledWithOpts(bytecode, DefaultEVMCompilationOpts(), opts)
@@ -619,9 +637,9 @@ func (c *EVMCompiler) ExecuteCompiledWithOpts(bytecode []byte, copts *EVMCompila
 }
 
 // Helper function to call native function pointer (requires CGO)
-func (c *EVMCompiler) callNativeFunction(funcPtr uint64, memory, stack unsafe.Pointer, gas uint64) (int64, int64, error) {
+func (c *EVMCompiler) callNativeFunction(funcPtr uint64, inst uint64, memory, stack unsafe.Pointer, gas uint64) (int64, int64, error) {
 	var output [OUTPUT_SIZE]byte
-	C.execute(C.uint64_t(funcPtr), memory, stack, nil, C.uint64_t(gas), unsafe.Pointer(&output[0]))
+	C.execute(C.uint64_t(funcPtr), C.uint64_t(inst), memory, stack, nil, C.uint64_t(gas), unsafe.Pointer(&output[0]))
 	gasUsed := binary.LittleEndian.Uint64(output[OUTPUT_IDX_GAS*8:])
 	stackDepth := binary.LittleEndian.Uint64(output[OUTPUT_IDX_STACK_DEPTH*8:])
 	return int64(gasUsed), int64(stackDepth), nil

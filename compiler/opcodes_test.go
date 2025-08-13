@@ -40,6 +40,7 @@ func hexToLittleEndianBytes32(val string) [32]byte {
 type OpcodeTestCase struct {
 	name          string
 	bytecode      []byte
+	gasLimit      uint64
 	expectedStack [][32]byte
 	expectError   bool
 	expectedGas   uint64
@@ -52,10 +53,20 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 	comp := NewEVMCompiler()
 	defer comp.Dispose()
 
-	result, err := comp.ExecuteCompiled(testCase.bytecode)
+	if testCase.gasLimit == 0 {
+		testCase.gasLimit = 1000000
+	}
 
+	opts := &EVMExecutionOpts{
+		GasLimit: testCase.gasLimit,
+		Host:     NewDefaultHost(),
+	}
+
+	result, err := comp.ExecuteCompiledWithOpts(testCase.bytecode, DefaultEVMCompilationOpts(), opts)
+
+	// TODO: more accurate error check
 	if testCase.expectError {
-		if err == nil {
+		if err == nil && result.Error == nil {
 			t.Errorf("Expected error but got none")
 		}
 		return
@@ -700,6 +711,53 @@ func TestMemoryOpcodes(t *testing.T) {
 		// 		return result
 		// 	}()},
 		// },
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			runOpcodeTest(t, tc)
+		})
+	}
+}
+
+// TestStorageOpcodes tests storage operations
+func TestStorageOpcodes(t *testing.T) {
+	testCases := []OpcodeTestCase{
+		{
+			name: "SSTORE",
+			bytecode: []byte{
+				0x60, 0x42, // PUSH1 0x42 (value)
+				0x60, 0x01, // PUSH1 0x01 (key)
+				0x55,       // SSTORE
+				0x60, 0x01, // PUSH1 0x01 (key)
+				0x54, // SLOAD
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0x42)},
+		},
+		{
+			name: "SLOAD_EMPTY",
+			bytecode: []byte{
+				0x60, 0x01, // PUSH1 0x01 (key)
+				0x54, // SLOAD
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0x0)},
+		},
+		{
+			name: "SSTORE_OOG",
+			bytecode: []byte{
+				0x60, 0x42, // PUSH1 0x42 (value)
+				0x60, 0x01, // PUSH1 0x01 (key)
+				0x55,       // SSTORE
+				0x60, 0x01, // PUSH1 0x01 (key)
+				0x54, // SLOAD
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0x0)},
+			gasLimit:      15000,
+			expectError:   true,
+		},
 	}
 
 	for _, tc := range testCases {
