@@ -177,7 +177,8 @@ The compiler is designed for high performance:
 - [ ] Missing OPCODEs
   - [ ] SHL, SHR support
   - [ ] SDIV, SMOD, ADDMOD, MULMOD support
-  - [ ] EXP supoort
+  - [x] SIGNEXTEND supoort
+  - [ ] EXP support
   - [ ] MSTORE8/MLOAD8 support
   - [ ] SLOAD/SSTORE support
   - [ ] CALL/CREATE support

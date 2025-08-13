@@ -160,6 +160,36 @@ func TestArithmeticOpcodes(t *testing.T) {
 		// 	},
 		// 	expectedStack: [][32]byte{uint64ToBytes32(8)},
 		// },
+		{
+			name: "SIGNEXTEND",
+			bytecode: []byte{
+				0x60, 0x11, // PUSH1 0x11, value
+				0x60, 0x00, // PUSH1 0, byte-1
+				0x0B, // SIGNEXTEND
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0x11)},
+		},
+		{
+			name: "SIGNEXTEND_NEGTIVE",
+			bytecode: []byte{
+				0x60, 0xFF, // PUSH1 0xFF, value
+				0x60, 0x00, // PUSH1 0, byte-1
+				0x0B, // SIGNEXTEND
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{hexToLittleEndianBytes32("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")},
+		},
+		{
+			name: "SIGNEXTEND_PARTIAL",
+			bytecode: []byte{
+				0x62, 0xFF, 0x11, 0x1F, // PUSH3 0xFF111F, value
+				0x60, 0x01, // PUSH1 1, byte-1
+				0x0B, // SIGNEXTEND
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0x111F)},
+		},
 	}
 
 	for _, tc := range testCases {
