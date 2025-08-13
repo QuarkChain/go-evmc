@@ -451,6 +451,31 @@ func TestBitwiseOpcodes(t *testing.T) {
 			},
 			expectedStack: [][32]byte{uint64ToBytes32(0x00)},
 		},
+		{
+			name: "SAR",
+			bytecode: []byte{
+				0x60, 0x01, // PUSH1 0x01, shift
+				0x60, 0xFF, // PUSH1 0xFF, value
+				0x1D, // SAR
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0x7f)},
+		},
+		{
+			name: "SAR_NEG",
+			bytecode: append(
+				[]byte{
+					0x60, 0x04, // PUSH1 0x04, shift
+					0x7F, // PUSH32
+				},
+				append(
+					hexutil.MustDecode("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF0")[:], // -16, value
+					0x1D, // SAR
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{hexToLittleEndianBytes32("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")}, // -1
+		},
 	}
 
 	for _, tc := range testCases {
