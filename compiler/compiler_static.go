@@ -13,7 +13,10 @@ const (
 	OUTPUT_SIZE            = (OUTPUT_IDX_STACK_DEPTH + 1) * 8
 )
 
-var UINT256_NEGATIVE1 = uint256.MustFromHex("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+var (
+	INT256_NEGATIVE_1   = uint256.MustFromHex("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff").String() // -1
+	INT256_NEGATIVE_MIN = uint256.MustFromHex("0x8000000000000000000000000000000000000000000000000000000000000000").String() // -2^255
+)
 
 // PCAnalysis holds static program counter analysis results
 type PCAnalysis struct {
@@ -219,8 +222,8 @@ func (c *EVMCompiler) getNextPC(currentInstr EVMInstruction, instructions []EVMI
 func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stackPtr, memory, gasPtr llvm.Value, analysis *PCAnalysis, nextBlock, exitBlock, outOfGasBlock llvm.BasicBlock, opts *EVMCompilationOpts) {
 	uint256Type := c.ctx.IntType(256)
 	zero := llvm.ConstInt(uint256Type, 0, false)
-	int256Min := llvm.ConstIntFromString(uint256Type, "-57896044618658097711785492504343953926634992332820282019728792003956564819968", 10) // -2^255
-	negOne := llvm.ConstInt(uint256Type, ^uint64(0), true)                                                                                  // -1
+	int256Min := llvm.ConstIntFromString(uint256Type, INT256_NEGATIVE_MIN, 10)
+	int256Negtive1 := llvm.ConstIntFromString(uint256Type, INT256_NEGATIVE_1, 10)
 
 	// Add gas consumption for this instruction
 	if !opts.DisableGas {
@@ -272,7 +275,7 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stac
 		isDivByZero := c.builder.CreateICmp(llvm.IntEQ, b, zero, "div_by_zero")
 		isOverflow := c.builder.CreateAnd(
 			c.builder.CreateICmp(llvm.IntEQ, a, int256Min, "equal_neg2^255"),
-			c.builder.CreateICmp(llvm.IntEQ, b, negOne, "equal_neg1"),
+			c.builder.CreateICmp(llvm.IntEQ, b, int256Negtive1, "equal_neg1"),
 			"overflow",
 		)
 		// sdiv result
@@ -363,7 +366,7 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stac
 	case NOT:
 		a := c.popStack(stack, stackPtr)
 		// TODO: use all ones in uint256
-		allOnes := c.createUint256ConstantFromBytes(UINT256_NEGATIVE1.Bytes())
+		allOnes := int256Negtive1
 		result := c.builder.CreateXor(a, allOnes, "not_result")
 		c.pushStack(stack, stackPtr, result)
 		c.builder.CreateBr(nextBlock)
