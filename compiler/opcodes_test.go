@@ -190,6 +190,46 @@ func TestArithmeticOpcodes(t *testing.T) {
 			},
 			expectedStack: [][32]byte{uint64ToBytes32(0x111F)},
 		},
+		{
+			name: "SIGNEXTEND_PARTIAL_NEGATIVE",
+			bytecode: []byte{
+				0x62, 0x11, 0xF1, 0x1F, // PUSH3 0x11F11F, value
+				0x60, 0x01, // PUSH1 1, byte-1
+				0x0B, // SIGNEXTEND
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{hexToLittleEndianBytes32("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF11F")},
+		},
+		{
+			name: "SIGNEXTEND_31",
+			bytecode: []byte{
+				0x61, 0x11, 0x1F, // PUSH2 0x111F, value
+				0x60, 0x1F, // PUSH1 31, byte-1
+				0x0B, // SIGNEXTEND
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0x111F)},
+		},
+		{
+			name: "SIGNEXTEND_31_NEGATIVE",
+			bytecode: []byte{
+				0x62, 0xFF, 0x11, 0x1F, // PUSH3 0xFF111F, value
+				0x60, 0x1F, // PUSH1 31, byte-1
+				0x0B, // SIGNEXTEND
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0xFF111F)},
+		},
+		{
+			name: "SIGNEXTEND_GT31",
+			bytecode: []byte{
+				0x62, 0xFF, 0x11, 0x1F, // PUSH3 0xFF111F, value
+				0x60, 0x20, // PUSH1 32, byte-1
+				0x0B, // SIGNEXTEND
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0xFF111F)},
+		},
 	}
 
 	for _, tc := range testCases {

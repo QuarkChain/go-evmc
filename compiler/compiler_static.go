@@ -281,7 +281,7 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stac
 		// Adapted from revm: https://github.com/bluealloy/revm/blob/fda371f73aba2c30a83c639608be78145fd1123b/crates/interpreter/src/instructions/arithmetic.rs#L89
 		a := c.popStack(stack, stackPtr)
 		b := c.popStack(stack, stackPtr)
-		cond := c.builder.CreateICmp(llvm.IntULT, a, llvm.ConstInt(a.Type(), 32, false), "a_lt_32")
+		cond := c.builder.CreateICmp(llvm.IntULT, a, llvm.ConstInt(a.Type(), 31, false), "a_lt_31")
 		// helper: signextend calculation
 		signExtendCalc := func() llvm.Value {
 			bitIndex := c.builder.CreateAdd(
