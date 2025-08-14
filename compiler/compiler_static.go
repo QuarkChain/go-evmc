@@ -308,7 +308,7 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stac
 		c.pushStack(stack, stackPtr, result)
 		c.builder.CreateBr(nextBlock)
 
-case LT, GT, SLT, SGT, EQ:
+	case LT, GT, SLT, SGT, EQ:
 		a := c.popStack(stack, stackPtr)
 		b := c.popStack(stack, stackPtr)
 
@@ -372,6 +372,34 @@ case LT, GT, SLT, SGT, EQ:
 		// TODO: use all ones in uint256
 		allOnes := c.createUint256ConstantFromBytes(UINT256_NEGATIVE1.Bytes())
 		result := c.builder.CreateXor(a, allOnes, "not_result")
+		c.pushStack(stack, stackPtr, result)
+		c.builder.CreateBr(nextBlock)
+
+	case BYTE:
+		a := c.popStack(stack, stackPtr)
+		b := c.popStack(stack, stackPtr)
+		// Constants
+		const32 := llvm.ConstInt(uint256Type, 32, false)   // upper bound for valid index
+		const31 := llvm.ConstInt(uint256Type, 31, false)   // used for position calculation
+		const8 := llvm.ConstInt(uint256Type, 8, false)     // bits per byte
+		constFF := llvm.ConstInt(uint256Type, 0xff, false) // mask for one byte
+		zero := llvm.ConstInt(uint256Type, 0, false)       // zero for out-of-range result
+
+		// Compare: index < 32 (check if within valid byte range)
+		cond := c.builder.CreateICmp(llvm.IntULT, a, const32, "byte_in_range")
+
+		// If in range: shift right by (31 - index) * 8 bits
+		shiftCount := c.builder.CreateMul(
+			c.builder.CreateSub(const31, a, "31_minus_idx"),
+			const8,
+			"shift_count",
+		)
+		shifted := c.builder.CreateLShr(b, shiftCount, "shifted")
+		// Mask to get only the lowest 8 bits (the extracted byte)
+		masked := c.builder.CreateAnd(shifted, constFF, "masked")
+
+		// Select result: if in range use masked value, else use 0
+		result := c.builder.CreateSelect(cond, masked, zero, "byte_result")
 		c.pushStack(stack, stackPtr, result)
 		c.builder.CreateBr(nextBlock)
 
