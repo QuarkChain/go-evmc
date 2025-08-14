@@ -221,9 +221,6 @@ func (c *EVMCompiler) getNextPC(currentInstr EVMInstruction, instructions []EVMI
 // compileInstructionStatic compiles an instruction using static analysis with gas metering
 func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stackPtr, memory, gasPtr llvm.Value, analysis *PCAnalysis, nextBlock, exitBlock, outOfGasBlock llvm.BasicBlock, opts *EVMCompilationOpts) {
 	uint256Type := c.ctx.IntType(256)
-	zero := llvm.ConstInt(uint256Type, 0, false)
-	int256Min := llvm.ConstIntFromString(uint256Type, INT256_NEGATIVE_MIN, 10)
-	int256Negtive1 := llvm.ConstIntFromString(uint256Type, INT256_NEGATIVE_1, 10)
 
 	// Add gas consumption for this instruction
 	if !opts.DisableGas {
@@ -272,6 +269,10 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stac
 	case SDIV:
 		a := c.popStack(stack, stackPtr)
 		b := c.popStack(stack, stackPtr)
+		zero := llvm.ConstInt(uint256Type, 0, false)
+		int256Min := llvm.ConstIntFromString(uint256Type, INT256_NEGATIVE_MIN, 10)
+		int256Negtive1 := llvm.ConstIntFromString(uint256Type, INT256_NEGATIVE_1, 10)
+
 		isDivByZero := c.builder.CreateICmp(llvm.IntEQ, b, zero, "div_by_zero")
 		isOverflow := c.builder.CreateAnd(
 			c.builder.CreateICmp(llvm.IntEQ, a, int256Min, "equal_neg2^255"),
@@ -365,8 +366,7 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stac
 
 	case NOT:
 		a := c.popStack(stack, stackPtr)
-		// TODO: use all ones in uint256
-		allOnes := int256Negtive1
+		allOnes := llvm.ConstIntFromString(uint256Type, INT256_NEGATIVE_1, 10)
 		result := c.builder.CreateXor(a, allOnes, "not_result")
 		c.pushStack(stack, stackPtr, result)
 		c.builder.CreateBr(nextBlock)
