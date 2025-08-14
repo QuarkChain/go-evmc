@@ -277,7 +277,38 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stac
 	// c.pushStack(stack, stackPtr, result)
 	// c.builder.CreateBr(nextBlock)
 
-	case LT, GT, SLT, SGT, EQ:
+	case SIGNEXTEND:
+		// Adapted from revm: https://github.com/bluealloy/revm/blob/fda371f73aba2c30a83c639608be78145fd1123b/crates/interpreter/src/instructions/arithmetic.rs#L89
+		a := c.popStack(stack, stackPtr)
+		b := c.popStack(stack, stackPtr)
+		cond := c.builder.CreateICmp(llvm.IntULT, a, llvm.ConstInt(a.Type(), 31, false), "a_lt_31")
+		// helper: signextend calculation
+		signExtendCalc := func() llvm.Value {
+			bitIndex := c.builder.CreateAdd(
+				c.builder.CreateMul(a, llvm.ConstInt(a.Type(), 8, false), "bitindex_mul"),
+				llvm.ConstInt(a.Type(), 7, false),
+				"bitindex",
+			)
+			shiftAmt := c.builder.CreateZExt(bitIndex, b.Type(), "bitindex_zext")
+
+			oneShift := c.builder.CreateShl(llvm.ConstInt(b.Type(), 1, false), shiftAmt, "one_shift")
+			mask := c.builder.CreateSub(oneShift, llvm.ConstInt(b.Type(), 1, false), "mask")
+
+			shiftedB := c.builder.CreateLShr(b, shiftAmt, "shifted_b")
+			bit := c.builder.CreateAnd(shiftedB, llvm.ConstInt(b.Type(), 1, false), "bit")
+
+			negMask := c.builder.CreateNot(mask, "neg_mask")
+			orVal := c.builder.CreateOr(b, negMask, "or_val")
+			andVal := c.builder.CreateAnd(b, mask, "and_val")
+
+			bitIsSet := c.builder.CreateICmp(llvm.IntNE, bit, llvm.ConstInt(b.Type(), 0, false), "bit_neq0")
+			return c.builder.CreateSelect(bitIsSet, orVal, andVal, "signed_val")
+		}
+		result := c.builder.CreateSelect(cond, signExtendCalc(), b, "signextend_result")
+		c.pushStack(stack, stackPtr, result)
+		c.builder.CreateBr(nextBlock)
+
+case LT, GT, SLT, SGT, EQ:
 		a := c.popStack(stack, stackPtr)
 		b := c.popStack(stack, stackPtr)
 
