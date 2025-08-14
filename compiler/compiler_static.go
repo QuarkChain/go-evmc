@@ -277,27 +277,33 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stac
 	// c.pushStack(stack, stackPtr, result)
 	// c.builder.CreateBr(nextBlock)
 
-	case LT:
+	case LT, GT, SLT, SGT, EQ:
 		a := c.popStack(stack, stackPtr)
 		b := c.popStack(stack, stackPtr)
-		cmp := c.builder.CreateICmp(llvm.IntULT, a, b, "lt_cmp")
-		result := c.builder.CreateZExt(cmp, uint256Type, "lt_result")
-		c.pushStack(stack, stackPtr, result)
-		c.builder.CreateBr(nextBlock)
 
-	case GT:
-		a := c.popStack(stack, stackPtr)
-		b := c.popStack(stack, stackPtr)
-		cmp := c.builder.CreateICmp(llvm.IntUGT, a, b, "gt_cmp")
-		result := c.builder.CreateZExt(cmp, uint256Type, "gt_result")
-		c.pushStack(stack, stackPtr, result)
-		c.builder.CreateBr(nextBlock)
+		var pred llvm.IntPredicate
+		var name string
 
-	case EQ:
-		a := c.popStack(stack, stackPtr)
-		b := c.popStack(stack, stackPtr)
-		cmp := c.builder.CreateICmp(llvm.IntEQ, a, b, "eq_cmp")
-		result := c.builder.CreateZExt(cmp, uint256Type, "eq_result")
+		switch instr.Opcode {
+		case LT:
+			pred = llvm.IntULT
+			name = "lt"
+		case GT:
+			pred = llvm.IntUGT
+			name = "gt"
+		case SLT:
+			pred = llvm.IntSLT
+			name = "slt"
+		case SGT:
+			pred = llvm.IntSGT
+			name = "sgt"
+		case EQ:
+			pred = llvm.IntEQ
+			name = "eq"
+		}
+
+		cmp := c.builder.CreateICmp(pred, a, b, name+"_cmp")
+		result := c.builder.CreateZExt(cmp, uint256Type, name+"_result")
 		c.pushStack(stack, stackPtr, result)
 		c.builder.CreateBr(nextBlock)
 

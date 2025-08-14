@@ -213,6 +213,144 @@ func TestComparisonOpcodes(t *testing.T) {
 			expectedStack: [][32]byte{uint64ToBytes32(0)},
 		},
 		{
+			name: "SLT_TRUE",
+			bytecode: []byte{
+				0x60, 0x0A, // PUSH1 10
+				0x60, 0x05, // PUSH1 5
+				0x12, // SLT
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(1)},
+		},
+		{
+			name: "SLT_FALSE",
+			bytecode: []byte{
+				0x60, 0x05, // PUSH1 5
+				0x60, 0x0A, // PUSH1 10
+				0x12, // SLT
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0)},
+		},
+		{
+			name: "SLT_NEGATIVE_TRUE",
+			bytecode: append(
+				[]byte{0x7F}, // PUSH32
+				append(
+					hexutil.MustDecode("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")[:], // -1
+					append(
+						[]byte{0x7F}, // PUSH32
+						append(
+							hexutil.MustDecode("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE")[:], // -2
+							0x12, // SLT
+							0x00, // STOP
+						)...,
+					)...,
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(1)},
+		},
+		{
+			name: "SLT_NEGATIVE_FALSE",
+			bytecode: append(
+				[]byte{0x7F}, // PUSH32
+				append(
+					hexutil.MustDecode("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE")[:], // -2
+					append(
+						[]byte{0x7F}, // PUSH32
+						append(
+							hexutil.MustDecode("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")[:], // -1
+							0x12, // SLT
+							0x00, // STOP
+						)...,
+					)...,
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(0)},
+		},
+		{
+			name: "SLT_HYBRID_FALSE",
+			bytecode: append(
+				[]byte{0x7F}, // PUSH32
+				append(
+					hexutil.MustDecode("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")[:], // -1
+					0x60, 0x05, // PUSH1 5
+					0x12, // SLT
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(0)},
+		},
+		{
+			name: "SGT_TRUE",
+			bytecode: []byte{
+				0x60, 0x05, // PUSH1 5
+				0x60, 0x0A, // PUSH1 10
+				0x13, // SGT
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(1)},
+		},
+		{
+			name: "SGT_FALSE",
+			bytecode: []byte{
+				0x60, 0x0A, // PUSH1 10
+				0x60, 0x05, // PUSH1 5
+				0x13, // SGT
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0)},
+		},
+		{
+			name: "SGT_NEGATIVE_TRUE",
+			bytecode: append(
+				[]byte{0x7F}, // PUSH32
+				append(
+					hexutil.MustDecode("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE")[:], // -2
+					append(
+						[]byte{0x7F}, // PUSH32
+						append(
+							hexutil.MustDecode("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")[:], // -1
+							0x13, // SGT
+							0x00, // STOP
+						)...,
+					)...,
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(1)},
+		},
+		{
+			name: "SGT_NEGATIVE_FALSE",
+			bytecode: append(
+				[]byte{0x7F}, // PUSH32
+				append(
+					hexutil.MustDecode("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")[:], // -1
+					append(
+						[]byte{0x7F}, // PUSH32
+						append(
+							hexutil.MustDecode("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE")[:], // -2
+							0x13, // SGT
+							0x00, // STOP
+						)...,
+					)...,
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(0)},
+		},
+		{
+			name: "SGT_HYBRID_TRUE",
+			bytecode: append(
+				[]byte{0x7F}, // PUSH32
+				append(
+					hexutil.MustDecode("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")[:], // -1
+					0x60, 0x05, // PUSH1 5
+					0x13, // SGT
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(1)},
+		},
+		{
 			name: "EQ_TRUE",
 			bytecode: []byte{
 				0x60, 0x07, // PUSH1 7
