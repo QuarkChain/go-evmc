@@ -183,4 +183,8 @@ The compiler is designed for high performance:
   - [ ] MSTORE8/MLOAD8 support
   - [ ] SLOAD/SSTORE support
   - [ ] CALL/CREATE support
+      - [ ] RETURNDATASIZE/RETURNDATACOPY
+  - [ ] BLOCKHASH/COINBASSE/TIMESTAMP/NUMBER/PREVRANDAO/GASLIMIT/CHAINID/SELFBALANCE/BASEFEE
+  - [ ] LOG0/LOG1/LOG2/LOG3/LOG4
+  - [ ] CALLDATA related
 - [ ] Fork support
