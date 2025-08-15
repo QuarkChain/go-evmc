@@ -180,6 +180,6 @@ The compiler is designed for high performance:
   - [x] SIGNEXTEND supoort
   - [ ] EXP support
   - [ ] MSTORE8/MLOAD8 support
-  - [ ] SLOAD/SSTORE support
+  - [x] SLOAD/SSTORE support
   - [ ] CALL/CREATE support
 - [ ] Fork support
