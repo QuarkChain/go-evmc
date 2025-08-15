@@ -13,7 +13,10 @@ const (
 	OUTPUT_SIZE            = (OUTPUT_IDX_STACK_DEPTH + 1) * 8
 )
 
-var UINT256_NEGATIVE1 = uint256.MustFromHex("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+var (
+	INT256_NEGATIVE_1   = uint256.MustFromHex("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff").String() // -1
+	INT256_NEGATIVE_MIN = uint256.MustFromHex("0x8000000000000000000000000000000000000000000000000000000000000000").String() // -2^255
+)
 
 // PCAnalysis holds static program counter analysis results
 type PCAnalysis struct {
@@ -263,10 +266,41 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stac
 		c.pushStack(stack, stackPtr, result)
 		c.builder.CreateBr(nextBlock)
 
+	case SDIV:
+		a := c.popStack(stack, stackPtr)
+		b := c.popStack(stack, stackPtr)
+		zero := llvm.ConstInt(uint256Type, 0, false)
+		int256Min := llvm.ConstIntFromString(uint256Type, INT256_NEGATIVE_MIN, 10)
+		int256Negtive1 := llvm.ConstIntFromString(uint256Type, INT256_NEGATIVE_1, 10)
+
+		isDivByZero := c.builder.CreateICmp(llvm.IntEQ, b, zero, "div_by_zero")
+		isOverflow := c.builder.CreateAnd(
+			c.builder.CreateICmp(llvm.IntEQ, a, int256Min, "equal_neg2^255"),
+			c.builder.CreateICmp(llvm.IntEQ, b, int256Negtive1, "equal_neg1"),
+			"overflow",
+		)
+		// sdiv result
+		sdiv := c.builder.CreateSDiv(a, b, "sdiv_result")
+		result := c.builder.CreateSelect(
+			isDivByZero,
+			zero, // division by zero → 0
+			c.builder.CreateSelect(isOverflow, int256Min, sdiv, "sdiv_safe"), // overflow → int256Min
+			"",
+		)
+		c.pushStack(stack, stackPtr, result)
+		c.builder.CreateBr(nextBlock)
+
 	case MOD:
 		a := c.popStack(stack, stackPtr)
 		b := c.popStack(stack, stackPtr)
-		result := c.builder.CreateURem(a, b, "mod_result")
+		result := c.builder.CreateURem(a, b, "mod_result") // mod by zero is already supported
+		c.pushStack(stack, stackPtr, result)
+		c.builder.CreateBr(nextBlock)
+
+	case SMOD:
+		a := c.popStack(stack, stackPtr)
+		b := c.popStack(stack, stackPtr)
+		result := c.builder.CreateSRem(a, b, "smod_result") // mod by zero is already supported
 		c.pushStack(stack, stackPtr, result)
 		c.builder.CreateBr(nextBlock)
 
@@ -369,8 +403,7 @@ case LT, GT, SLT, SGT, EQ:
 
 	case NOT:
 		a := c.popStack(stack, stackPtr)
-		// TODO: use all ones in uint256
-		allOnes := c.createUint256ConstantFromBytes(UINT256_NEGATIVE1.Bytes())
+		allOnes := llvm.ConstIntFromString(uint256Type, INT256_NEGATIVE_1, 10)
 		result := c.builder.CreateXor(a, allOnes, "not_result")
 		c.pushStack(stack, stackPtr, result)
 		c.builder.CreateBr(nextBlock)
@@ -386,6 +419,13 @@ case LT, GT, SLT, SGT, EQ:
 		a := c.popStack(stack, stackPtr)
 		b := c.popStack(stack, stackPtr)
 		result := c.builder.CreateLShr(a, b, "shr_result")
+		c.pushStack(stack, stackPtr, result)
+		c.builder.CreateBr(nextBlock)
+
+	case SAR:
+		a := c.popStack(stack, stackPtr)
+		b := c.popStack(stack, stackPtr)
+		result := c.builder.CreateAShr(a, b, "sar_result")
 		c.pushStack(stack, stackPtr, result)
 		c.builder.CreateBr(nextBlock)
 
