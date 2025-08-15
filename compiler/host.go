@@ -80,15 +80,22 @@ func (c *EVMCompiler) initailizeHostFunctions() {
 	i64ptr := llvm.PointerType(c.ctx.Int64Type(), 0)
 	c.hostFuncType = llvm.FunctionType(c.ctx.Int64Type(), []llvm.Type{c.ctx.Int64Type(), c.ctx.Int64Type(), i64ptr, i8ptr}, false)
 	c.hostFunc = llvm.AddFunction(c.module, "host_func", c.hostFuncType)
-	// TODO: anyway to pin the function?
+	// Set the host function's linkage to External.
+	// This prevents LLVM from internalizing it during LTO/IPO passes,
+	// ensuring it remains visible outside the module.
+	c.hostFunc.SetLinkage(llvm.ExternalLinkage)
+	usedArray := llvm.ConstArray(llvm.PointerType(c.hostFuncType, 0), []llvm.Value{c.hostFunc})
+	// Place the `llvm.used` global in the "llvm.metadata" section.
+	// LLVM recognizes this section specially, which is necessary
+	// for the used-function mechanism to work correctly.
+	usedGlobal := llvm.AddGlobal(c.module, usedArray.Type(), "llvm.used")
+	usedGlobal.SetInitializer(usedArray)
+	usedGlobal.SetLinkage(llvm.AppendingLinkage)
+	usedGlobal.SetSection("llvm.metadata")
 }
 
 func (c *EVMCompiler) addGlobalMappingForHostFunctions() {
-	// Host function may be optimized out.  Check if it exists.
-	hostFuncPtr := c.module.NamedFunction("host_func")
-	if !hostFuncPtr.IsNil() {
-		c.engine.AddGlobalMapping(c.hostFunc, unsafe.Pointer(C.callHostFunc))
-	}
+	c.engine.AddGlobalMapping(c.hostFunc, unsafe.Pointer(C.callHostFunc))
 }
 
 func NewDefaultHost() *DefaultHost {
