@@ -620,6 +620,46 @@ func TestBitwiseOpcodes(t *testing.T) {
 			}()},
 		},
 		{
+			name: "BYTE",
+			bytecode: []byte{
+				0x60, 0xFF, // PUSH1 0xFF, value
+				0x60, 0x1F, // PUSH1 31, byte offset
+				0x1A, // BYTE
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0xFF)},
+		},
+		{
+			name: "BYTE_2BYTES",
+			bytecode: []byte{
+				0x61, 0xFF, 0x00, // PUSH2 0xFF00, value
+				0x60, 0x1E, // PUSH1 30, byte offset
+				0x1A, // BYTE
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0xFF)},
+		},
+		{
+			name: "BYTE_OFFSET_SHORT",
+			bytecode: []byte{
+				0x61, 0xFF, 0x11, // PUSH2 0xFF11, value
+				0x60, 0x01, // PUSH1 1, byte offset
+				0x1A, // BYTE
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0x00)},
+		},
+		{
+			name: "BYTE_OFFSET_OOB",
+			bytecode: []byte{
+				0x61, 0xFF, 0x11, // PUSH2 0xFF11, value
+				0x60, 0x20, // PUSH1 32, byte offset (out of bounds)
+				0x1A, // BYTE
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0x00)},
+		},
+		{
 			name: "SHL",
 			bytecode: []byte{
 				0x60, 0x01, // PUSH1 0x01, shift
