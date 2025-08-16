@@ -48,6 +48,7 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 	uint64PtrType := llvm.PointerType(c.ctx.Int64Type(), 0)
 
 	execType := llvm.FunctionType(c.ctx.VoidType(), []llvm.Type{
+		c.ctx.Int64Type(), // inst
 		uint8PtrType,      // memory
 		uint256PtrType,    // stack
 		uint8PtrType,      // code (unused but kept for signature)
@@ -58,18 +59,19 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 	execFunc := llvm.AddFunction(c.module, "execute", execType)
 	execFunc.SetFunctionCallConv(llvm.CCallConv)
 
-	memoryParam := execFunc.Param(0)
-	stackParam := execFunc.Param(1)
-	gasLimitParam := execFunc.Param(3)
-	outputPtrParam := execFunc.Param(4)
+	instParam := execFunc.Param(0)
+	memoryParam := execFunc.Param(1)
+	stackParam := execFunc.Param(2)
+	gasLimitParam := execFunc.Param(4)
+	outputPtrParam := execFunc.Param(5)
 
 	// Create entry block
 	entryBlock := llvm.AddBasicBlock(execFunc, "entry")
 	c.builder.SetInsertPointAtEnd(entryBlock)
 
 	// Initialize stack pointer
-	stackPtr := c.builder.CreateAlloca(c.ctx.Int32Type(), "stack_ptr")
-	c.builder.CreateStore(llvm.ConstInt(c.ctx.Int32Type(), 0, false), stackPtr)
+	stackPtr := c.builder.CreateAlloca(c.ctx.Int64Type(), "stack_ptr")
+	c.builder.CreateStore(llvm.ConstInt(c.ctx.Int64Type(), 0, false), stackPtr)
 
 	// Initialize gasPtr tracking
 	var gasPtr llvm.Value
@@ -120,7 +122,7 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 			}
 		}
 
-		c.compileInstructionStatic(instr, stackParam, stackPtr, memoryParam, gasPtr, analysis, nextBlock, exitBlock, outOfGasBlock, opts)
+		c.compileInstructionStatic(instr, instParam, stackParam, stackPtr, memoryParam, gasPtr, analysis, nextBlock, exitBlock, outOfGasBlock, opts)
 	}
 
 	// Finalize out-of-gas block
@@ -218,8 +220,14 @@ func (c *EVMCompiler) getNextPC(currentInstr EVMInstruction, instructions []EVMI
 	return ^uint64(0) // End of program marker
 }
 
+func (c *EVMCompiler) checkHostReturn(ret llvm.Value, nextBlock, outOfGasBlock llvm.BasicBlock) {
+	switchInstr := c.builder.CreateSwitch(ret, nextBlock, 1)
+	switchInstr.AddCase(llvm.ConstInt(c.ctx.Int64Type(), uint64(ExecutionOutOfGas), false), outOfGasBlock)
+	// TODO: other errors
+}
+
 // compileInstructionStatic compiles an instruction using static analysis with gas metering
-func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stackPtr, memory, gasPtr llvm.Value, analysis *PCAnalysis, nextBlock, exitBlock, outOfGasBlock llvm.BasicBlock, opts *EVMCompilationOpts) {
+func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, stack, stackPtr, memory, gasPtr llvm.Value, analysis *PCAnalysis, nextBlock, exitBlock, outOfGasBlock llvm.BasicBlock, opts *EVMCompilationOpts) {
 	uint256Type := c.ctx.IntType(256)
 
 	// Add gas consumption for this instruction
@@ -507,6 +515,16 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, stack, stac
 		c.storeByteToMemory(memory, offset, value)
 		c.builder.CreateBr(nextBlock)
 
+	case SSTORE:
+		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
+		c.popStack(stack, stackPtr)
+		c.popStack(stack, stackPtr)
+		c.checkHostReturn(ret, nextBlock, outOfGasBlock)
+
+	case SLOAD:
+		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
+		c.checkHostReturn(ret, nextBlock, outOfGasBlock)
+
 	case RETURN:
 		_ = c.popStack(stack, stackPtr) // offset
 		_ = c.popStack(stack, stackPtr) // size
@@ -644,6 +662,8 @@ func (c *EVMCompiler) consumeSectionGas(gasCost uint64, gasPtr llvm.Value, outOf
 
 // CompileAndOptimizeStatic compiles using static analysis
 func (c *EVMCompiler) CompileAndOptimizeStatic(bytecode []byte, opts *EVMCompilationOpts) error {
+	c.initailizeHostFunctions()
+
 	_, err := c.CompileBytecodeStatic(bytecode, opts)
 	if err != nil {
 		return err

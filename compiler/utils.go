@@ -59,6 +59,12 @@ func IsMachineBigEndian() bool {
 	return isBig
 }
 
+func zeroBytes(buf []byte) {
+	for i := 0; i < len(buf); i++ {
+		buf[i] = 0
+	}
+}
+
 func Fib(n int) *uint256.Int {
 	a := uint256.NewInt(0)
 	b := uint256.NewInt(1)
