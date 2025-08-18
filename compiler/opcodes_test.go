@@ -59,7 +59,6 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 
 	opts := &EVMExecutionOpts{
 		GasLimit: testCase.gasLimit,
-		Host:     NewDefaultHost(),
 	}
 
 	result, err := comp.ExecuteCompiledWithOpts(testCase.bytecode, DefaultEVMCompilationOpts(), opts)

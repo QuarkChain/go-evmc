@@ -56,7 +56,7 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 		uint64PtrType,     // output args
 	}, false)
 
-	execFunc := llvm.AddFunction(c.module, "execute", execType)
+	execFunc := llvm.AddFunction(c.module, GetContractFunction(opts.ContractAddress), execType)
 	execFunc.SetFunctionCallConv(llvm.CCallConv)
 
 	instParam := execFunc.Param(0)
@@ -663,6 +663,7 @@ func (c *EVMCompiler) consumeSectionGas(gasCost uint64, gasPtr llvm.Value, outOf
 // CompileAndOptimizeStatic compiles using static analysis
 func (c *EVMCompiler) CompileAndOptimizeStatic(bytecode []byte, opts *EVMCompilationOpts) error {
 	c.initailizeHostFunctions()
+	c.contractAddress = opts.ContractAddress
 
 	_, err := c.CompileBytecodeStatic(bytecode, opts)
 	if err != nil {

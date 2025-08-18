@@ -1,32 +1,27 @@
 package compiler
 
-// #include <stdint.h>
-// typedef void (*func)(uint64_t inst, void* memory, void* stack, void* code, uint64_t gas, void* output);
-// static void execute(uint64_t f, uint64_t inst, void* memory, void* stack, void* code, uint64_t gas, void* output) { ((func)f)(inst, memory, stack, code, gas, output); }
-import "C"
 import (
-	"encoding/binary"
 	"fmt"
 	"os"
-	"unsafe"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/holiman/uint256"
 	"tinygo.org/x/go-llvm"
 )
 
 type EVMCompiler struct {
-	ctx            llvm.Context
-	module         llvm.Module
-	builder        llvm.Builder
-	target         llvm.Target
-	machine        llvm.TargetMachine
-	stackType      llvm.Type
-	memType        llvm.Type
-	engine         *llvm.ExecutionEngine
-	funcPtr        uint64
-	initSectionGas uint64
+	ctx             llvm.Context
+	module          llvm.Module
+	builder         llvm.Builder
+	target          llvm.Target
+	machine         llvm.TargetMachine
+	stackType       llvm.Type
+	memType         llvm.Type
+	initSectionGas  uint64
+	contractAddress common.Address
 
-	host         EVMHost
+	executor *EVMExecutor
+
 	hostFuncType llvm.Type
 	hostFunc     llvm.Value
 }
@@ -323,19 +318,26 @@ type EVMExecutionResult struct {
 
 type EVMExecutionOpts struct {
 	GasLimit uint64
-	Host     EVMHost
 }
+
+var defaultCompilationAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccc")
 
 type EVMCompilationOpts struct {
 	DisableGas                    bool
 	DisableSectionGasOptimization bool
+	ContractAddress               common.Address // The address of the contract to be compiled
 }
 
 func DefaultEVMCompilationOpts() *EVMCompilationOpts {
 	return &EVMCompilationOpts{
 		DisableGas:                    false,
 		DisableSectionGasOptimization: false,
+		ContractAddress:               defaultCompilationAddress,
 	}
+}
+
+func GetContractFunction(address common.Address) string {
+	return fmt.Sprintf("contract_%s", address.Hex())
 }
 
 type ExecutionStatus int
@@ -347,10 +349,12 @@ const (
 	ExecutionOutOfGas
 )
 
-func NewEVMCompiler() *EVMCompiler {
+func init() {
 	llvm.InitializeNativeTarget()
 	llvm.InitializeNativeAsmPrinter()
+}
 
+func NewEVMCompiler() *EVMCompiler {
 	ctx := llvm.NewContext()
 	module := ctx.NewModule("evm_module")
 	builder := ctx.NewBuilder()
@@ -376,6 +380,9 @@ func NewEVMCompiler() *EVMCompiler {
 }
 
 func (c *EVMCompiler) Dispose() {
+	if c.executor != nil {
+		c.executor.Dispose()
+	}
 	c.builder.Dispose()
 	// c.module.Dispose() TODO: segfault after execute() - does engine take the ownership of the module
 	c.ctx.Dispose()
@@ -528,92 +535,32 @@ func (c *EVMCompiler) CompileAndOptimizeWithOpts(bytecode []byte, opts *EVMCompi
 	return c.CompileAndOptimizeStatic(bytecode, opts)
 }
 
-func (c *EVMCompiler) CreateExecutionEngine() error {
-	engine, err := llvm.NewJITCompiler(c.module, 2)
+// GetCompiledCode returns the compiled code in object file format that can be executed locally.
+func (c *EVMCompiler) GetCompiledCode() []byte {
+	mem, err := c.machine.EmitToMemoryBuffer(c.module, llvm.ObjectFile)
 	if err != nil {
-		return fmt.Errorf("failed to create JIT compiler: %v", err)
+		panic(err)
 	}
+	return mem.Bytes()
+}
 
-	c.engine = &engine
-	c.addGlobalMappingForHostFunctions()
-
-	// Get function pointer for direct execution
-	funcPtr := engine.GetFunctionAddress("execute")
-	if funcPtr == 0 {
-		return fmt.Errorf("execute function address not found")
-	}
-	c.funcPtr = funcPtr
+func (c *EVMCompiler) CreateExecutor(opts *EVMExecutorOptions) error {
+	c.executor = NewEVMExecutor(opts)
 	return nil
 }
 
 // Execute the compiled EVM code
 func (c *EVMCompiler) Execute(opts *EVMExecutionOpts) (*EVMExecutionResult, error) {
-	// Prepare execution environment
-	// TODO: support dynamic size growth
-	const stackSize = 1024
-	const memorySize = 1024 * 32
-
-	stack := make([][32]byte, stackSize)
-	memory := make([]byte, memorySize)
-	gasLimit := opts.GasLimit
-
-	// TODO: should decouple compiler with execution instance
-	// Execute using function pointer
-	inst := createExecutionInstance(c)
-	defer removeExecutionInstance(inst)
-	c.host = opts.Host
-	gasRemainingResult, stackDepth, err := c.callNativeFunction(c.funcPtr, inst, unsafe.Pointer(&memory[0]), unsafe.Pointer(&stack[0]), gasLimit)
-	if err != nil {
-		return &EVMExecutionResult{
-			Stack:        nil,
-			Memory:       nil,
-			Status:       ExecutionError,
-			Error:        err,
-			GasUsed:      0,
-			GasLimit:     gasLimit,
-			GasRemaining: gasLimit,
-		}, nil
-	}
-
-	// Check for out-of-gas condition
-	if gasRemainingResult == -1 {
-		return &EVMExecutionResult{
-			Stack:        nil,
-			Memory:       nil,
-			Status:       ExecutionOutOfGas,
-			Error:        fmt.Errorf("out of gas"),
-			GasUsed:      gasLimit,
-			GasLimit:     gasLimit,
-			GasRemaining: 0,
-		}, nil
-	}
-
-	gasRemaining := uint64(gasRemainingResult)
-
-	memoryUsed := len(memory)
-	for i := len(memory) - 1; i >= 0; i-- {
-		if memory[i] != 0 {
-			memoryUsed = i + 1
-			break
-		}
-	}
-
-	return &EVMExecutionResult{
-		Stack:        stack[:stackDepth],
-		Memory:       memory[:memoryUsed],
-		Status:       ExecutionSuccess,
-		Error:        nil,
-		GasUsed:      gasLimit - gasRemaining,
-		GasLimit:     gasLimit,
-		GasRemaining: gasRemaining,
-	}, nil
+	return c.executor.Run(&Contract{
+		c.contractAddress,
+		c.GetCompiledCode(),
+	}, []byte{}, opts.GasLimit, false)
 }
 
 // ExecuteCompiled executes compiled EVM code using function pointer for better performance
 func (c *EVMCompiler) ExecuteCompiled(bytecode []byte) (*EVMExecutionResult, error) {
 	opts := &EVMExecutionOpts{
 		GasLimit: 1000000,
-		Host:     NewDefaultHost(),
 	}
 
 	return c.ExecuteCompiledWithOpts(bytecode, DefaultEVMCompilationOpts(), opts)
@@ -627,20 +574,11 @@ func (c *EVMCompiler) ExecuteCompiledWithOpts(bytecode []byte, copts *EVMCompila
 		return nil, fmt.Errorf("compilation failed: %v", err)
 	}
 
-	// Create execution engine
-	err = c.CreateExecutionEngine()
+	// Create executor
+	err = c.CreateExecutor(&EVMExecutorOptions{NewDefaultHost()})
 	if err != nil {
 		return nil, err
 	}
 
 	return c.Execute(opts)
-}
-
-// Helper function to call native function pointer (requires CGO)
-func (c *EVMCompiler) callNativeFunction(funcPtr uint64, inst uint64, memory, stack unsafe.Pointer, gas uint64) (int64, int64, error) {
-	var output [OUTPUT_SIZE]byte
-	C.execute(C.uint64_t(funcPtr), C.uint64_t(inst), memory, stack, nil, C.uint64_t(gas), unsafe.Pointer(&output[0]))
-	gasUsed := binary.LittleEndian.Uint64(output[OUTPUT_IDX_GAS*8:])
-	stackDepth := binary.LittleEndian.Uint64(output[OUTPUT_IDX_STACK_DEPTH*8:])
-	return int64(gasUsed), int64(stackDepth), nil
 }

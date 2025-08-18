@@ -26,11 +26,11 @@ type DefaultHost struct {
 // Host function handling
 //   - Find the EVMCompiler (or EVMExecutionInstance) from a global map
 //     This avoid using unsafe pointer to recoever the execution instance
-var executionInstanceMap = make(map[uint64]*EVMCompiler)
+var executionInstanceMap = make(map[uint64]*EVMExecutor)
 var executionInstanceLock sync.Mutex
 var executionInstanceCounter uint64
 
-func createExecutionInstance(inst *EVMCompiler) uint64 {
+func createExecutionInstance(inst *EVMExecutor) uint64 {
 	executionInstanceLock.Lock()
 	defer executionInstanceLock.Unlock()
 	executionInstanceCounter++
@@ -45,7 +45,7 @@ func removeExecutionInstance(instId uint64) {
 	delete(executionInstanceMap, instId)
 }
 
-func getExecutionInstance(instId uint64) (inst *EVMCompiler) {
+func getExecutionInstance(instId uint64) (inst *EVMExecutor) {
 	executionInstanceLock.Lock()
 	defer executionInstanceLock.Unlock()
 	return executionInstanceMap[instId]
@@ -75,27 +75,32 @@ func getStackElement(stackPtr uintptr, idx int) []byte {
 	return unsafe.Slice((*byte)(unsafe.Pointer(uintptr(stackPtr)-uintptr(32*idx))), 32)
 }
 
-func (c *EVMCompiler) initailizeHostFunctions() {
-	i8ptr := llvm.PointerType(c.ctx.Int8Type(), 0)
-	i64ptr := llvm.PointerType(c.ctx.Int64Type(), 0)
-	c.hostFuncType = llvm.FunctionType(c.ctx.Int64Type(), []llvm.Type{c.ctx.Int64Type(), c.ctx.Int64Type(), i64ptr, i8ptr}, false)
-	c.hostFunc = llvm.AddFunction(c.module, "host_func", c.hostFuncType)
+func initializeHostFunction(ctx llvm.Context, module llvm.Module) (hostFuncType llvm.Type, hostFunc llvm.Value) {
+	i8ptr := llvm.PointerType(ctx.Int8Type(), 0)
+	i64ptr := llvm.PointerType(ctx.Int64Type(), 0)
+	hostFuncType = llvm.FunctionType(ctx.Int64Type(), []llvm.Type{ctx.Int64Type(), ctx.Int64Type(), i64ptr, i8ptr}, false)
+	hostFunc = llvm.AddFunction(module, "host_func", hostFuncType)
 	// Set the host function's linkage to External.
 	// This prevents LLVM from internalizing it during LTO/IPO passes,
 	// ensuring it remains visible outside the module.
-	c.hostFunc.SetLinkage(llvm.ExternalLinkage)
-	usedArray := llvm.ConstArray(llvm.PointerType(c.hostFuncType, 0), []llvm.Value{c.hostFunc})
+	hostFunc.SetLinkage(llvm.ExternalLinkage)
+	usedArray := llvm.ConstArray(llvm.PointerType(hostFuncType, 0), []llvm.Value{hostFunc})
 	// Place the `llvm.used` global in the "llvm.metadata" section.
 	// LLVM recognizes this section specially, which is necessary
 	// for the used-function mechanism to work correctly.
-	usedGlobal := llvm.AddGlobal(c.module, usedArray.Type(), "llvm.used")
+	usedGlobal := llvm.AddGlobal(module, usedArray.Type(), "llvm.used")
 	usedGlobal.SetInitializer(usedArray)
 	usedGlobal.SetLinkage(llvm.AppendingLinkage)
 	usedGlobal.SetSection("llvm.metadata")
+	return hostFuncType, hostFunc
 }
 
-func (c *EVMCompiler) addGlobalMappingForHostFunctions() {
-	c.engine.AddGlobalMapping(c.hostFunc, unsafe.Pointer(C.callHostFunc))
+func (c *EVMCompiler) initailizeHostFunctions() {
+	c.hostFuncType, c.hostFunc = initializeHostFunction(c.ctx, c.module)
+}
+
+func (e *EVMExecutor) addGlobalMappingForHostFunctions() {
+	e.engine.AddGlobalMapping(e.hostFunc, unsafe.Pointer(C.callHostFunc))
 }
 
 func NewDefaultHost() *DefaultHost {
