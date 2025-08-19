@@ -12,7 +12,7 @@ import (
 	"tinygo.org/x/go-llvm"
 )
 
-type HostFunc func(gas *uint64, addr []byte, stackPtr uintptr) int64
+type HostFunc func(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64
 
 type EVMHost interface {
 	GetHostFunc(opcode EVMOpcode) HostFunc
@@ -53,19 +53,18 @@ func getExecutionInstance(instId uint64) (inst *EVMExecutor) {
 
 //export callHostFunc
 func callHostFunc(inst C.uint64_t, opcode C.uint64_t, gas *C.uint64_t, stackPtr C.uintptr_t) C.int64_t {
-	c := getExecutionInstance(uint64(inst))
-	if c == nil {
+	e := getExecutionInstance(uint64(inst))
+	if e == nil {
 		panic("execution instance not found")
 	}
 
-	f := c.host.GetHostFunc(EVMOpcode(opcode))
+	f := e.host.GetHostFunc(EVMOpcode(opcode))
 	if f == nil {
 		panic(fmt.Sprintf("host function for opcode %d not found", opcode))
 	}
 
-	// TODO: get the addr from exec_inst
 	gas1 := uint64(*gas)
-	ret := C.int64_t(f(&gas1, common.Address{}.Bytes(), uintptr(stackPtr)))
+	ret := C.int64_t(f(&gas1, e, uintptr(stackPtr)))
 	*gas = C.uint64_t(gas1)
 	return ret
 }
@@ -119,13 +118,13 @@ func (h *DefaultHost) GetHostFunc(opcode EVMOpcode) HostFunc {
 }
 
 // A simple Sstore with constant 20000 gas
-func (h *DefaultHost) Sstore(gas *uint64, addr []byte, stackPtr uintptr) int64 {
+func (h *DefaultHost) Sstore(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	if *gas < 20000 {
 		return int64(ExecutionOutOfGas)
 	}
 	*gas -= 20000
 
-	addrBytes := common.BytesToAddress(addr)
+	addrBytes := e.callContext.Contract.address
 	if _, ok := h.state[addrBytes]; !ok {
 		h.state[addrBytes] = make(map[common.Hash]common.Hash)
 	}
@@ -139,16 +138,15 @@ func (h *DefaultHost) Sstore(gas *uint64, addr []byte, stackPtr uintptr) int64 {
 }
 
 // A simple Sload with constant 5000 gas
-func (h *DefaultHost) Sload(gas *uint64, addr []byte, stackPtr uintptr) int64 {
+func (h *DefaultHost) Sload(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	if *gas < 5000 {
 		return int64(ExecutionOutOfGas)
 	}
 	*gas -= 5000
 
-	addrBytes := common.BytesToAddress(addr)
 	keyOrValue := getStackElement(stackPtr, 0)
 
-	m := h.state[addrBytes]
+	m := h.state[e.callContext.Contract.address]
 	if m == nil {
 		zeroBytes(keyOrValue)
 		return int64(ExecutionSuccess)
