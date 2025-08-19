@@ -65,8 +65,8 @@ func NewEVMExecutor(opts *EVMExecutorOptions) *EVMExecutor {
 }
 
 func (e *EVMExecutor) AddCompiledContract(codeHash common.Hash, compiledCode []byte) {
-	if codeHash == (common.Hash{}) {
-		// no compilcation is found
+	if compiledCode == nil {
+		// no compiled code is found
 		return
 	}
 	if _, ok := e.loadedContracts[codeHash]; !ok {

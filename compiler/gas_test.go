@@ -391,7 +391,7 @@ func BenchmarkGasConsumption(b *testing.B) {
 	}
 	err = comp.CreateExecutor(&EVMExecutorOptions{NewDefaultHost()})
 	if err != nil {
-		b.Fatalf("Engine failed: %v", err)
+		b.Fatalf("Executor failed: %v", err)
 	}
 
 	b.ResetTimer()
@@ -438,7 +438,7 @@ func BenchmarkGasComplexContract(b *testing.B) {
 
 	err = comp.CreateExecutor(&EVMExecutorOptions{NewDefaultHost()})
 	if err != nil {
-		b.Fatalf("Engine failed: %v", err)
+		b.Fatalf("Executor failed: %v", err)
 	}
 
 	b.ResetTimer()
