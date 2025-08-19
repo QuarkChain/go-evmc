@@ -10,15 +10,17 @@ import (
 )
 
 type EVMCompiler struct {
-	ctx             llvm.Context
-	module          llvm.Module
-	builder         llvm.Builder
-	target          llvm.Target
-	machine         llvm.TargetMachine
-	stackType       llvm.Type
-	memType         llvm.Type
-	initSectionGas  uint64
+	ctx            llvm.Context
+	module         llvm.Module
+	builder        llvm.Builder
+	target         llvm.Target
+	machine        llvm.TargetMachine
+	stackType      llvm.Type
+	memType        llvm.Type
+	initSectionGas uint64
+
 	contractAddress common.Address
+	codeHash        common.Hash
 
 	executor *EVMExecutor
 
@@ -321,6 +323,7 @@ type EVMExecutionOpts struct {
 }
 
 var defaultCompilationAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccc")
+var defaultCallerAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccd")
 
 type EVMCompilationOpts struct {
 	DisableGas                    bool
@@ -336,8 +339,8 @@ func DefaultEVMCompilationOpts() *EVMCompilationOpts {
 	}
 }
 
-func GetContractFunction(address common.Address) string {
-	return fmt.Sprintf("contract_%s", address.Hex())
+func GetContractFunction(codeHash common.Hash) string {
+	return fmt.Sprintf("contract_%s", codeHash.Hex())
 }
 
 type ExecutionStatus int
@@ -546,16 +549,13 @@ func (c *EVMCompiler) GetCompiledCode() []byte {
 
 func (c *EVMCompiler) CreateExecutor(opts *EVMExecutorOptions) error {
 	c.executor = NewEVMExecutor(opts)
-	c.executor.AddCompiledContract(&Contract{
-		c.contractAddress,
-		c.GetCompiledCode(),
-	})
+	c.executor.AddCompiledContract(c.codeHash, c.GetCompiledCode())
 	return nil
 }
 
 // Execute the compiled EVM code
 func (c *EVMCompiler) Execute(opts *EVMExecutionOpts) (*EVMExecutionResult, error) {
-	return c.executor.Run(c.contractAddress, []byte{}, opts.GasLimit, false)
+	return c.executor.Run(*NewContract(defaultCallerAddress, defaultCompilationAddress, uint256.NewInt(0), opts.GasLimit, c.codeHash), []byte{}, false)
 }
 
 // ExecuteCompiled executes compiled EVM code using function pointer for better performance

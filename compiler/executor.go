@@ -16,7 +16,7 @@ import (
 
 // An executor to execute native compiled code within EVM.
 type EVMExecutor struct {
-	callContext CallContext // current call context
+	callContext *CallContext // current call context
 
 	ctx    llvm.Context
 	module llvm.Module
@@ -25,6 +25,8 @@ type EVMExecutor struct {
 	host         EVMHost
 	hostFuncType llvm.Type
 	hostFunc     llvm.Value
+
+	loadedContracts map[common.Hash]bool
 }
 
 // CallContext is the current context of the call.
@@ -32,11 +34,6 @@ type EVMExecutor struct {
 type CallContext struct {
 	Memory   *vm.Memory
 	Contract *Contract
-}
-
-type Contract struct {
-	address      common.Address
-	compiledCode []byte
 }
 
 type EVMExecutorOptions struct {
@@ -55,27 +52,36 @@ func NewEVMExecutor(opts *EVMExecutorOptions) *EVMExecutor {
 	}
 
 	e := &EVMExecutor{
-		ctx:          ctx,
-		module:       module,
-		engine:       &engine,
-		host:         opts.Host,
-		hostFuncType: hostFuncType,
-		hostFunc:     hostFunc,
+		ctx:             ctx,
+		module:          module,
+		engine:          &engine,
+		host:            opts.Host,
+		hostFuncType:    hostFuncType,
+		hostFunc:        hostFunc,
+		loadedContracts: make(map[common.Hash]bool),
 	}
 	e.addGlobalMappingForHostFunctions()
 	return e
 }
 
-func (e *EVMExecutor) AddCompiledContract(contract *Contract) {
-	e.engine.AddObjectFileFromBuffer(contract.compiledCode)
+func (e *EVMExecutor) AddCompiledContract(codeHash common.Hash, compiledCode []byte) {
+	if codeHash == (common.Hash{}) {
+		// no compilcation is found
+		return
+	}
+	if _, ok := e.loadedContracts[codeHash]; !ok {
+		e.engine.AddObjectFileFromBuffer(compiledCode)
+		e.loadedContracts[codeHash] = true
+	}
 }
 
 // Run a contract.
-func (e *EVMExecutor) Run(address common.Address, input []byte, gasLimit uint64, readOnly bool) (ret *EVMExecutionResult, err error) {
+func (e *EVMExecutor) Run(contract Contract, input []byte, readOnly bool) (ret *EVMExecutionResult, err error) {
+	e.AddCompiledContract(contract.CodeHash, contract.CompiledCode)
 	// Get function pointer for direct execution
-	funcPtr := e.engine.GetFunctionAddress(GetContractFunction(address))
+	funcPtr := e.engine.GetFunctionAddress(GetContractFunction(contract.CodeHash))
 	if funcPtr == 0 {
-		return nil, fmt.Errorf("execute function address not found")
+		return nil, fmt.Errorf("compiled contract code not found")
 	}
 
 	// Prepare execution environment
@@ -85,11 +91,14 @@ func (e *EVMExecutor) Run(address common.Address, input []byte, gasLimit uint64,
 
 	stack := make([][32]byte, stackSize)
 	memory := make([]byte, memorySize)
+	e.callContext = &CallContext{
+		Contract: &contract,
+	}
 
 	// Execute using function pointer
 	inst := createExecutionInstance(e)
 	defer removeExecutionInstance(inst)
-	gasRemainingResult, stackDepth, err := e.callNativeFunction(funcPtr, inst, unsafe.Pointer(&memory[0]), unsafe.Pointer(&stack[0]), gasLimit)
+	gasRemainingResult, stackDepth, err := e.callNativeFunction(funcPtr, inst, unsafe.Pointer(&memory[0]), unsafe.Pointer(&stack[0]), contract.Gas)
 	if err != nil {
 		return &EVMExecutionResult{
 			Stack:        nil,
@@ -97,8 +106,8 @@ func (e *EVMExecutor) Run(address common.Address, input []byte, gasLimit uint64,
 			Status:       ExecutionError,
 			Error:        err,
 			GasUsed:      0,
-			GasLimit:     gasLimit,
-			GasRemaining: gasLimit,
+			GasLimit:     contract.Gas,
+			GasRemaining: contract.Gas,
 		}, nil
 	}
 
@@ -109,8 +118,8 @@ func (e *EVMExecutor) Run(address common.Address, input []byte, gasLimit uint64,
 			Memory:       nil,
 			Status:       ExecutionOutOfGas,
 			Error:        fmt.Errorf("out of gas"),
-			GasUsed:      gasLimit,
-			GasLimit:     gasLimit,
+			GasUsed:      contract.Gas,
+			GasLimit:     contract.Gas,
 			GasRemaining: 0,
 		}, nil
 	}
@@ -130,8 +139,8 @@ func (e *EVMExecutor) Run(address common.Address, input []byte, gasLimit uint64,
 		Memory:       memory[:memoryUsed],
 		Status:       ExecutionSuccess,
 		Error:        nil,
-		GasUsed:      gasLimit - gasRemaining,
-		GasLimit:     gasLimit,
+		GasUsed:      contract.Gas - gasRemaining,
+		GasLimit:     contract.Gas,
 		GasRemaining: gasRemaining,
 	}, nil
 }

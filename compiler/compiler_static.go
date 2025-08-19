@@ -3,6 +3,7 @@ package compiler
 import (
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/holiman/uint256"
 	"tinygo.org/x/go-llvm"
 )
@@ -56,7 +57,7 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 		uint64PtrType,     // output args
 	}, false)
 
-	execFunc := llvm.AddFunction(c.module, GetContractFunction(opts.ContractAddress), execType)
+	execFunc := llvm.AddFunction(c.module, GetContractFunction(crypto.Keccak256Hash(bytecode)), execType)
 	execFunc.SetFunctionCallConv(llvm.CCallConv)
 
 	instParam := execFunc.Param(0)
@@ -664,6 +665,7 @@ func (c *EVMCompiler) consumeSectionGas(gasCost uint64, gasPtr llvm.Value, outOf
 func (c *EVMCompiler) CompileAndOptimizeStatic(bytecode []byte, opts *EVMCompilationOpts) error {
 	c.initailizeHostFunctions()
 	c.contractAddress = opts.ContractAddress
+	c.codeHash = crypto.Keccak256Hash(bytecode)
 
 	_, err := c.CompileBytecodeStatic(bytecode, opts)
 	if err != nil {
