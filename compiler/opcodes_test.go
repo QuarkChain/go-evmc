@@ -279,6 +279,44 @@ func TestArithmeticOpcodes(t *testing.T) {
 			),
 			expectedStack: [][32]byte{hexToLittleEndianBytes32("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE")}, // -2
 		},
+		{
+			name: "ADDMOD",
+			bytecode: []byte{
+				0x60, 0x08, // PUSH1 8, denominator
+				0x60, 0x0a, // PUSH1 10, second to add
+				0x60, 0x0a, // PUSH1 10, first to add
+				0x08, // ADDMOD
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(4)},
+		},
+		{
+			name: "ADDMOD_ZERO",
+			bytecode: []byte{
+				0x60, 0x00, // PUSH1 0, denominator
+				0x60, 0x0a, // PUSH1 10, second to add
+				0x60, 0x0a, // PUSH1 10, first to add
+				0x08, // ADDMOD
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0)},
+		},
+		{
+			name: "ADDMOD_NEGATIVE",
+			bytecode: append(
+				[]byte{
+					0x60, 0x02, // PUSH1 2, denominator
+					0x60, 0x02, // PUSH1 2, second to add
+					0x7F, // PUSH32
+				},
+				append(
+					hexutil.MustDecode("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")[:], // -1, first to add
+					0x08, // ADDMOD
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(1)},
+		},
 		// {
 		// 	name: "EXP",
 		// 	bytecode: []byte{

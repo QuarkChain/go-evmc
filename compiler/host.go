@@ -90,6 +90,7 @@ func NewDefaultHost() *DefaultHost {
 		state: make(map[common.Address]map[common.Hash]common.Hash),
 	}
 	h.hostFuncMap = map[EVMOpcode]HostFunc{
+		ADDMOD: h.AddMod,
 		MLOAD:  h.Mload,
 		MSTORE: h.Mstore,
 		SLOAD:  h.Sload,
@@ -100,6 +101,17 @@ func NewDefaultHost() *DefaultHost {
 
 func (h *DefaultHost) GetHostFunc(opcode EVMOpcode) HostFunc {
 	return h.hostFuncMap[opcode]
+}
+
+func (h *DefaultHost) AddMod(gas *uint64, addr []byte, stackPtr uintptr) int64 {
+	x := new(uint256.Int).SetBytes(Reverse(getStackElement(stackPtr, 0)))
+	y := new(uint256.Int).SetBytes(Reverse(getStackElement(stackPtr, 1)))
+	src := getStackElement(stackPtr, 2)
+	m := new(uint256.Int).SetBytes(Reverse(src))
+	x.AddMod(x, y, m)
+	res := x.Bytes32()
+	copy(src, Reverse(res[:]))
+	return int64(ExecutionSuccess)
 }
 
 // A simple Sstore with constant 20000 gas
