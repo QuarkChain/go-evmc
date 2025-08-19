@@ -66,12 +66,14 @@ func NewEVMExecutor(opts *EVMExecutorOptions) *EVMExecutor {
 	return e
 }
 
-// Run a contract.
-func (e *EVMExecutor) Run(contract *Contract, input []byte, gasLimit uint64, readOnly bool) (ret *EVMExecutionResult, err error) {
+func (e *EVMExecutor) AddCompiledContract(contract *Contract) {
 	e.engine.AddObjectFileFromBuffer(contract.compiledCode)
+}
 
+// Run a contract.
+func (e *EVMExecutor) Run(address common.Address, input []byte, gasLimit uint64, readOnly bool) (ret *EVMExecutionResult, err error) {
 	// Get function pointer for direct execution
-	funcPtr := e.engine.GetFunctionAddress(GetContractFunction(contract.address))
+	funcPtr := e.engine.GetFunctionAddress(GetContractFunction(address))
 	if funcPtr == 0 {
 		return nil, fmt.Errorf("execute function address not found")
 	}

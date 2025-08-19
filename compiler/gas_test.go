@@ -389,7 +389,6 @@ func BenchmarkGasConsumption(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Compilation failed: %v", err)
 	}
-
 	err = comp.CreateExecutor(&EVMExecutorOptions{NewDefaultHost()})
 	if err != nil {
 		b.Fatalf("Engine failed: %v", err)

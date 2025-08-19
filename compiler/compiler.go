@@ -546,15 +546,16 @@ func (c *EVMCompiler) GetCompiledCode() []byte {
 
 func (c *EVMCompiler) CreateExecutor(opts *EVMExecutorOptions) error {
 	c.executor = NewEVMExecutor(opts)
+	c.executor.AddCompiledContract(&Contract{
+		c.contractAddress,
+		c.GetCompiledCode(),
+	})
 	return nil
 }
 
 // Execute the compiled EVM code
 func (c *EVMCompiler) Execute(opts *EVMExecutionOpts) (*EVMExecutionResult, error) {
-	return c.executor.Run(&Contract{
-		c.contractAddress,
-		c.GetCompiledCode(),
-	}, []byte{}, opts.GasLimit, false)
+	return c.executor.Run(c.contractAddress, []byte{}, opts.GasLimit, false)
 }
 
 // ExecuteCompiled executes compiled EVM code using function pointer for better performance
