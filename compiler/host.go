@@ -90,10 +90,11 @@ func NewDefaultHost() *DefaultHost {
 		state: make(map[common.Address]map[common.Hash]common.Hash),
 	}
 	h.hostFuncMap = map[EVMOpcode]HostFunc{
-		MLOAD:  h.Mload,
-		MSTORE: h.Mstore,
-		SLOAD:  h.Sload,
-		SSTORE: h.Sstore,
+		COINBASE: h.Coinbase,
+		MLOAD:    h.Mload,
+		MSTORE:   h.Mstore,
+		SLOAD:    h.Sload,
+		SSTORE:   h.Sstore,
 	}
 	return h
 }
@@ -198,6 +199,15 @@ func (h *DefaultHost) Mstore(gas *uint64, e *EVMExecutor, stackPtr uintptr) int6
 	// Copy the stack value to the memory
 	value := getStackElement(stackPtr, 1)
 	CopyFromMachineToBig(value, e.callContext.Memory.GetPtr(offset.Uint64(), 32))
+
+	return int64(ExecutionSuccess)
+}
+
+// Coinbase returns the coinbase address of the block.
+func (h *DefaultHost) Coinbase(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
+	stack0 := getStackElement(stackPtr, 0)
+
+	CopyFromBigToMachine(new(uint256.Int).SetBytes(e.evm.Context.Coinbase.Bytes()).Bytes(), stack0)
 
 	return int64(ExecutionSuccess)
 }

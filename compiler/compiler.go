@@ -326,6 +326,7 @@ type EVMExecutionOpts struct {
 
 var defaultCompilationAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccc")
 var defaultCallerAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccd")
+var defaultCoinbaseAddress = common.HexToAddress("ccccccccccccccccccccccccccccccccccccccce")
 
 type EVMCompilationOpts struct {
 	DisableGas                    bool
@@ -423,6 +424,12 @@ func (c *EVMCompiler) ParseBytecode(bytecode []byte) ([]EVMInstruction, error) {
 func (c *EVMCompiler) CompileBytecode(bytecode []byte) (llvm.Module, error) {
 	// Use static analysis approach by default
 	return c.CompileBytecodeStatic(bytecode, &EVMCompilationOpts{DisableGas: false})
+}
+
+func (c *EVMCompiler) pushStackEmpty(stackPtr llvm.Value) {
+	stackPtrVal := c.builder.CreateLoad(c.ctx.Int32Type(), stackPtr, "stack_ptr_val")
+	newStackPtr := c.builder.CreateAdd(stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), 1, false), "new_stack_ptr")
+	c.builder.CreateStore(newStackPtr, stackPtr)
 }
 
 func (c *EVMCompiler) pushStack(stack, stackPtr, value llvm.Value) {
@@ -550,7 +557,7 @@ func (c *EVMCompiler) GetCompiledCode() []byte {
 }
 
 func (c *EVMCompiler) CreateExecutor() error {
-	evm := NewEVM(vm.BlockContext{}, nil, params.TestChainConfig, vm.Config{})
+	evm := NewEVM(vm.BlockContext{Coinbase: defaultCoinbaseAddress}, nil, params.TestChainConfig, vm.Config{})
 	c.executor = evm.executor
 	c.executor.AddCompiledContract(c.codeHash, c.GetCompiledCode())
 	return nil
