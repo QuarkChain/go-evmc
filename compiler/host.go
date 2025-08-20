@@ -23,13 +23,11 @@ type DefaultHost struct {
 	hostFuncMap map[EVMOpcode]HostFunc
 }
 
-func createExecutionInstance(inst *EVMExecutor) uintptr {
-	h := cgo.NewHandle(inst)
-	return uintptr(h)
+func createExecutionInstance(inst *EVMExecutor) cgo.Handle {
+	return cgo.NewHandle(inst)
 }
 
-func removeExecutionInstance(instID uintptr) {
-	h := cgo.Handle(instID)
+func removeExecutionInstance(h cgo.Handle) {
 	h.Delete()
 }
 

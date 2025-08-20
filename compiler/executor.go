@@ -7,6 +7,7 @@ import "C"
 import (
 	"encoding/binary"
 	"fmt"
+	"runtime/cgo"
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -152,7 +153,7 @@ func (e *EVMExecutor) Dispose() {
 }
 
 // Helper function to call native function pointer (requires CGO)
-func (e *EVMExecutor) callNativeFunction(funcPtr uint64, inst uintptr, memory, stack unsafe.Pointer, gas uint64) (int64, int64, error) {
+func (e *EVMExecutor) callNativeFunction(funcPtr uint64, inst cgo.Handle, memory, stack unsafe.Pointer, gas uint64) (int64, int64, error) {
 	var output [OUTPUT_SIZE]byte
 	C.execute(C.uint64_t(funcPtr), C.uintptr_t(inst), memory, stack, nil, C.uint64_t(gas), unsafe.Pointer(&output[0]))
 	gasUsed := binary.LittleEndian.Uint64(output[OUTPUT_IDX_GAS*8:])
