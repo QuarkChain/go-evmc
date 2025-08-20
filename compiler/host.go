@@ -57,6 +57,13 @@ func getStackElement(stackPtr uintptr, idx int) []byte {
 	return unsafe.Slice((*byte)(unsafe.Pointer(uintptr(stackPtr)-uintptr(32*idx))), 32)
 }
 
+// loadUint256 loads the littele-endian stack element at idx as a uint256.Int (big-endian).
+func loadUint256(stackPtr uintptr, idx int) *uint256.Int {
+	b := getStackElement(stackPtr, idx)
+	ReverseInplace(b)
+	return new(uint256.Int).SetBytes(b)
+}
+
 func initializeHostFunction(ctx llvm.Context, module llvm.Module) (hostFuncType llvm.Type, hostFunc llvm.Value) {
 	i8ptr := llvm.PointerType(ctx.Int8Type(), 0)
 	i64ptr := llvm.PointerType(ctx.Int64Type(), 0)
@@ -103,14 +110,16 @@ func (h *DefaultHost) GetHostFunc(opcode EVMOpcode) HostFunc {
 	return h.hostFuncMap[opcode]
 }
 
-func (h *DefaultHost) AddMod(gas *uint64, addr []byte, stackPtr uintptr) int64 {
-	x := new(uint256.Int).SetBytes(Reverse(getStackElement(stackPtr, 0)))
-	y := new(uint256.Int).SetBytes(Reverse(getStackElement(stackPtr, 1)))
-	src := getStackElement(stackPtr, 2)
-	m := new(uint256.Int).SetBytes(Reverse(src))
+func (h *DefaultHost) AddMod(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
+	x := loadUint256(stackPtr, 0)
+	y := loadUint256(stackPtr, 1)
+	m := loadUint256(stackPtr, 2)
+
 	x.AddMod(x, y, m)
 	res := x.Bytes32()
-	copy(src, Reverse(res[:]))
+	ReverseInplace(res[:])
+	copy(getStackElement(stackPtr, 2), res[:])
+
 	return int64(ExecutionSuccess)
 }
 
