@@ -173,7 +173,7 @@ The compiler is designed for high performance:
 - [ ] Formal verification capabilities
 - [x] Gas metering integration
 - [ ] Precompiled contracts support
-- [ ] Dynamic memory growth
+- [x] Dynamic memory growth
 - [ ] Missing OPCODEs
   - [x] SHL, SHR, SAR support
   - [x] SDIV, SMOD support
