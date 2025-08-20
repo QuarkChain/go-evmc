@@ -1,8 +1,8 @@
 package compiler
 
 // #include <stdint.h>
-// typedef void (*func)(uint64_t inst, void* memory, void* stack, void* code, uint64_t gas, void* output);
-// static void execute(uint64_t f, uint64_t inst, void* memory, void* stack, void* code, uint64_t gas, void* output) { ((func)f)(inst, memory, stack, code, gas, output); }
+// typedef void (*func)(uint64_t inst, void* stack, void* code, uint64_t gas, void* output);
+// static void execute(uint64_t f, uint64_t inst, void* stack, void* code, uint64_t gas, void* output) { ((func)f)(inst, stack, code, gas, output); }
 import "C"
 import (
 	"encoding/binary"
@@ -96,7 +96,7 @@ func (e *EVMExecutor) Run(contract Contract, input []byte, readOnly bool) (ret *
 	// Execute using function pointer
 	inst := createExecutionInstance(e)
 	defer removeExecutionInstance(inst)
-	gasRemainingResult, stackDepth, err := e.callNativeFunction(funcPtr, inst, nil, unsafe.Pointer(&stack[0]), contract.Gas)
+	gasRemainingResult, stackDepth, err := e.callNativeFunction(funcPtr, inst, unsafe.Pointer(&stack[0]), contract.Gas)
 	if err != nil {
 		return &EVMExecutionResult{
 			Stack:        nil,
@@ -142,9 +142,9 @@ func (e *EVMExecutor) Dispose() {
 }
 
 // Helper function to call native function pointer (requires CGO)
-func (e *EVMExecutor) callNativeFunction(funcPtr uint64, inst cgo.Handle, memory, stack unsafe.Pointer, gas uint64) (int64, int64, error) {
+func (e *EVMExecutor) callNativeFunction(funcPtr uint64, inst cgo.Handle, stack unsafe.Pointer, gas uint64) (int64, int64, error) {
 	var output [OUTPUT_SIZE]byte
-	C.execute(C.uint64_t(funcPtr), C.uintptr_t(inst), memory, stack, nil, C.uint64_t(gas), unsafe.Pointer(&output[0]))
+	C.execute(C.uint64_t(funcPtr), C.uintptr_t(inst), stack, nil, C.uint64_t(gas), unsafe.Pointer(&output[0]))
 	gasUsed := binary.LittleEndian.Uint64(output[OUTPUT_IDX_GAS*8:])
 	stackDepth := binary.LittleEndian.Uint64(output[OUTPUT_IDX_STACK_DEPTH*8:])
 	return int64(gasUsed), int64(stackDepth), nil
