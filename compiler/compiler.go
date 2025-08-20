@@ -5,6 +5,8 @@ import (
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 	"tinygo.org/x/go-llvm"
 )
@@ -547,8 +549,9 @@ func (c *EVMCompiler) GetCompiledCode() []byte {
 	return mem.Bytes()
 }
 
-func (c *EVMCompiler) CreateExecutor(opts *EVMExecutorOptions) error {
-	c.executor = NewEVMExecutor(opts)
+func (c *EVMCompiler) CreateExecutor() error {
+	evm := NewEVM(vm.BlockContext{}, nil, params.TestChainConfig, vm.Config{})
+	c.executor = evm.executor
 	c.executor.AddCompiledContract(c.codeHash, c.GetCompiledCode())
 	return nil
 }
@@ -576,7 +579,7 @@ func (c *EVMCompiler) ExecuteCompiledWithOpts(bytecode []byte, copts *EVMCompila
 	}
 
 	// Create executor
-	err = c.CreateExecutor(&EVMExecutorOptions{NewDefaultHost()})
+	err = c.CreateExecutor()
 	if err != nil {
 		return nil, err
 	}

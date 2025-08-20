@@ -22,6 +22,8 @@ type EVMExecutor struct {
 	module llvm.Module
 	engine *llvm.ExecutionEngine
 
+	evm *EVM
+
 	host         EVMHost
 	hostFuncType llvm.Type
 	hostFunc     llvm.Value
@@ -40,7 +42,7 @@ type EVMExecutorOptions struct {
 	Host EVMHost
 }
 
-func NewEVMExecutor(opts *EVMExecutorOptions) *EVMExecutor {
+func NewEVMExecutor(evm *EVM) *EVMExecutor {
 	ctx := llvm.NewContext()
 	module := ctx.NewModule("evm_module")
 
@@ -55,7 +57,8 @@ func NewEVMExecutor(opts *EVMExecutorOptions) *EVMExecutor {
 		ctx:             ctx,
 		module:          module,
 		engine:          &engine,
-		host:            opts.Host,
+		evm:             evm,
+		host:            NewDefaultHost(),
 		hostFuncType:    hostFuncType,
 		hostFunc:        hostFunc,
 		loadedContracts: make(map[common.Hash]bool),
