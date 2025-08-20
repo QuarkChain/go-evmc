@@ -9,23 +9,25 @@ import (
 	"github.com/holiman/uint256"
 )
 
-// Helper function to create a 32-byte value from a uint64
+// Helper function to create a 32-byte value (machine format) from a uint64
 func uint64ToBytes32(val uint64) [32]byte {
-	var result [32]byte
-	// Store in little-endian format (first byte contains LSB)
-	for i := 0; i < 8 && i < 32; i++ {
-		result[i] = byte(val >> (8 * i))
+	// Store in machine format
+	bs := uint256.NewInt(val).Bytes32()
+	if IsMachineBigEndian() {
+		return bs
 	}
-	return result
+	return Reverse32Bytes(bs)
 }
 
-// Helper function to convert [32]byte back to uint64 for display
+// Helper function to convert [32]byte (machine format) back to uint64 for display
 func bytes32ToUint64(b [32]byte) uint64 {
-	var result uint64
-	for i := 0; i < 8 && i < 32; i++ {
-		result |= uint64(b[i]) << (8 * i)
+	var v uint256.Int
+	if IsMachineBigEndian() {
+		v.SetBytes(b[:])
+	} else {
+		v.SetBytes(Reverse(b[:]))
 	}
-	return result
+	return v.Uint64()
 }
 
 // Helper function to decode a hex string (big-endian) and return its
@@ -953,22 +955,40 @@ func TestMemoryOpcodes(t *testing.T) {
 			},
 			expectedGas: 3*6 + 2*3,
 		},
-		// {
-		// 	name: "MSTORE8_MLOAD",
-		// 	bytecode: []byte{
-		// 		0x60, 0xFF, // PUSH1 0xFF (value)
-		// 		0x60, 0x00, // PUSH1 0x00 (offset)
-		// 		0x53,       // MSTORE8
-		// 		0x60, 0x00, // PUSH1 0x00 (offset)
-		// 		0x51, // MLOAD
-		// 		0x00, // STOP
-		// 	},
-		// 	expectedStack: [][32]byte{func() [32]byte {
-		// 		var result [32]byte
-		// 		result[0] = 0xFF // Only first byte should be 0xFF
-		// 		return result
-		// 	}()},
-		// },
+		{
+			name: "MSTORE8_MLOAD",
+			bytecode: []byte{
+				0x60, 0xFF, // PUSH1 0xFF (value)
+				0x60, 0x00, // PUSH1 0x00 (offset)
+				0x53,       // MSTORE8
+				0x60, 0x00, // PUSH1 0x00 (offset)
+				0x51, // MLOAD
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{Reverse32Bytes(uint64ToBytes32(0xFF))},
+			expectedMemory: &Memory{
+				store:       common.Hex2Bytes("FF00000000000000000000000000000000000000000000000000000000000000"),
+				lastGasCost: 1 * 3,
+			},
+			expectedGas: 3*5 + 1*3,
+		},
+		{
+			name: "MSTORE8_MLOAD_OFFSET31",
+			bytecode: []byte{
+				0x60, 0xFF, // PUSH1 0xFF (value)
+				0x60, 0x1F, // PUSH1 0x1F (offset)
+				0x53,       // MSTORE8
+				0x60, 0x00, // PUSH1 0x00 (offset)
+				0x51, // MLOAD
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0xFF)},
+			expectedMemory: &Memory{
+				store:       common.Hex2Bytes("00000000000000000000000000000000000000000000000000000000000000FF"),
+				lastGasCost: 1 * 3,
+			},
+			expectedGas: 3*5 + 1*3,
+		},
 	}
 
 	for _, tc := range testCases {

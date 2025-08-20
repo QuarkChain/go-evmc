@@ -93,6 +93,7 @@ func NewDefaultHost() *DefaultHost {
 		COINBASE: h.Coinbase,
 		MLOAD:    h.Mload,
 		MSTORE:   h.Mstore,
+		MSTORE8:  h.Mstore8,
 		SLOAD:    h.Sload,
 		SSTORE:   h.Sstore,
 	}
@@ -199,6 +200,27 @@ func (h *DefaultHost) Mstore(gas *uint64, e *EVMExecutor, stackPtr uintptr) int6
 	// Copy the stack value to the memory
 	value := getStackElement(stackPtr, 1)
 	CopyFromMachineToBig(value, e.callContext.Memory.GetPtr(offset.Uint64(), 32))
+
+	return int64(ExecutionSuccess)
+}
+
+// Mstore8 behaves the same as Geth's.
+func (h *DefaultHost) Mstore8(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
+	stack0 := getStackElement(stackPtr, 0)
+	offset := new(uint256.Int).SetBytes(FromMachineToBigInplace(stack0))
+	_, errno := chargeMemoryGasAndResize(gas, e.callContext.Memory, offset, 1)
+	if errno != int64(ExecutionSuccess) {
+		return errno
+	}
+
+	// Copy the stack value to the memory
+	m := e.callContext.Memory.GetPtr(offset.Uint64(), 1)
+	value := getStackElement(stackPtr, 1)
+	if IsMachineBigEndian() {
+		m[0] = value[31]
+	} else {
+		m[0] = value[0]
+	}
 
 	return int64(ExecutionSuccess)
 }
