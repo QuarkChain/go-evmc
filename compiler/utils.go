@@ -27,7 +27,6 @@ void u256_byte_swap_inplace(void* buf_ptr) {
 import "C"
 import (
 	"encoding/binary"
-	"math"
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/params"
@@ -197,33 +196,6 @@ func uint256ByteSwapInplace(buf []byte) {
 }
 
 // Below are from Geth.  See the license of Geth.
-
-// toWordSize returns the ceiled word size required for memory expansion.
-func toWordSize(size uint64) uint64 {
-	if size > math.MaxUint64-31 {
-		return math.MaxUint64/32 + 1
-	}
-
-	return (size + 31) / 32
-}
-
-// calcMemSize64WithUint calculates the required memory size, and returns
-// the size and whether the result overflowed uint64
-// Identical to calcMemSize64, but length is a uint64
-func calcMemSize64WithUint(off *uint256.Int, length64 uint64) (uint64, bool) {
-	// if length is zero, memsize is always zero, regardless of offset
-	if length64 == 0 {
-		return 0, false
-	}
-	// Check that offset doesn't overflow
-	offset64, overflow := off.Uint64WithOverflow()
-	if overflow {
-		return 0, true
-	}
-	val := offset64 + length64
-	// if value < either of it's parts, then it overflowed
-	return val, val < offset64
-}
 
 // memoryGasCost calculates the quadratic gas for memory expansion. It does so
 // only for the memory region that is expanded, not the total memory.
