@@ -1,11 +1,11 @@
 package compiler
 
 // #include <stdint.h>
-// extern int64_t callHostFunc(uint64_t inst, uint64_t opcode, uint64_t* gas, uintptr_t key);
+// extern int64_t callHostFunc(uintptr_t inst, uint64_t opcode, uint64_t* gas, uintptr_t key);
 import "C"
 import (
 	"fmt"
-	"sync"
+	"runtime/cgo"
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -23,39 +23,20 @@ type DefaultHost struct {
 	hostFuncMap map[EVMOpcode]HostFunc
 }
 
-// Host function handling
-//   - Find the EVMCompiler (or EVMExecutionInstance) from a global map
-//     This avoid using unsafe pointer to recoever the execution instance
-var executionInstanceMap = make(map[uint64]*EVMExecutor)
-var executionInstanceLock sync.Mutex
-var executionInstanceCounter uint64
-
-func createExecutionInstance(inst *EVMExecutor) uint64 {
-	executionInstanceLock.Lock()
-	defer executionInstanceLock.Unlock()
-	executionInstanceCounter++
-	counter := executionInstanceCounter
-	executionInstanceMap[counter] = inst
-	return counter
+func createExecutionInstance(inst *EVMExecutor) cgo.Handle {
+	return cgo.NewHandle(inst)
 }
 
-func removeExecutionInstance(instId uint64) {
-	executionInstanceLock.Lock()
-	defer executionInstanceLock.Unlock()
-	delete(executionInstanceMap, instId)
-}
-
-func getExecutionInstance(instId uint64) (inst *EVMExecutor) {
-	executionInstanceLock.Lock()
-	defer executionInstanceLock.Unlock()
-	return executionInstanceMap[instId]
+func removeExecutionInstance(h cgo.Handle) {
+	h.Delete()
 }
 
 //export callHostFunc
-func callHostFunc(inst C.uint64_t, opcode C.uint64_t, gas *C.uint64_t, stackPtr C.uintptr_t) C.int64_t {
-	e := getExecutionInstance(uint64(inst))
-	if e == nil {
-		panic("execution instance not found")
+func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, gas *C.uint64_t, stackPtr C.uintptr_t) C.int64_t {
+	h := cgo.Handle(inst)
+	e, ok := h.Value().(*EVMExecutor)
+	if !ok || e == nil {
+		panic("execution instance not found or type mismatch")
 	}
 
 	f := e.host.GetHostFunc(EVMOpcode(opcode))

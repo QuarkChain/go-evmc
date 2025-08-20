@@ -1,5 +1,30 @@
 package compiler
 
+/*
+#include <byteswap.h>
+#include <stdint.h>
+
+void u256_byte_swap(void* in_ptr, void* out_ptr) {
+	uint64_t* in = (uint64_t*)in_ptr;
+	uint64_t* out = (uint64_t*)out_ptr;
+	out[3] = bswap_64(in[0]);
+	out[2] = bswap_64(in[1]);
+	out[1] = bswap_64(in[2]);
+	out[0] = bswap_64(in[3]);
+}
+
+void u256_byte_swap_inplace(void* buf_ptr) {
+	uint64_t* buf = (uint64_t*)buf_ptr;
+	uint64_t t;
+	t = buf[3];
+	buf[3] = bswap_64(buf[0]);
+	buf[0] = bswap_64(t);
+	t = buf[2];
+	buf[2] = bswap_64(buf[1]);
+	buf[1] = bswap_64(t);
+}
+*/
+import "C"
 import (
 	"encoding/binary"
 	"unsafe"
@@ -13,6 +38,12 @@ func Reverse(b []byte) []byte {
 		out[len(b)-1-i] = b[i]
 	}
 	return out
+}
+
+func ReverseInplace(b []byte) {
+	for i, j := 0, len(b)-1; i < j; i, j = i+1, j-1 {
+		b[i], b[j] = b[j], b[i]
+	}
 }
 
 func Reverse32Bytes(b [32]byte) [32]byte {
@@ -119,4 +150,18 @@ func GetFibCode(n uint32) []byte {
 		bytes[i] = byte(bytecode[i])
 	}
 	return bytes
+}
+
+// Swap a uint256 byte order from big to little or little to big.
+// Note that inplace swap is not supported.
+func uint256ByteSwap(bufIn []byte, bufOut []byte) {
+	_ = bufIn[31] // bounds check hint to compiler; see golang.org/issue/14808
+	_ = bufOut[31]
+	C.u256_byte_swap(unsafe.Pointer(&bufIn[0]), unsafe.Pointer(&bufOut[0]))
+}
+
+// Swap a uint256 byte order from big to little or little to big.
+func uint256ByteSwapInplace(buf []byte) {
+	_ = buf[31] // bounds check hint to compiler; see golang.org/issue/14808
+	C.u256_byte_swap_inplace(unsafe.Pointer(&buf[0]))
 }
