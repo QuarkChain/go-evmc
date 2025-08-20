@@ -255,7 +255,7 @@ func TestEVMExecuteMemoryOperations(t *testing.T) {
 	}
 
 	// Check that memory was used
-	if len(result.Memory) == 0 {
+	if result.Memory.Len() != 32 {
 		t.Fatalf("Expected memory to be used")
 	}
 }

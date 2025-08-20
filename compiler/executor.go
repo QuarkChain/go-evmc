@@ -11,7 +11,6 @@ import (
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/vm"
 	"tinygo.org/x/go-llvm"
 )
 
@@ -33,7 +32,7 @@ type EVMExecutor struct {
 // CallContext is the current context of the call.
 // It is similar to ScopeContext in geth, but does not have Stack because compiled code manages the stack by itself.
 type CallContext struct {
-	Memory   *vm.Memory
+	Memory   *Memory
 	Contract *Contract
 }
 
@@ -86,20 +85,18 @@ func (e *EVMExecutor) Run(contract Contract, input []byte, readOnly bool) (ret *
 	}
 
 	// Prepare execution environment
-	// TODO: support dynamic size growth
 	const stackSize = 1024
-	const memorySize = 1024 * 32
-
 	stack := make([][32]byte, stackSize)
-	memory := make([]byte, memorySize)
+	memory := NewMemory()
 	e.callContext = &CallContext{
 		Contract: &contract,
+		Memory:   memory,
 	}
 
 	// Execute using function pointer
 	inst := createExecutionInstance(e)
 	defer removeExecutionInstance(inst)
-	gasRemainingResult, stackDepth, err := e.callNativeFunction(funcPtr, inst, unsafe.Pointer(&memory[0]), unsafe.Pointer(&stack[0]), contract.Gas)
+	gasRemainingResult, stackDepth, err := e.callNativeFunction(funcPtr, inst, nil, unsafe.Pointer(&stack[0]), contract.Gas)
 	if err != nil {
 		return &EVMExecutionResult{
 			Stack:        nil,
@@ -127,17 +124,9 @@ func (e *EVMExecutor) Run(contract Contract, input []byte, readOnly bool) (ret *
 
 	gasRemaining := uint64(gasRemainingResult)
 
-	memoryUsed := len(memory)
-	for i := len(memory) - 1; i >= 0; i-- {
-		if memory[i] != 0 {
-			memoryUsed = i + 1
-			break
-		}
-	}
-
 	return &EVMExecutionResult{
 		Stack:        stack[:stackDepth],
-		Memory:       memory[:memoryUsed],
+		Memory:       memory,
 		Status:       ExecutionSuccess,
 		Error:        nil,
 		GasUsed:      contract.Gas - gasRemaining,

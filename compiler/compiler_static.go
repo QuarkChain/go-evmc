@@ -499,22 +499,20 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 		c.builder.CreateBr(nextBlock)
 
 	case MLOAD:
-		offset := c.popStack(stack, stackPtr)
-		value := c.loadFromMemory(memory, offset)
-		c.pushStack(stack, stackPtr, value)
-		c.builder.CreateBr(nextBlock)
+		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
+		c.checkHostReturn(ret, nextBlock, outOfGasBlock)
 
 	case MSTORE:
-		offset := c.popStack(stack, stackPtr)
-		value := c.popStack(stack, stackPtr)
-		c.storeToMemory(memory, offset, value)
-		c.builder.CreateBr(nextBlock)
+		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
+		c.popStack(stack, stackPtr)
+		c.popStack(stack, stackPtr)
+		c.checkHostReturn(ret, nextBlock, outOfGasBlock)
 
 	case MSTORE8:
-		offset := c.popStack(stack, stackPtr)
-		value := c.popStack(stack, stackPtr)
-		c.storeByteToMemory(memory, offset, value)
-		c.builder.CreateBr(nextBlock)
+		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
+		c.popStack(stack, stackPtr)
+		c.popStack(stack, stackPtr)
+		c.checkHostReturn(ret, nextBlock, outOfGasBlock)
 
 	case SSTORE:
 		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")

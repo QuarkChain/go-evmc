@@ -9,6 +9,8 @@ import (
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/holiman/uint256"
 	"tinygo.org/x/go-llvm"
 )
 
@@ -88,8 +90,10 @@ func NewDefaultHost() *DefaultHost {
 		state: make(map[common.Address]map[common.Hash]common.Hash),
 	}
 	h.hostFuncMap = map[EVMOpcode]HostFunc{
-		SSTORE: h.Sstore,
+		MLOAD:  h.Mload,
+		MSTORE: h.Mstore,
 		SLOAD:  h.Sload,
+		SSTORE: h.Sstore,
 	}
 	return h
 }
@@ -136,6 +140,64 @@ func (h *DefaultHost) Sload(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64
 	keyBytes := common.BytesToHash(keyOrValue)
 	valueBytes := m[keyBytes]
 	copy(keyOrValue, valueBytes[:])
+
+	return int64(ExecutionSuccess)
+}
+
+func chargeMemoryGasAndResize(gas *uint64, memory *Memory, offset *uint256.Int, length uint64) (uint64, int64) {
+	// obtain memory size by offset + length
+	memSize, overflow := calcMemSize64WithUint(offset, length)
+	if overflow {
+		// TODO: gas overflow error?
+		return 0, int64(ExecutionOutOfGas)
+	}
+
+	// memory is expanded in words of 32 bytes. Gas is also calculated in words.
+	if memSize, overflow = math.SafeMul(toWordSize(memSize), 32); overflow {
+		return 0, int64(ExecutionOutOfGas)
+	}
+
+	gasCost, err := memoryGasCost(memory, memSize)
+	if err != nil {
+		// TODO: check error?
+		return 0, int64(ExecutionOutOfGas)
+	}
+
+	if *gas < gasCost {
+		return 0, int64(ExecutionOutOfGas)
+	}
+	*gas -= gasCost
+
+	memory.Resize(memSize)
+	return memSize, int64(ExecutionSuccess)
+}
+
+// Mload behaves the same as Geth's.
+func (h *DefaultHost) Mload(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
+	stack0 := getStackElement(stackPtr, 0)
+	offset := new(uint256.Int).SetBytes(FromMachineToBig(stack0))
+	_, errno := chargeMemoryGasAndResize(gas, e.callContext.Memory, offset, 32)
+	if errno != int64(ExecutionSuccess) {
+		return errno
+	}
+
+	CopyFromBigToMachine(e.callContext.Memory.GetPtr(offset.Uint64(), 32), stack0)
+
+	return int64(ExecutionSuccess)
+}
+
+// Mstore behaves the same as Geth's.
+func (h *DefaultHost) Mstore(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
+	stack0 := getStackElement(stackPtr, 0)
+	offset := new(uint256.Int).SetBytes(FromMachineToBig(stack0))
+	_, errno := chargeMemoryGasAndResize(gas, e.callContext.Memory, offset, 32)
+	if errno != int64(ExecutionSuccess) {
+		return errno
+	}
+
+	// Copy the stack value to the memory
+	value := getStackElement(stackPtr, 1)
+	CopyFromMachineToBig(value, e.callContext.Memory.GetPtr(offset.Uint64(), 32))
 
 	return int64(ExecutionSuccess)
 }

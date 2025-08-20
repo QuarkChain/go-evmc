@@ -862,6 +862,46 @@ func TestMemoryOpcodes(t *testing.T) {
 				0x00, // STOP
 			},
 			expectedStack: [][32]byte{uint64ToBytes32(0x42)},
+			expectedGas:   3*5 + 3, // 3 is the linear memory expansion cost
+		},
+		{
+			name: "MSTORE_MLOAD_EXPAND_LINEAR",
+			bytecode: []byte{
+				0x60, 0x42, // PUSH1 0x42 (value)
+				0x60, 0x00, // PUSH1 0x00 (offset)
+				0x52,       // MSTORE
+				0x60, 0x40, // PUSH1 0x40 (offset)
+				0x51, // MLOAD
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0x0)},
+			expectedGas:   3*5 + 3*3, // 9 is the linear memory expansion cost
+		},
+		{
+			name: "MSTORE_MLOAD_EXPAND_QUAD",
+			bytecode: []byte{
+				0x60, 0x42, // PUSH1 0x42 (value)
+				0x60, 0x00, // PUSH1 0x00 (offset)
+				0x52,             // MSTORE
+				0x61, 0x04, 0x00, // PUSH2 0x0400 (offset)
+				0x51, // MLOAD
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0x0)},
+			expectedGas:   3*5 + 3*33 + (33*33)/512,
+		},
+		{
+			name: "MSTORE_MLOAD_EXPAND_UNALIGNED",
+			bytecode: []byte{
+				0x60, 0x42, // PUSH1 0x42 (value)
+				0x60, 0x00, // PUSH1 0x00 (offset)
+				0x52,       // MSTORE
+				0x60, 0x01, // PUSH1 0x40 (offset)
+				0x51, // MLOAD
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0x42 * 256)},
+			expectedGas:   3*5 + 2*3,
 		},
 		// {
 		// 	name: "MSTORE8_MLOAD",
