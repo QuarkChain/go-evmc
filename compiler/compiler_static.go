@@ -50,7 +50,6 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 
 	execType := llvm.FunctionType(c.ctx.VoidType(), []llvm.Type{
 		c.ctx.Int64Type(), // inst
-		uint8PtrType,      // memory
 		uint256PtrType,    // stack
 		uint8PtrType,      // code (unused but kept for signature)
 		c.ctx.Int64Type(), // gas limit
@@ -61,10 +60,9 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 	execFunc.SetFunctionCallConv(llvm.CCallConv)
 
 	instParam := execFunc.Param(0)
-	memoryParam := execFunc.Param(1)
-	stackParam := execFunc.Param(2)
-	gasLimitParam := execFunc.Param(4)
-	outputPtrParam := execFunc.Param(5)
+	stackParam := execFunc.Param(1)
+	gasLimitParam := execFunc.Param(3)
+	outputPtrParam := execFunc.Param(4)
 
 	// Create entry block
 	entryBlock := llvm.AddBasicBlock(execFunc, "entry")
@@ -123,7 +121,7 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 			}
 		}
 
-		c.compileInstructionStatic(instr, instParam, stackParam, stackPtr, memoryParam, gasPtr, analysis, nextBlock, exitBlock, outOfGasBlock, opts)
+		c.compileInstructionStatic(instr, instParam, stackParam, stackPtr, gasPtr, analysis, nextBlock, exitBlock, outOfGasBlock, opts)
 	}
 
 	// Finalize out-of-gas block
@@ -228,7 +226,7 @@ func (c *EVMCompiler) checkHostReturn(ret llvm.Value, nextBlock, outOfGasBlock l
 }
 
 // compileInstructionStatic compiles an instruction using static analysis with gas metering
-func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, stack, stackPtr, memory, gasPtr llvm.Value, analysis *PCAnalysis, nextBlock, exitBlock, outOfGasBlock llvm.BasicBlock, opts *EVMCompilationOpts) {
+func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, stack, stackPtr, gasPtr llvm.Value, analysis *PCAnalysis, nextBlock, exitBlock, outOfGasBlock llvm.BasicBlock, opts *EVMCompilationOpts) {
 	uint256Type := c.ctx.IntType(256)
 
 	// Add gas consumption for this instruction
@@ -499,22 +497,20 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 		c.builder.CreateBr(nextBlock)
 
 	case MLOAD:
-		offset := c.popStack(stack, stackPtr)
-		value := c.loadFromMemory(memory, offset)
-		c.pushStack(stack, stackPtr, value)
-		c.builder.CreateBr(nextBlock)
+		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
+		c.checkHostReturn(ret, nextBlock, outOfGasBlock)
 
 	case MSTORE:
-		offset := c.popStack(stack, stackPtr)
-		value := c.popStack(stack, stackPtr)
-		c.storeToMemory(memory, offset, value)
-		c.builder.CreateBr(nextBlock)
+		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
+		c.popStack(stack, stackPtr)
+		c.popStack(stack, stackPtr)
+		c.checkHostReturn(ret, nextBlock, outOfGasBlock)
 
 	case MSTORE8:
-		offset := c.popStack(stack, stackPtr)
-		value := c.popStack(stack, stackPtr)
-		c.storeByteToMemory(memory, offset, value)
-		c.builder.CreateBr(nextBlock)
+		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
+		c.popStack(stack, stackPtr)
+		c.popStack(stack, stackPtr)
+		c.checkHostReturn(ret, nextBlock, outOfGasBlock)
 
 	case SSTORE:
 		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")

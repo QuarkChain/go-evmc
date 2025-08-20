@@ -27,8 +27,10 @@ void u256_byte_swap_inplace(void* buf_ptr) {
 import "C"
 import (
 	"encoding/binary"
+	"math"
 	"unsafe"
 
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
 
@@ -40,10 +42,11 @@ func Reverse(b []byte) []byte {
 	return out
 }
 
-func ReverseInplace(b []byte) {
+func ReverseInplace(b []byte) []byte {
 	for i, j := 0, len(b)-1; i < j; i, j = i+1, j-1 {
 		b[i], b[j] = b[j], b[i]
 	}
+	return b
 }
 
 func Reverse32Bytes(b [32]byte) [32]byte {
@@ -66,6 +69,33 @@ func FromMachineToUint256(b [32]byte) *uint256.Int {
 		return uint256.NewInt(0).SetBytes32(b[:])
 	}
 	return uint256.NewInt(0).SetBytes32(Reverse(b[:]))
+}
+
+func FromMachineToBigInplace(b []byte) []byte {
+	if IsMachineBigEndian() {
+		return b
+	}
+	return ReverseInplace(b)
+}
+
+func FromBigToMachineInplace(b []byte) []byte {
+	if IsMachineBigEndian() {
+		return b
+	}
+	return ReverseInplace(b)
+}
+
+func CopyFromBigToMachine(b []byte, out []byte) {
+	if IsMachineBigEndian() {
+		copy(out, b)
+	}
+	for i := range b {
+		out[len(b)-1-i] = b[i]
+	}
+}
+
+func CopyFromMachineToBig(b []byte, out []byte) {
+	CopyFromBigToMachine(b, out)
 }
 
 var isMachineBigEndian *bool
@@ -164,4 +194,64 @@ func uint256ByteSwap(bufIn []byte, bufOut []byte) {
 func uint256ByteSwapInplace(buf []byte) {
 	_ = buf[31] // bounds check hint to compiler; see golang.org/issue/14808
 	C.u256_byte_swap_inplace(unsafe.Pointer(&buf[0]))
+}
+
+// Below are from Geth.  See the license of Geth.
+
+// toWordSize returns the ceiled word size required for memory expansion.
+func toWordSize(size uint64) uint64 {
+	if size > math.MaxUint64-31 {
+		return math.MaxUint64/32 + 1
+	}
+
+	return (size + 31) / 32
+}
+
+// calcMemSize64WithUint calculates the required memory size, and returns
+// the size and whether the result overflowed uint64
+// Identical to calcMemSize64, but length is a uint64
+func calcMemSize64WithUint(off *uint256.Int, length64 uint64) (uint64, bool) {
+	// if length is zero, memsize is always zero, regardless of offset
+	if length64 == 0 {
+		return 0, false
+	}
+	// Check that offset doesn't overflow
+	offset64, overflow := off.Uint64WithOverflow()
+	if overflow {
+		return 0, true
+	}
+	val := offset64 + length64
+	// if value < either of it's parts, then it overflowed
+	return val, val < offset64
+}
+
+// memoryGasCost calculates the quadratic gas for memory expansion. It does so
+// only for the memory region that is expanded, not the total memory.
+func memoryGasCost(mem *Memory, newMemSize uint64) (uint64, error) {
+	if newMemSize == 0 {
+		return 0, nil
+	}
+	// The maximum that will fit in a uint64 is max_word_count - 1. Anything above
+	// that will result in an overflow. Additionally, a newMemSize which results in
+	// a newMemSizeWords larger than 0xFFFFFFFF will cause the square operation to
+	// overflow. The constant 0x1FFFFFFFE0 is the highest number that can be used
+	// without overflowing the gas calculation.
+	if newMemSize > 0x1FFFFFFFE0 {
+		return 0, ErrGasUintOverflow
+	}
+	newMemSizeWords := toWordSize(newMemSize)
+	newMemSize = newMemSizeWords * 32
+
+	if newMemSize > uint64(mem.Len()) {
+		square := newMemSizeWords * newMemSizeWords
+		linCoef := newMemSizeWords * params.MemoryGas
+		quadCoef := square / params.QuadCoeffDiv
+		newTotalFee := linCoef + quadCoef
+
+		fee := newTotalFee - mem.lastGasCost
+		mem.lastGasCost = newTotalFee
+
+		return fee, nil
+	}
+	return 0, nil
 }

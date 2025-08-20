@@ -310,7 +310,7 @@ type EVMInstruction struct {
 
 type EVMExecutionResult struct {
 	Stack        [][32]byte
-	Memory       []byte
+	Memory       *Memory
 	Status       ExecutionStatus
 	Error        error
 	GasUsed      uint64
