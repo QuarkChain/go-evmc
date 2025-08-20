@@ -57,6 +57,12 @@ func getStackElement(stackPtr uintptr, idx int) []byte {
 	return unsafe.Slice((*byte)(unsafe.Pointer(uintptr(stackPtr)-uintptr(32*idx))), 32)
 }
 
+// loadUint256 loads the stack element at idx as a uint256.Int (big-endian).
+func loadUint256(stackPtr uintptr, idx int) *uint256.Int {
+	b := getStackElement(stackPtr, idx)
+	return new(uint256.Int).SetBytes(FromMachineToBigInplace(b))
+}
+
 func initializeHostFunction(ctx llvm.Context, module llvm.Module) (hostFuncType llvm.Type, hostFunc llvm.Value) {
 	i8ptr := llvm.PointerType(ctx.Int8Type(), 0)
 	i64ptr := llvm.PointerType(ctx.Int64Type(), 0)
@@ -90,6 +96,7 @@ func NewDefaultHost() *DefaultHost {
 		state: make(map[common.Address]map[common.Hash]common.Hash),
 	}
 	h.hostFuncMap = map[EVMOpcode]HostFunc{
+		ADDMOD: h.AddMod,
 		COINBASE: h.Coinbase,
 		MLOAD:    h.Mload,
 		MSTORE:   h.Mstore,
@@ -102,6 +109,17 @@ func NewDefaultHost() *DefaultHost {
 
 func (h *DefaultHost) GetHostFunc(opcode EVMOpcode) HostFunc {
 	return h.hostFuncMap[opcode]
+}
+
+func (h *DefaultHost) AddMod(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
+	x := loadUint256(stackPtr, 0)
+	y := loadUint256(stackPtr, 1)
+	m := loadUint256(stackPtr, 2)
+	x.AddMod(x, y, m)
+	res := x.Bytes32()
+	CopyFromBigToMachine(res[:], getStackElement(stackPtr, 2))
+
+	return int64(ExecutionSuccess)
 }
 
 // A simple Sstore with constant 20000 gas

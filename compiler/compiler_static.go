@@ -311,6 +311,12 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 		c.pushStack(stack, stackPtr, result)
 		c.builder.CreateBr(nextBlock)
 
+	case ADDMOD:
+		c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
+		c.popStack(stack, stackPtr)
+		c.popStack(stack, stackPtr)
+		c.builder.CreateBr(nextBlock)
+
 	// case EXP:
 	// a := c.popStack(stack, stackPtr)
 	// b := c.popStack(stack, stackPtr)
