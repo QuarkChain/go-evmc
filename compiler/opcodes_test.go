@@ -6,6 +6,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/holiman/uint256"
 )
 
 // Helper function to create a 32-byte value from a uint64
@@ -1195,6 +1196,30 @@ func TestOpcodeErrorConditions(t *testing.T) {
 		// 	},
 		// 	expectError: true,
 		// },
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			runOpcodeTest(t, tc)
+		})
+	}
+}
+
+// TestOpcodeBlockContext tests block context opcodes
+func TestOpcodeBlockContext(t *testing.T) {
+	testCases := []OpcodeTestCase{
+		{
+			name: "COINBASE",
+			bytecode: []byte{
+				0x41, // COINBASE
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{func() [32]byte {
+				var buf [32]byte
+				CopyFromBigToMachine(new(uint256.Int).SetBytes(defaultCoinbaseAddress.Bytes()).Bytes(), buf[:])
+				return buf
+			}()},
+		},
 	}
 
 	for _, tc := range testCases {

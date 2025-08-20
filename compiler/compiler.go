@@ -5,6 +5,8 @@ import (
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 	"tinygo.org/x/go-llvm"
 )
@@ -324,6 +326,7 @@ type EVMExecutionOpts struct {
 
 var defaultCompilationAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccc")
 var defaultCallerAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccd")
+var defaultCoinbaseAddress = common.HexToAddress("ccccccccccccccccccccccccccccccccccccccce")
 
 type EVMCompilationOpts struct {
 	DisableGas                    bool
@@ -421,6 +424,12 @@ func (c *EVMCompiler) ParseBytecode(bytecode []byte) ([]EVMInstruction, error) {
 func (c *EVMCompiler) CompileBytecode(bytecode []byte) (llvm.Module, error) {
 	// Use static analysis approach by default
 	return c.CompileBytecodeStatic(bytecode, &EVMCompilationOpts{DisableGas: false})
+}
+
+func (c *EVMCompiler) pushStackEmpty(stackPtr llvm.Value) {
+	stackPtrVal := c.builder.CreateLoad(c.ctx.Int32Type(), stackPtr, "stack_ptr_val")
+	newStackPtr := c.builder.CreateAdd(stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), 1, false), "new_stack_ptr")
+	c.builder.CreateStore(newStackPtr, stackPtr)
 }
 
 func (c *EVMCompiler) pushStack(stack, stackPtr, value llvm.Value) {
@@ -547,8 +556,9 @@ func (c *EVMCompiler) GetCompiledCode() []byte {
 	return mem.Bytes()
 }
 
-func (c *EVMCompiler) CreateExecutor(opts *EVMExecutorOptions) error {
-	c.executor = NewEVMExecutor(opts)
+func (c *EVMCompiler) CreateExecutor() error {
+	evm := NewEVM(vm.BlockContext{Coinbase: defaultCoinbaseAddress}, nil, params.TestChainConfig, vm.Config{})
+	c.executor = evm.executor
 	c.executor.AddCompiledContract(c.codeHash, c.GetCompiledCode())
 	return nil
 }
@@ -576,7 +586,7 @@ func (c *EVMCompiler) ExecuteCompiledWithOpts(bytecode []byte, copts *EVMCompila
 	}
 
 	// Create executor
-	err = c.CreateExecutor(&EVMExecutorOptions{NewDefaultHost()})
+	err = c.CreateExecutor()
 	if err != nil {
 		return nil, err
 	}

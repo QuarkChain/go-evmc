@@ -470,6 +470,11 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 		c.pushStack(stack, stackPtr, result)
 		c.builder.CreateBr(nextBlock)
 
+	case COINBASE:
+		c.pushStackEmpty(stackPtr) // allocate a stack variable to write
+		c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
+		c.builder.CreateBr(nextBlock)
+
 	case POP:
 		c.popStack(stack, stackPtr)
 		c.builder.CreateBr(nextBlock)
