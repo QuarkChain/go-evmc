@@ -71,21 +71,21 @@ func FromMachineToUint256(b [32]byte) *uint256.Int {
 }
 
 func FromMachineToBig(b []byte) []byte {
-	if *isMachineBigEndian {
+	if IsMachineBigEndian() {
 		return b
 	}
 	return Reverse(b)
 }
 
 func FromBigToMachine(b []byte) []byte {
-	if *isMachineBigEndian {
+	if IsMachineBigEndian() {
 		return b
 	}
 	return Reverse(b)
 }
 
 func CopyFromBigToMachine(b []byte, out []byte) {
-	if *isMachineBigEndian {
+	if IsMachineBigEndian() {
 		copy(out, b)
 	}
 	for i := range b {
