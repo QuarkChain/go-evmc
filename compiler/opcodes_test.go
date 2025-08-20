@@ -966,7 +966,11 @@ func TestMemoryOpcodes(t *testing.T) {
 				0x00, // STOP
 			},
 			expectedStack: [][32]byte{Reverse32Bytes(uint64ToBytes32(0xFF))},
-			expectedGas:   3*5 + 1*3,
+			expectedMemory: &Memory{
+				store:       common.Hex2Bytes("FF00000000000000000000000000000000000000000000000000000000000000"),
+				lastGasCost: 1 * 3,
+			},
+			expectedGas: 3*5 + 1*3,
 		},
 		{
 			name: "MSTORE8_MLOAD_OFFSET31",
@@ -979,7 +983,11 @@ func TestMemoryOpcodes(t *testing.T) {
 				0x00, // STOP
 			},
 			expectedStack: [][32]byte{uint64ToBytes32(0xFF)},
-			expectedGas:   3*5 + 1*3,
+			expectedMemory: &Memory{
+				store:       common.Hex2Bytes("00000000000000000000000000000000000000000000000000000000000000FF"),
+				lastGasCost: 1 * 3,
+			},
+			expectedGas: 3*5 + 1*3,
 		},
 	}
 
