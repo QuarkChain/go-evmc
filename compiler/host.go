@@ -175,7 +175,7 @@ func chargeMemoryGasAndResize(gas *uint64, memory *Memory, offset *uint256.Int, 
 // Mload behaves the same as Geth's.
 func (h *DefaultHost) Mload(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	stack0 := getStackElement(stackPtr, 0)
-	offset := new(uint256.Int).SetBytes(FromMachineToBig(stack0))
+	offset := new(uint256.Int).SetBytes(FromMachineToBigInplace(stack0))
 	_, errno := chargeMemoryGasAndResize(gas, e.callContext.Memory, offset, 32)
 	if errno != int64(ExecutionSuccess) {
 		return errno
@@ -189,7 +189,7 @@ func (h *DefaultHost) Mload(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64
 // Mstore behaves the same as Geth's.
 func (h *DefaultHost) Mstore(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	stack0 := getStackElement(stackPtr, 0)
-	offset := new(uint256.Int).SetBytes(FromMachineToBig(stack0))
+	offset := new(uint256.Int).SetBytes(FromMachineToBigInplace(stack0))
 	_, errno := chargeMemoryGasAndResize(gas, e.callContext.Memory, offset, 32)
 	if errno != int64(ExecutionSuccess) {
 		return errno

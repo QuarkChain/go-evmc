@@ -42,10 +42,11 @@ func Reverse(b []byte) []byte {
 	return out
 }
 
-func ReverseInplace(b []byte) {
+func ReverseInplace(b []byte) []byte {
 	for i, j := 0, len(b)-1; i < j; i, j = i+1, j-1 {
 		b[i], b[j] = b[j], b[i]
 	}
+	return b
 }
 
 func Reverse32Bytes(b [32]byte) [32]byte {
@@ -70,18 +71,18 @@ func FromMachineToUint256(b [32]byte) *uint256.Int {
 	return uint256.NewInt(0).SetBytes32(Reverse(b[:]))
 }
 
-func FromMachineToBig(b []byte) []byte {
+func FromMachineToBigInplace(b []byte) []byte {
 	if IsMachineBigEndian() {
 		return b
 	}
-	return Reverse(b)
+	return ReverseInplace(b)
 }
 
-func FromBigToMachine(b []byte) []byte {
+func FromBigToMachineInplace(b []byte) []byte {
 	if IsMachineBigEndian() {
 		return b
 	}
-	return Reverse(b)
+	return ReverseInplace(b)
 }
 
 func CopyFromBigToMachine(b []byte, out []byte) {
