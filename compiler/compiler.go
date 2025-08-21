@@ -314,7 +314,6 @@ type EVMExecutionResult struct {
 	Stack        [][32]byte
 	Memory       *Memory
 	Status       ExecutionStatus
-	Error        error
 	GasUsed      uint64
 	GasLimit     uint64
 	GasRemaining uint64
@@ -353,6 +352,7 @@ const (
 	ExecutionRevert
 	ExecutionError
 	ExecutionOutOfGas
+	ExecutionStackOverflow
 )
 
 func init() {
@@ -426,14 +426,38 @@ func (c *EVMCompiler) CompileBytecode(bytecode []byte) (llvm.Module, error) {
 	return c.CompileBytecodeStatic(bytecode, &EVMCompilationOpts{DisableGas: false})
 }
 
-func (c *EVMCompiler) pushStackEmpty(stackPtr llvm.Value) {
+func (c *EVMCompiler) checkStackLimit(stackPtrVal, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
+	// Check if we exceed stack limit
+	exceedsLimit := c.builder.CreateICmp(llvm.IntUGE, stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), 1024, false), "exceeds_gas_limit")
+
+	// Create continuation block & stack overflow block
+	continueBlock := llvm.AddBasicBlock(c.builder.GetInsertBlock().Parent(), "stack_check_continue")
+	stackOverflowBlock := llvm.AddBasicBlock(c.builder.GetInsertBlock().Parent(), "stack_overflow")
+
+	// Branch to stack overflow block if limit exceeded, otherwise continue
+	c.builder.CreateCondBr(exceedsLimit, stackOverflowBlock, continueBlock)
+
+	c.builder.SetInsertPointAtEnd(stackOverflowBlock)
+	// Store error code and exit
+	c.builder.CreateStore(llvm.ConstInt(c.ctx.Int64Type(), uint64(ExecutionStackOverflow), false), errorCodePtr)
+	c.builder.CreateBr(errorBlock)
+
+	// Insert to continueBlock so that we can insert the rest code
+	c.builder.SetInsertPointAtEnd(continueBlock)
+}
+
+func (c *EVMCompiler) pushStackEmpty(stackPtr, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
 	stackPtrVal := c.builder.CreateLoad(c.ctx.Int32Type(), stackPtr, "stack_ptr_val")
+	c.checkStackLimit(stackPtrVal, errorCodePtr, errorBlock)
 	newStackPtr := c.builder.CreateAdd(stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), 1, false), "new_stack_ptr")
 	c.builder.CreateStore(newStackPtr, stackPtr)
 }
 
-func (c *EVMCompiler) pushStack(stack, stackPtr, value llvm.Value) {
+func (c *EVMCompiler) pushStack(stack, stackPtr, value, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
 	stackPtrVal := c.builder.CreateLoad(c.ctx.Int32Type(), stackPtr, "stack_ptr_val")
+	c.checkStackLimit(stackPtrVal, errorCodePtr, errorBlock)
+
+	// Obtain stack value and store new stack idx
 	stackElem := c.builder.CreateGEP(c.ctx.IntType(256), stack, []llvm.Value{stackPtrVal}, "stack_elem")
 	c.builder.CreateStore(value, stackElem)
 	newStackPtr := c.builder.CreateAdd(stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), 1, false), "new_stack_ptr")

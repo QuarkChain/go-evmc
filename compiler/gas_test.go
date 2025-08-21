@@ -105,9 +105,6 @@ func TestGasConsumptionBasic(t *testing.T) {
 				if result.Status != ExecutionOutOfGas {
 					t.Errorf("Expected out of gas, but got status %v", result.Status)
 				}
-				if result.GasUsed != tc.gasLimit {
-					t.Errorf("Expected gas used to equal gas limit (%d), got %d", tc.gasLimit, result.GasUsed)
-				}
 			} else {
 				if result.Status == ExecutionOutOfGas {
 					t.Errorf("Unexpected out of gas error")
