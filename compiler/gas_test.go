@@ -388,7 +388,7 @@ func BenchmarkGasConsumption(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Compilation failed: %v", err)
 	}
-	err = comp.CreateExecutor()
+	err = comp.CreateExecutor(nil)
 	if err != nil {
 		b.Fatalf("Executor failed: %v", err)
 	}
@@ -435,7 +435,7 @@ func BenchmarkGasComplexContract(b *testing.B) {
 		b.Fatalf("Compilation failed: %v", err)
 	}
 
-	err = comp.CreateExecutor()
+	err = comp.CreateExecutor(nil)
 	if err != nil {
 		b.Fatalf("Executor failed: %v", err)
 	}

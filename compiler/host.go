@@ -10,6 +10,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/params/forks"
 	"github.com/holiman/uint256"
 	"tinygo.org/x/go-llvm"
 )
@@ -101,27 +103,83 @@ func hostOpSstore(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	if *gas < 20000 {
 		return int64(ExecutionOutOfGas)
 	}
-	*gas -= 20000
 
-	addrBytes := e.callContext.Contract.address
-	keyBytes := common.BytesToHash(getStackElement(stackPtr, 0))
-	valueBytes := common.BytesToHash(getStackElement(stackPtr, 1))
-	e.evm.StateDB.SetState(addrBytes, keyBytes, valueBytes)
+	slot := common.BytesToHash(FromMachineToBigInplace(getStackElement(stackPtr, 0)))
+	value := common.BytesToHash(FromMachineToBigInplace(getStackElement(stackPtr, 1)))
+	contract := e.callContext.Contract
+	errno := chargeSstoreDynGas(gas, e.ForkId(), e.callContext.EVM, contract, stackPtr, e.callContext.Memory, uint64(e.callContext.Memory.Len()))
+	if errno != int64(ExecutionSuccess) {
+		return errno
+	}
 
+	e.callContext.EVM.StateDB.SetState(contract.address, slot, value)
 	return int64(ExecutionSuccess)
 }
 
+// A simple Sload with constant 5000 gas
 func hostOpSload(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	if *gas < 5000 {
 		return int64(ExecutionOutOfGas)
 	}
-	*gas -= 5000
 
-	keyOrValue := getStackElement(stackPtr, 0)
-	keyBytes := common.BytesToHash(keyOrValue)
-	valueBytes := e.evm.StateDB.GetState(e.callContext.Contract.address, keyBytes)
-	copy(keyOrValue, valueBytes[:])
+	key := getStackElement(stackPtr, 0)
+	slot := common.BytesToHash(FromMachineToBigInplace(key))
+	address := e.callContext.Contract.address
 
+	errno := chargeSloadDynGas(gas, e.ForkId(), e.callContext.EVM, address, slot, e.callContext.Memory, uint64(e.callContext.Memory.Len()))
+	if errno != int64(ExecutionSuccess) {
+		return errno
+	}
+
+	valueBytes := e.callContext.EVM.StateDB.GetState(address, slot)
+	copy(key, valueBytes[:])
+
+	return int64(ExecutionSuccess)
+}
+
+func chargeSstoreDynGas(gas *uint64, forkId forks.Fork, evm *EVM, contract *Contract, stackPtr uintptr, mem *Memory, memorySize uint64) int64 {
+	var gasFn gasFunc
+	if forkId >= forks.London {
+		gasFn = makeGasSStoreFunc(params.SstoreClearsScheduleRefundEIP3529)
+	} else {
+		panic("Forks below London are not supported")
+	}
+	gasCost, err := gasFn(evm, contract, stackPtr, mem, memorySize)
+	if err != nil {
+		// TODO: check error?
+		return int64(ExecutionOutOfGas)
+	}
+	// Deduct static gas already accounted for in consumeSectionGas
+	// TODO: consider fork
+	gasCost -= gasCosts[SSTORE]
+
+	if *gas < gasCost {
+		return int64(ExecutionOutOfGas)
+	}
+	*gas -= gasCost
+	return int64(ExecutionSuccess)
+}
+
+func chargeSloadDynGas(gas *uint64, forkId forks.Fork, evm *EVM, address common.Address, slot common.Hash, mem *Memory, memorySize uint64) int64 {
+	var gasCost uint64
+	var err error
+	if forkId >= forks.London {
+		gasCost, err = gasSLoadEIP2929(evm, address, slot, mem, memorySize)
+	} else {
+		panic("Forks below London are not supported")
+	}
+	if err != nil {
+		// TODO: check error?
+		return int64(ExecutionOutOfGas)
+	}
+	// Deduct static gas already accounted for in consumeSectionGas
+	// TODO: consider fork
+	gasCost -= gasCosts[SLOAD]
+
+	if *gas < gasCost {
+		return int64(ExecutionOutOfGas)
+	}
+	*gas -= gasCost
 	return int64(ExecutionSuccess)
 }
 

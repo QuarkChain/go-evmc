@@ -6,6 +6,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/params/forks"
 	"github.com/holiman/uint256"
 )
 
@@ -17,6 +20,10 @@ func uint64ToBytes32(val uint64) [32]byte {
 		return bs
 	}
 	return Reverse32Bytes(bs)
+}
+
+func uint64ToBigEndianBytes32(val uint64) [32]byte {
+	return uint256.NewInt(val).Bytes32()
 }
 
 // Helper function to convert [32]byte (machine format) back to uint64 for display
@@ -53,7 +60,9 @@ type OpcodeTestCase struct {
 	expectedStack  [][32]byte       // skip if nil
 	expectedStatus *ExecutionStatus // ExecutionSuccess if nil
 	expectedGas    uint64           // skip if 0
-	expectedMemory *Memory          // skip if nil
+	expectedRefund uint64
+	expectedMemory *Memory // skip if nil
+	originStorage  state.Storage
 }
 
 // Helper function to run individual opcode test
@@ -67,8 +76,19 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 		testCase.gasLimit = 1000000
 	}
 
+	stateDB := defaultStateDB() // create a new stateDB for each testCase to avoid state pollution.
+	if len(testCase.originStorage) > 0 {
+		for key, value := range testCase.originStorage {
+			stateDB.SetState(defaultCompilationAddress, key, value)
+		}
+		// Finalise stateDB to clear dirty storage and set the above state as original storage
+		stateDB.Finalise(false)
+	}
+
 	opts := &EVMExecutionOpts{
 		GasLimit: testCase.gasLimit,
+		StateDB:  stateDB,
+		ForkId:   forks.Prague,
 	}
 
 	result, err := comp.ExecuteCompiledWithOpts(testCase.bytecode, DefaultEVMCompilationOpts(), opts)
@@ -118,6 +138,11 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 
 	if testCase.expectedGas != 0 && testCase.expectedGas != result.GasUsed {
 		t.Errorf("Expected gas: %v, actual gas: %v", testCase.expectedGas, result.GasUsed)
+		return
+	}
+
+	if testCase.expectedRefund != stateDB.GetRefund() {
+		t.Errorf("Expected refund: %v, actual refund: %v", testCase.expectedRefund, stateDB.GetRefund())
 		return
 	}
 }
@@ -1071,28 +1096,17 @@ func TestMemoryOpcodes(t *testing.T) {
 func TestStorageOpcodes(t *testing.T) {
 	testCases := []OpcodeTestCase{
 		{
-			name: "SSTORE",
-			bytecode: []byte{
-				0x60, 0x42, // PUSH1 0x42 (value)
-				0x60, 0x01, // PUSH1 0x01 (key)
-				0x55,       // SSTORE
-				0x60, 0x01, // PUSH1 0x01 (key)
-				0x54, // SLOAD
-				0x00, // STOP
-			},
-			expectedStack: [][32]byte{uint64ToBytes32(0x42)},
-		},
-		{
 			name: "SLOAD_EMPTY",
 			bytecode: []byte{
 				0x60, 0x01, // PUSH1 0x01 (key)
 				0x54, // SLOAD
 				0x00, // STOP
 			},
-			expectedStack: [][32]byte{uint64ToBytes32(0x0)},
+			expectedStack: [][32]byte{uint64ToBigEndianBytes32(0x0)},
+			expectedGas:   3 + params.ColdSloadCostEIP2929,
 		},
 		{
-			name: "SSTORE_OOG",
+			name: "SLOAD_WARM",
 			bytecode: []byte{
 				0x60, 0x42, // PUSH1 0x42 (value)
 				0x60, 0x01, // PUSH1 0x01 (key)
@@ -1101,7 +1115,155 @@ func TestStorageOpcodes(t *testing.T) {
 				0x54, // SLOAD
 				0x00, // STOP
 			},
-			expectedStack:  [][32]byte{uint64ToBytes32(0x0)},
+			expectedStack: [][32]byte{uint64ToBigEndianBytes32(0x42)},
+			expectedGas:   3*3 + (params.SstoreSetGasEIP2200 + params.ColdSloadCostEIP2929) + (params.WarmStorageReadCostEIP2929),
+		},
+		{
+			name: "SLOAD_OOG",
+			bytecode: []byte{
+				0x60, 0x01, // PUSH1 0x01 (key)
+				0x54, // SLOAD
+				0x00, // STOP
+			},
+			expectedStack:  [][32]byte{uint64ToBigEndianBytes32(0x00)},
+			gasLimit:       2000,
+			expectedStatus: getExpectedStatus(ExecutionOutOfGas),
+		},
+		{
+			name: "SSTORE_ORIGIN_0_EQ_CURRENT_EQ_NEW",
+			bytecode: []byte{
+				0x60, 0x00, // PUSH1 0x00 (value)
+				0x60, 0x01, // PUSH1 0x01 (key)
+				0x55, // SSTORE (key:new=current=origin=0)
+				0x00, // STOP
+			},
+			expectedStack:  [][32]byte{},
+			expectedGas:    3*2 + params.ColdSloadCostEIP2929 + params.WarmStorageReadCostEIP2929,
+			expectedRefund: 0,
+		},
+		{
+			name: "SSTORE_ORIGIN_0_EQ_CURRENT_NEQ_NEW",
+			bytecode: []byte{
+				0x60, 0x42, // PUSH1 0x42 (value)
+				0x60, 0x01, // PUSH1 0x01 (key)
+				0x55, // SSTORE (key:new≠current=origin=0)
+				0x00, // STOP
+			},
+			expectedStack:  [][32]byte{},
+			expectedGas:    3*2 + params.SstoreSetGasEIP2200 + params.ColdSloadCostEIP2929,
+			expectedRefund: 0,
+		},
+		{
+			name: "SSTORE_ORIGIN_N0_EQ_CURRENT_NEQ_NEW",
+			originStorage: state.Storage{
+				common.Hash(uint64ToBigEndianBytes32(0x01)): common.Hash(uint64ToBigEndianBytes32(0x01)),
+			},
+			bytecode: []byte{
+				0x60, 0x01, // PUSH1 0x01 (value)
+				0x60, 0x01, // PUSH1 0x01 (key)
+				0x55,       // SSTORE (current=origin≠0)
+				0x60, 0x03, // PUSH1 0x03 (value)
+				0x60, 0x01, // PUSH1 0x01 (key)
+				0x55, // SSTORE (key:new≠current=origin≠0)
+				0x00, // STOP
+			},
+			expectedStack:  [][32]byte{},
+			expectedGas:    3*4 + (params.ColdSloadCostEIP2929 + params.WarmStorageReadCostEIP2929) + (params.SstoreResetGasEIP2200 - params.ColdSloadCostEIP2929),
+			expectedRefund: 0,
+		},
+		{
+			name: "SSTORE_ORIGIN_N0_EQ_CURRENT_N0_NEQ_NEW_0",
+			originStorage: state.Storage{
+				common.Hash(uint64ToBigEndianBytes32(0x01)): common.Hash(uint64ToBigEndianBytes32(0x01)),
+			},
+			bytecode: []byte{
+				0x60, 0x00, // PUSH1 0x00 (value)
+				0x60, 0x01, // PUSH1 0x01 (key)
+				0x55, // SSTORE (key:new=0≠current=origin≠0, refund 4800)
+				0x00, // STOP
+			},
+			expectedStack:  [][32]byte{},
+			expectedGas:    3*2 + params.ColdSloadCostEIP2929 + params.SstoreResetGasEIP2200 - params.ColdSloadCostEIP2929,
+			expectedRefund: params.NetSstoreResetRefund,
+		},
+		{
+			name: "SSTORE_ORIGIN_N0_NEQ_CURRENT_0_NEQ_NEW_N0",
+			originStorage: state.Storage{
+				common.Hash(uint64ToBigEndianBytes32(0x01)): common.Hash(uint64ToBigEndianBytes32(0x01)),
+			},
+			bytecode: []byte{
+				0x60, 0x00, // PUSH1 0x00 (value)
+				0x60, 0x01, // PUSH1 0x01 (key)
+				0x55,       // SSTORE (key:new=0≠current=origin≠0, refund 4800)
+				0x60, 0x03, // PUSH1 0x03 (value)
+				0x60, 0x01, // PUSH1 0x01 (key)
+				0x55, // SSTORE (key:new≠current=0≠origin≠0, refund -4800)
+				0x00, // STOP
+			},
+			expectedStack:  [][32]byte{},
+			expectedGas:    3*4 + (params.ColdSloadCostEIP2929 + params.WarmStorageReadCostEIP2929) + (params.SstoreResetGasEIP2200 - params.ColdSloadCostEIP2929),
+			expectedRefund: 0,
+		},
+		{
+			name: "SSTORE_ORIGIN_N0_NEQ_CURRENT_N0_NEQ_NEW_0",
+			originStorage: state.Storage{
+				common.Hash(uint64ToBigEndianBytes32(0x01)): common.Hash(uint64ToBigEndianBytes32(0x01)),
+			},
+			bytecode: []byte{
+				0x60, 0x02, // PUSH1 0x02 (value)
+				0x60, 0x01, // PUSH1 0x01 (key)
+				0x55,       // SSTORE (key:new≠0≠current=origin≠0, refund 0)
+				0x60, 0x00, // PUSH1 0x00 (value)
+				0x60, 0x01, // PUSH1 0x01 (key)
+				0x55, // SSTORE (key:new=0≠current≠0≠origin≠0, refund 4800)
+				0x00, // STOP
+			},
+			expectedStack:  [][32]byte{},
+			expectedGas:    3*4 + (params.ColdSloadCostEIP2929 + params.WarmStorageReadCostEIP2929) + (params.SstoreResetGasEIP2200 - params.ColdSloadCostEIP2929),
+			expectedRefund: params.NetSstoreResetRefund,
+		},
+		{
+			name: "SSTORE_ORIGIN_0_NEQ_CURRENT_N0_NEQ_NEW_EQ_ORIGIN",
+			bytecode: []byte{
+				0x60, 0x02, // PUSH1 0x02 (value)
+				0x60, 0x01, // PUSH1 0x01 (key)
+				0x55,       // SSTORE (key:new≠0≠current=origin=0, refund 0)
+				0x60, 0x00, // PUSH1 0x00 (value)
+				0x60, 0x01, // PUSH1 0x01 (key)
+				0x55, // SSTORE (key:new=0≠current≠0≠origin=0, refund 20000-100)
+				0x00, // STOP
+			},
+			expectedStack:  [][32]byte{},
+			expectedGas:    3*4 + (params.SstoreSetGasEIP2200 + params.ColdSloadCostEIP2929) + (params.WarmStorageReadCostEIP2929),
+			expectedRefund: params.SstoreSetGasEIP2200 - params.WarmStorageReadCostEIP2929,
+		},
+		{
+			name: "SSTORE_ORIGIN_N0_NEQ_CURRENT_N0_NEQ_NEW_EQ_ORIGIN",
+			originStorage: state.Storage{
+				common.Hash(uint64ToBigEndianBytes32(0x01)): common.Hash(uint64ToBigEndianBytes32(0x01)),
+			},
+			bytecode: []byte{
+				0x60, 0x02, // PUSH1 0x02 (value)
+				0x60, 0x01, // PUSH1 0x01 (key)
+				0x55,       // SSTORE (key:new≠0≠current=origin≠0, refund 0)
+				0x60, 0x01, // PUSH1 0x01 (value)
+				0x60, 0x01, // PUSH1 0x01 (key)
+				0x55, // SSTORE (key:new=1≠current≠0≠origin=1, refund 5000-2100-100)
+				0x00, // STOP
+			},
+			expectedStack:  [][32]byte{},
+			expectedGas:    3*4 + (params.ColdSloadCostEIP2929 + params.WarmStorageReadCostEIP2929) + (params.SstoreResetGasEIP2200 - params.ColdSloadCostEIP2929),
+			expectedRefund: params.SstoreResetGasEIP2200 - params.ColdSloadCostEIP2929 - params.WarmStorageReadCostEIP2929,
+		},
+		{
+			name: "SSTORE_OOG",
+			bytecode: []byte{
+				0x60, 0x42, // PUSH1 0x42 (value)
+				0x60, 0x01, // PUSH1 0x01 (key)
+				0x55, // SSTORE
+				0x00, // STOP
+			},
+			expectedStack:  [][32]byte{uint64ToBigEndianBytes32(0x00)},
 			gasLimit:       15000,
 			expectedStatus: getExpectedStatus(ExecutionOutOfGas),
 		},

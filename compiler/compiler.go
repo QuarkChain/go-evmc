@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/params/forks"
 	"github.com/holiman/uint256"
 	"tinygo.org/x/go-llvm"
 )
@@ -52,11 +53,21 @@ type EVMExecutionResult struct {
 
 type EVMExecutionOpts struct {
 	GasLimit uint64
+	StateDB  *state.StateDB
+	ForkId   forks.Fork
 }
 
 var defaultCompilationAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccc")
 var defaultCallerAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccd")
 var defaultCoinbaseAddress = common.HexToAddress("ccccccccccccccccccccccccccccccccccccccce")
+var defaultStateDB = func() *state.StateDB {
+	var err error
+	db, err := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+	if err != nil {
+		panic(fmt.Sprintf("failed to initialize defaultStateDB: %v", err))
+	}
+	return db
+}
 
 type EVMCompilationOpts struct {
 	DisableGas                    bool
@@ -351,7 +362,7 @@ func (c *EVMCompiler) CreateExecutor() error {
 
 // Execute the compiled EVM code
 func (c *EVMCompiler) Execute(opts *EVMExecutionOpts) (*EVMExecutionResult, error) {
-	return c.executor.Run(*NewContract(defaultCallerAddress, defaultCompilationAddress, uint256.NewInt(0), opts.GasLimit, c.codeHash), []byte{}, false)
+	return c.executor.Run(*NewContract(defaultCallerAddress, defaultCompilationAddress, uint256.NewInt(0), opts.GasLimit, c.codeHash), []byte{}, false, opts.ForkId)
 }
 
 // ExecuteCompiled executes compiled EVM code using function pointer for better performance
@@ -372,7 +383,7 @@ func (c *EVMCompiler) ExecuteCompiledWithOpts(bytecode []byte, copts *EVMCompila
 	}
 
 	// Create executor
-	err = c.CreateExecutor()
+	err = c.CreateExecutor(opts.StateDB)
 	if err != nil {
 		return nil, err
 	}
