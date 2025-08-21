@@ -201,11 +201,38 @@ func hostOpMstore8(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	return int64(ExecutionSuccess)
 }
 
+// Address returns address of the current executing account.
+func (h *DefaultHost) Address(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
+	stack0 := getStackElement(stackPtr, 0)
+
+	CopyFromBigToMachine(e.callContext.Contract.address.Bytes(), stack0)
+
+	return int64(ExecutionSuccess)
+}
+
+// Origin returns address of the execution origination address.
+func (h *DefaultHost) Origin(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
+	stack0 := getStackElement(stackPtr, 0)
+
+	CopyFromBigToMachine(e.evm.TxContext.Origin.Bytes(), stack0)
+
+	return int64(ExecutionSuccess)
+}
+
+// Caller returns caller address.
+func (h *DefaultHost) Caller(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
+	stack0 := getStackElement(stackPtr, 0)
+
+	CopyFromBigToMachine(e.callContext.Contract.caller.Bytes(), stack0)
+
+	return int64(ExecutionSuccess)
+}
+
 // Coinbase returns the coinbase address of the block.
 func hostOpCoinbase(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	stack0 := getStackElement(stackPtr, -1) // push stack
 
-	CopyFromBigToMachine(new(uint256.Int).SetBytes(e.evm.Context.Coinbase.Bytes()).Bytes(), stack0)
+	CopyFromBigToMachine(e.evm.Context.Coinbase.Bytes(), stack0)
 
 	return int64(ExecutionSuccess)
 }
