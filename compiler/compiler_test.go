@@ -627,7 +627,7 @@ func BenchmarkEVMExecuteFibInterp(b *testing.B) {
 	)
 
 	for i := 0; i < b.N; i++ {
-		contract := vm.NewContract(common.Address{}, common.Address{}, new(uint256.Int), n*1000, nil)
+		contract := vm.NewContract(common.Address{}, common.Address{}, new(uint256.Int), n*100, nil)
 		contract.Code = GetFibCode(uint32(n))
 		_, err := evm.Interpreter().Run(contract, []byte{}, false)
 		if err != nil {
