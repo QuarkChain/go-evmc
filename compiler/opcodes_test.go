@@ -41,13 +41,17 @@ func hexToLittleEndianBytes32(val string) [32]byte {
 	return result
 }
 
+func getExpectedStatus(status ExecutionStatus) *ExecutionStatus {
+	return &status
+}
+
 // Test case structure for opcode tests
 type OpcodeTestCase struct {
 	name           string
 	bytecode       []byte
 	gasLimit       uint64
 	expectedStack  [][32]byte
-	expectError    bool
+	expectedStatus *ExecutionStatus
 	expectedGas    uint64
 	expectedMemory *Memory
 }
@@ -69,9 +73,8 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 
 	result, err := comp.ExecuteCompiledWithOpts(testCase.bytecode, DefaultEVMCompilationOpts(), opts)
 
-	// TODO: more accurate error check
-	if testCase.expectError {
-		if err == nil && result.Error == nil {
+	if testCase.expectedStatus != nil {
+		if *testCase.expectedStatus != result.Status {
 			t.Errorf("Expected error but got none")
 		}
 		return
@@ -1070,9 +1073,9 @@ func TestStorageOpcodes(t *testing.T) {
 				0x54, // SLOAD
 				0x00, // STOP
 			},
-			expectedStack: [][32]byte{uint64ToBytes32(0x0)},
-			gasLimit:      15000,
-			expectError:   true,
+			expectedStack:  [][32]byte{uint64ToBytes32(0x0)},
+			gasLimit:       15000,
+			expectedStatus: getExpectedStatus(ExecutionOutOfGas),
 		},
 	}
 

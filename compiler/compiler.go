@@ -314,7 +314,6 @@ type EVMExecutionResult struct {
 	Stack        [][32]byte
 	Memory       *Memory
 	Status       ExecutionStatus
-	Error        error
 	GasUsed      uint64
 	GasLimit     uint64
 	GasRemaining uint64
@@ -353,6 +352,7 @@ const (
 	ExecutionRevert
 	ExecutionError
 	ExecutionOutOfGas
+	ExecutionStackUnderflow
 )
 
 func init() {
