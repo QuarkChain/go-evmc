@@ -3,6 +3,10 @@ package compiler
 import (
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
 
@@ -345,6 +349,21 @@ func TestEVMExecuteFib(t *testing.T) {
 	}
 }
 
+func TestEVMExecuteFibInterp(t *testing.T) {
+
+	var (
+		n        = uint64(1000000)
+		evm      = vm.NewEVM(vm.BlockContext{}, &dummyStatedb{}, params.TestChainConfig, vm.Config{})
+		contract = vm.NewContract(common.Address{}, common.Address{}, new(uint256.Int), n*100, nil)
+	)
+
+	contract.Code = GetFibCode(uint32(n))
+	_, err := evm.Interpreter().Run(contract, []byte{}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestEVMExecuteFibSectionGasOptimization(t *testing.T) {
 	compOpt := NewEVMCompiler()
 	defer compOpt.Dispose()
@@ -593,6 +612,26 @@ func BenchmarkNativeExecuteFib(b *testing.B) {
 		a := Fib(1000000)
 		if a.CmpUint64(0) == 0 {
 			b.Fatal()
+		}
+	}
+}
+
+type dummyStatedb struct {
+	state.StateDB
+}
+
+func BenchmarkEVMExecuteFibInterp(b *testing.B) {
+	var (
+		n   = uint64(1000000)
+		evm = vm.NewEVM(vm.BlockContext{}, &dummyStatedb{}, params.TestChainConfig, vm.Config{})
+	)
+
+	for i := 0; i < b.N; i++ {
+		contract := vm.NewContract(common.Address{}, common.Address{}, new(uint256.Int), n*1000, nil)
+		contract.Code = GetFibCode(uint32(n))
+		_, err := evm.Interpreter().Run(contract, []byte{}, false)
+		if err != nil {
+			b.Fatal(err)
 		}
 	}
 }
