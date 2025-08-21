@@ -430,11 +430,11 @@ func (c *EVMCompiler) checkStackLimit(stackPtrVal, errorCodePtr llvm.Value, erro
 	// Check if we exceed stack limit
 	exceedsLimit := c.builder.CreateICmp(llvm.IntUGE, stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), 1024, false), "exceeds_gas_limit")
 
-	// Create continuation block & out-of-gas block
+	// Create continuation block & stack overflow block
 	continueBlock := llvm.AddBasicBlock(c.builder.GetInsertBlock().Parent(), "stack_check_continue")
 	stackOverflowBlock := llvm.AddBasicBlock(c.builder.GetInsertBlock().Parent(), "stack_overflow")
 
-	// Branch to out-of-gas block if limit exceeded, otherwise continue
+	// Branch to stack overflow block if limit exceeded, otherwise continue
 	c.builder.CreateCondBr(exceedsLimit, stackOverflowBlock, continueBlock)
 
 	c.builder.SetInsertPointAtEnd(stackOverflowBlock)
