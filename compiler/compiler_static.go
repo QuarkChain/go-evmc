@@ -247,21 +247,21 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 		a := c.popStack(stack, stackPtr)
 		b := c.popStack(stack, stackPtr)
 		result := c.builder.CreateAdd(a, b, "add_result")
-		c.pushStack(stack, stackPtr, result)
+		c.pushStack(stack, stackPtr, result, errorCodePtr, errorBlock)
 		c.builder.CreateBr(nextBlock)
 
 	case MUL:
 		a := c.popStack(stack, stackPtr)
 		b := c.popStack(stack, stackPtr)
 		result := c.builder.CreateMul(a, b, "mul_result")
-		c.pushStack(stack, stackPtr, result)
+		c.pushStack(stack, stackPtr, result, errorCodePtr, errorBlock)
 		c.builder.CreateBr(nextBlock)
 
 	case SUB:
 		a := c.popStack(stack, stackPtr)
 		b := c.popStack(stack, stackPtr)
 		result := c.builder.CreateSub(a, b, "sub_result")
-		c.pushStack(stack, stackPtr, result)
+		c.pushStack(stack, stackPtr, result, errorCodePtr, errorBlock)
 		c.builder.CreateBr(nextBlock)
 
 	case DIV:
@@ -270,7 +270,7 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 		zero := llvm.ConstInt(uint256Type, 0, false)
 		isZero := c.builder.CreateICmp(llvm.IntEQ, b, zero, "div_by_zero")
 		result := c.builder.CreateSelect(isZero, zero, c.builder.CreateUDiv(a, b, "div_result"), "div_safe")
-		c.pushStack(stack, stackPtr, result)
+		c.pushStack(stack, stackPtr, result, errorCodePtr, errorBlock)
 		c.builder.CreateBr(nextBlock)
 
 	case SDIV:
@@ -294,21 +294,21 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 			c.builder.CreateSelect(isOverflow, int256Min, sdiv, "sdiv_safe"), // overflow → int256Min
 			"",
 		)
-		c.pushStack(stack, stackPtr, result)
+		c.pushStack(stack, stackPtr, result, errorCodePtr, errorBlock)
 		c.builder.CreateBr(nextBlock)
 
 	case MOD:
 		a := c.popStack(stack, stackPtr)
 		b := c.popStack(stack, stackPtr)
 		result := c.builder.CreateURem(a, b, "mod_result") // mod by zero is already supported
-		c.pushStack(stack, stackPtr, result)
+		c.pushStack(stack, stackPtr, result, errorCodePtr, errorBlock)
 		c.builder.CreateBr(nextBlock)
 
 	case SMOD:
 		a := c.popStack(stack, stackPtr)
 		b := c.popStack(stack, stackPtr)
 		result := c.builder.CreateSRem(a, b, "smod_result") // mod by zero is already supported
-		c.pushStack(stack, stackPtr, result)
+		c.pushStack(stack, stackPtr, result, errorCodePtr, errorBlock)
 		c.builder.CreateBr(nextBlock)
 
 	case ADDMOD:
@@ -321,7 +321,7 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 	// a := c.popStack(stack, stackPtr)
 	// b := c.popStack(stack, stackPtr)
 	// result := c.builder. (a, b, "exp_result")
-	// c.pushStack(stack, stackPtr, result)
+	// c.pushStack(stack, stackPtr, result, errorCodePtr, errorBlock)
 	// c.builder.CreateBr(nextBlock)
 
 	case SIGNEXTEND:
@@ -352,7 +352,7 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 			return c.builder.CreateSelect(bitIsSet, orVal, andVal, "signed_val")
 		}
 		result := c.builder.CreateSelect(cond, signExtendCalc(), b, "signextend_result")
-		c.pushStack(stack, stackPtr, result)
+		c.pushStack(stack, stackPtr, result, errorCodePtr, errorBlock)
 		c.builder.CreateBr(nextBlock)
 
 	case LT, GT, SLT, SGT, EQ:
@@ -382,7 +382,7 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 
 		cmp := c.builder.CreateICmp(pred, a, b, name+"_cmp")
 		result := c.builder.CreateZExt(cmp, uint256Type, name+"_result")
-		c.pushStack(stack, stackPtr, result)
+		c.pushStack(stack, stackPtr, result, errorCodePtr, errorBlock)
 		c.builder.CreateBr(nextBlock)
 
 	case ISZERO:
@@ -390,35 +390,35 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 		zero := llvm.ConstInt(uint256Type, 0, false)
 		cmp := c.builder.CreateICmp(llvm.IntEQ, a, zero, "iszero_cmp")
 		result := c.builder.CreateZExt(cmp, uint256Type, "iszero_result")
-		c.pushStack(stack, stackPtr, result)
+		c.pushStack(stack, stackPtr, result, errorCodePtr, errorBlock)
 		c.builder.CreateBr(nextBlock)
 
 	case AND:
 		a := c.popStack(stack, stackPtr)
 		b := c.popStack(stack, stackPtr)
 		result := c.builder.CreateAnd(a, b, "and_result")
-		c.pushStack(stack, stackPtr, result)
+		c.pushStack(stack, stackPtr, result, errorCodePtr, errorBlock)
 		c.builder.CreateBr(nextBlock)
 
 	case OR:
 		a := c.popStack(stack, stackPtr)
 		b := c.popStack(stack, stackPtr)
 		result := c.builder.CreateOr(a, b, "or_result")
-		c.pushStack(stack, stackPtr, result)
+		c.pushStack(stack, stackPtr, result, errorCodePtr, errorBlock)
 		c.builder.CreateBr(nextBlock)
 
 	case XOR:
 		a := c.popStack(stack, stackPtr)
 		b := c.popStack(stack, stackPtr)
 		result := c.builder.CreateXor(a, b, "xor_result")
-		c.pushStack(stack, stackPtr, result)
+		c.pushStack(stack, stackPtr, result, errorCodePtr, errorBlock)
 		c.builder.CreateBr(nextBlock)
 
 	case NOT:
 		a := c.popStack(stack, stackPtr)
 		allOnes := llvm.ConstIntFromString(uint256Type, INT256_NEGATIVE_1, 10)
 		result := c.builder.CreateXor(a, allOnes, "not_result")
-		c.pushStack(stack, stackPtr, result)
+		c.pushStack(stack, stackPtr, result, errorCodePtr, errorBlock)
 		c.builder.CreateBr(nextBlock)
 
 	case BYTE:
@@ -446,32 +446,32 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 
 		// Select result: if in range use masked value, else use 0
 		result := c.builder.CreateSelect(cond, masked, zero, "byte_result")
-		c.pushStack(stack, stackPtr, result)
+		c.pushStack(stack, stackPtr, result, errorCodePtr, errorBlock)
 		c.builder.CreateBr(nextBlock)
 
 	case SHL:
 		a := c.popStack(stack, stackPtr)
 		b := c.popStack(stack, stackPtr)
 		result := c.builder.CreateShl(a, b, "shl_result")
-		c.pushStack(stack, stackPtr, result)
+		c.pushStack(stack, stackPtr, result, errorCodePtr, errorBlock)
 		c.builder.CreateBr(nextBlock)
 
 	case SHR:
 		a := c.popStack(stack, stackPtr)
 		b := c.popStack(stack, stackPtr)
 		result := c.builder.CreateLShr(a, b, "shr_result")
-		c.pushStack(stack, stackPtr, result)
+		c.pushStack(stack, stackPtr, result, errorCodePtr, errorBlock)
 		c.builder.CreateBr(nextBlock)
 
 	case SAR:
 		a := c.popStack(stack, stackPtr)
 		b := c.popStack(stack, stackPtr)
 		result := c.builder.CreateAShr(a, b, "sar_result")
-		c.pushStack(stack, stackPtr, result)
+		c.pushStack(stack, stackPtr, result, errorCodePtr, errorBlock)
 		c.builder.CreateBr(nextBlock)
 
 	case COINBASE:
-		c.pushStackEmpty(stackPtr) // allocate a stack variable to write
+		c.pushStackEmpty(stackPtr, errorCodePtr, errorBlock) // allocate a stack variable to write
 		c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
 		c.builder.CreateBr(nextBlock)
 
@@ -504,7 +504,7 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 	case PC:
 		// Push current PC as a constant (static analysis!)
 		pcValue := llvm.ConstInt(uint256Type, instr.PC, false)
-		c.pushStack(stack, stackPtr, pcValue)
+		c.pushStack(stack, stackPtr, pcValue, errorCodePtr, errorBlock)
 		c.builder.CreateBr(nextBlock)
 
 	case MLOAD:
@@ -545,9 +545,9 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 
 	default:
 		if instr.Opcode >= PUSH1 && instr.Opcode <= PUSH32 {
-			c.compilePushStatic(instr, stack, stackPtr, nextBlock)
+			c.compilePushStatic(instr, stack, stackPtr, errorCodePtr, nextBlock, errorBlock)
 		} else if instr.Opcode >= DUP1 && instr.Opcode <= DUP16 {
-			c.compileDupStatic(instr, stack, stackPtr, nextBlock)
+			c.compileDupStatic(instr, stack, stackPtr, errorCodePtr, nextBlock, errorBlock)
 		} else if instr.Opcode >= SWAP1 && instr.Opcode <= SWAP16 {
 			c.compileSwapStatic(instr, stack, stackPtr, nextBlock)
 		} else {
@@ -577,20 +577,20 @@ func (c *EVMCompiler) createDynamicJump(target llvm.Value, analysis *PCAnalysis,
 }
 
 // compilePushStatic compiles PUSH instructions with static next block
-func (c *EVMCompiler) compilePushStatic(instr EVMInstruction, stack, stackPtr llvm.Value, nextBlock llvm.BasicBlock) {
+func (c *EVMCompiler) compilePushStatic(instr EVMInstruction, stack, stackPtr, errorCodePtr llvm.Value, nextBlock, errorBlock llvm.BasicBlock) {
 	llvmValue := c.createUint256ConstantFromBytes(instr.Data)
-	c.pushStack(stack, stackPtr, llvmValue)
+	c.pushStack(stack, stackPtr, llvmValue, errorCodePtr, errorBlock)
 	c.builder.CreateBr(nextBlock)
 }
 
 // compileDupStatic compiles DUP instructions with static next block
-func (c *EVMCompiler) compileDupStatic(instr EVMInstruction, stack, stackPtr llvm.Value, nextBlock llvm.BasicBlock) {
+func (c *EVMCompiler) compileDupStatic(instr EVMInstruction, stack, stackPtr, errorCodePtr llvm.Value, nextBlock, errorBlock llvm.BasicBlock) {
 	n := int(instr.Opcode - DUP1 + 1)
 	stackPtrVal := c.builder.CreateLoad(c.ctx.Int32Type(), stackPtr, "stack_ptr_val")
 	index := c.builder.CreateSub(stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), uint64(n), false), "dup_index")
 	stackElem := c.builder.CreateGEP(c.ctx.IntType(256), stack, []llvm.Value{index}, "stack_elem")
 	value := c.builder.CreateLoad(c.ctx.IntType(256), stackElem, "dup_value")
-	c.pushStack(stack, stackPtr, value)
+	c.pushStack(stack, stackPtr, value, errorCodePtr, errorBlock)
 	c.builder.CreateBr(nextBlock)
 }
 

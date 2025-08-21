@@ -103,6 +103,17 @@ func (e *EVMExecutor) Run(contract Contract, input []byte, readOnly bool) (ret *
 
 	gasRemaining := uint64(gasRemainingResult)
 
+	if errorCode != int64(ExecutionSuccess) {
+		return &EVMExecutionResult{
+			Stack:        nil,
+			Memory:       nil,
+			Status:       ExecutionStatus(errorCode),
+			GasUsed:      contract.Gas - gasRemaining,
+			GasLimit:     contract.Gas,
+			GasRemaining: gasRemaining,
+		}, nil
+	}
+
 	return &EVMExecutionResult{
 		Stack:        stack[:stackDepth],
 		Memory:       memory,

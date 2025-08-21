@@ -50,10 +50,10 @@ type OpcodeTestCase struct {
 	name           string
 	bytecode       []byte
 	gasLimit       uint64
-	expectedStack  [][32]byte
-	expectedStatus *ExecutionStatus
-	expectedGas    uint64
-	expectedMemory *Memory
+	expectedStack  [][32]byte       // skip if nil
+	expectedStatus *ExecutionStatus // ExecutionSuccess if nil
+	expectedGas    uint64           // skip if 0
+	expectedMemory *Memory          // skip if nil
 }
 
 // Helper function to run individual opcode test
@@ -78,25 +78,29 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 			t.Errorf("Expected error but got none")
 		}
 		return
+	} else if result.Status != ExecutionSuccess {
+		t.Errorf("Expected success but got none")
 	}
 
 	if err != nil {
 		t.Fatalf("Execution failed: %v", err)
 	}
 
-	if len(result.Stack) != len(testCase.expectedStack) {
-		t.Errorf("Stack length mismatch: expected %d, got %d",
-			len(testCase.expectedStack), len(result.Stack))
-		t.Errorf("Expected stack: %v", testCase.expectedStack)
-		t.Errorf("Actual stack: %v", result.Stack)
-		return
-	}
+	if testCase.expectedStack != nil {
+		if len(result.Stack) != len(testCase.expectedStack) {
+			t.Errorf("Stack length mismatch: expected %d, got %d",
+				len(testCase.expectedStack), len(result.Stack))
+			t.Errorf("Expected stack: %v", testCase.expectedStack)
+			t.Errorf("Actual stack: %v", result.Stack)
+			return
+		}
 
-	for i, expected := range testCase.expectedStack {
-		if result.Stack[i] != expected {
-			t.Errorf("Stack[%d] mismatch: expected %v (value: %d), got %v (value: %d)",
-				i, expected, bytes32ToUint64(expected),
-				result.Stack[i], bytes32ToUint64(result.Stack[i]))
+		for i, expected := range testCase.expectedStack {
+			if result.Stack[i] != expected {
+				t.Errorf("Stack[%d] mismatch: expected %v (value: %d), got %v (value: %d)",
+					i, expected, bytes32ToUint64(expected),
+					result.Stack[i], bytes32ToUint64(result.Stack[i]))
+			}
 		}
 	}
 
@@ -897,6 +901,30 @@ func TestPushOpcodes(t *testing.T) {
 				0x00, // STOP
 			},
 			expectedStack: [][32]byte{uint64ToBytes32(0x123456789ABCDEF0)},
+		},
+		{
+			name: "PUSH_1024",
+			bytecode: func() []byte {
+				buf := make([]byte, 0)
+				for i := 0; i < 1024; i++ {
+					buf = append(buf, 0x60)
+					buf = append(buf, 0x05)
+				}
+				buf = append(buf, 0x0)
+				return buf
+			}(),
+		},
+		{
+			name: "PUSH_1025_OVERFLOW",
+			bytecode: func() []byte {
+				buf := make([]byte, 0)
+				for i := 0; i <= 1024; i++ {
+					buf = append(buf, 0x60)
+					buf = append(buf, 0x05)
+				}
+				return buf
+			}(),
+			expectedStatus: getExpectedStatus(ExecutionStackOverflow),
 		},
 	}
 
