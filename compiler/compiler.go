@@ -6,7 +6,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/core/vm/runtime"
 	"github.com/ethereum/go-ethereum/params"
@@ -59,14 +58,6 @@ type EVMExecutionOpts struct {
 var defaultCompilationAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccc")
 var defaultCallerAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccd")
 var defaultCoinbaseAddress = common.HexToAddress("ccccccccccccccccccccccccccccccccccccccce")
-var defaultStateDB = func() *state.StateDB {
-	var err error
-	db, err := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
-	if err != nil {
-		panic(fmt.Sprintf("failed to initialize defaultStateDB: %v", err))
-	}
-	return db
-}
 
 type EVMCompilationOpts struct {
 	DisableGas                    bool

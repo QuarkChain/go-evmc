@@ -525,14 +525,14 @@ func BenchmarkEVMExecuteMemoryOperations(b *testing.B) {
 	}
 
 	// Create executor
-	err = comp.CreateExecutor()
+	err = comp.CreateExecutor(vm.BlockContext{}, nil, params.TestChainConfig)
 	if err != nil {
 		b.Fatalf("Executor failed: %v", err)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := comp.Execute(&EVMExecutionOpts{})
+		_, err := comp.Execute(&EVMExecutionOpts{Config: &runtime.Config{ChainConfig: params.TestChainConfig}})
 		if err != nil {
 			b.Fatalf("Execution failed: %v", err)
 		}

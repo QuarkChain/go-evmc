@@ -15,6 +15,11 @@ import (
 )
 
 // An executor to execute native compiled code within EVM.
+// Data layout rules:
+// - Pushed data on stack: always big-endian padded first (handled in createUint256ConstantFromBytes)
+// - Stack elements: always machine-endian encoded (LLVM-native representation)
+// - Memory: always big-endian encoded (to match Geth’s convention)
+// - Storage: always big-endian encoded (to match Geth’s convention)
 type EVMExecutor struct {
 	callContext *CallContext // current call context
 
@@ -26,7 +31,6 @@ type EVMExecutor struct {
 
 	hostFuncType llvm.Type
 	hostFunc     llvm.Value
-	table        *JumpTable
 
 	loadedContracts map[common.Hash]bool
 	table           *JumpTable

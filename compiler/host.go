@@ -130,13 +130,17 @@ func hostOpSload(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	}
 
 	valueBytes := e.callContext.EVM.StateDB.GetState(address, slot)
-	copy(key, valueBytes[:])
+	CopyFromBigToMachine(valueBytes[:], key)
 
 	return int64(ExecutionSuccess)
 }
 
 func chargeSstoreDynGas(gas *uint64, e *EVMExecutor, contract *Contract, stackPtr uintptr, mem *Memory, memorySize uint64) int64 {
 	var gasFn gasFunc
+	originGas := contract.Gas
+	contract.Gas = *gas
+	defer func() { contract.Gas = originGas }()
+
 	if e.evm.chainRules.IsLondon {
 		gasFn = makeGasSStoreFunc(params.SstoreClearsScheduleRefundEIP3529)
 	} else {
@@ -218,7 +222,6 @@ func hostOpMload(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	}
 
 	CopyFromBigToMachine(e.callContext.Memory.GetPtr(offset.Uint64(), 32), stack0)
-
 	return int64(ExecutionSuccess)
 }
 
