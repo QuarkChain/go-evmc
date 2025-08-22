@@ -504,13 +504,13 @@ func BenchmarkEVMExecuteMemoryOperations(b *testing.B) {
 	bytecode := []byte{
 		0x60, 0x42, // PUSH1 0x42
 		0x60, 0x00, // PUSH1 0x00
-		0x55,       // MSTORE
+		0x52,       // MSTORE
 		0x60, 0x00, // PUSH1 0x00
-		0x54,       // MLOAD
+		0x51,       // MLOAD
 		0x60, 0x20, // PUSH1 0x20 (32)
-		0x55,       // MSTORE
+		0x52,       // MSTORE
 		0x60, 0x20, // PUSH1 0x20
-		0x54, // MLOAD
+		0x51, // MLOAD
 		0x00, // STOP
 	}
 
@@ -524,7 +524,7 @@ func BenchmarkEVMExecuteMemoryOperations(b *testing.B) {
 	}
 
 	// Create executor
-	err = comp.CreateExecutor()
+	err = comp.CreateExecutor(&EVMExecutionOpts{})
 	if err != nil {
 		b.Fatalf("Executor failed: %v", err)
 	}

@@ -97,6 +97,17 @@ func hostOpAddMod(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	return int64(ExecutionSuccess)
 }
 
+func hostOpMulMod(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
+	x := loadUint256(stackPtr, 0)
+	y := loadUint256(stackPtr, 1)
+	m := loadUint256(stackPtr, 2)
+	x.MulMod(x, y, m)
+	res := x.Bytes32()
+	CopyFromBigToMachine(res[:], getStackElement(stackPtr, 2))
+
+	return int64(ExecutionSuccess)
+}
+
 func hostOpSstore(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	if *gas < 20000 {
 		return int64(ExecutionOutOfGas)
@@ -203,7 +214,7 @@ func hostOpMstore8(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 
 // Address returns address of the current executing account.
 func hostOpAddress(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
-	stack0 := getStackElement(stackPtr, 0)
+	stack0 := getStackElement(stackPtr, -1) // push stack
 
 	CopyFromBigToMachine(common.LeftPadBytes(e.callContext.Contract.address[:], 32), stack0)
 
@@ -212,7 +223,7 @@ func hostOpAddress(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 
 // Origin returns address of the execution origination address.
 func hostOpOrigin(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
-	stack0 := getStackElement(stackPtr, 0)
+	stack0 := getStackElement(stackPtr, -1) // push stack
 	CopyFromBigToMachine(common.LeftPadBytes(e.evm.TxContext.Origin[:], 32), stack0)
 
 	return int64(ExecutionSuccess)

@@ -331,7 +331,7 @@ func newFrontierInstructionSet() JumpTable {
 			diffDiff:    diffStack(3, 1),
 		},
 		MULMOD: {
-			// execute:     opMulmod,
+			execute:     hostOpMulMod,
 			constantGas: GasMidStep,
 			minStack:    minStack(3, 1),
 			diffDiff:    diffStack(3, 1),
