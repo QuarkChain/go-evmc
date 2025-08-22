@@ -524,9 +524,15 @@ func BenchmarkEVMExecuteMemoryOperations(b *testing.B) {
 		b.Fatalf("Compilation failed: %v", err)
 	}
 
+	// Create executor
+	err = comp.CreateExecutor()
+	if err != nil {
+		b.Fatalf("Executor failed: %v", err)
+	}
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := comp.ExecuteCompiled(bytecode)
+		_, err := comp.Execute(&EVMExecutionOpts{})
 		if err != nil {
 			b.Fatalf("Execution failed: %v", err)
 		}
