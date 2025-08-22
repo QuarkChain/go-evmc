@@ -423,7 +423,7 @@ func newFrontierInstructionSet() JumpTable {
 			// // memorySize:  memoryKeccak256,
 		},
 		ADDRESS: {
-			// execute:     opAddress,
+			execute:     hostOpAddress,
 			constantGas: GasQuickStep,
 			minStack:    minStack(0, 1),
 			diffDiff:    diffStack(0, 1),
@@ -435,13 +435,13 @@ func newFrontierInstructionSet() JumpTable {
 			diffDiff:    diffStack(1, 1),
 		},
 		ORIGIN: {
-			// execute:     opOrigin,
+			execute:     hostOpOrigin,
 			constantGas: GasQuickStep,
 			minStack:    minStack(0, 1),
 			diffDiff:    diffStack(0, 1),
 		},
 		CALLER: {
-			// execute:     opCaller,
+			execute:     hostOpCaller,
 			constantGas: GasQuickStep,
 			minStack:    minStack(0, 1),
 			diffDiff:    diffStack(0, 1),

@@ -202,28 +202,26 @@ func hostOpMstore8(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 }
 
 // Address returns address of the current executing account.
-func (h *DefaultHost) Address(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
+func hostOpAddress(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	stack0 := getStackElement(stackPtr, 0)
-	padded0 := [12]byte{}
-	CopyFromBigToMachine(append(padded0[:], e.callContext.Contract.address[:]...), stack0)
+
+	CopyFromBigToMachine(common.LeftPadBytes(e.callContext.Contract.address[:], 32), stack0)
 
 	return int64(ExecutionSuccess)
 }
 
 // Origin returns address of the execution origination address.
-func (h *DefaultHost) Origin(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
+func hostOpOrigin(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	stack0 := getStackElement(stackPtr, 0)
-	padded0 := [12]byte{}
-	CopyFromBigToMachine(append(padded0[:], e.evm.TxContext.Origin[:]...), stack0)
+	CopyFromBigToMachine(common.LeftPadBytes(e.evm.TxContext.Origin[:], 32), stack0)
 
 	return int64(ExecutionSuccess)
 }
 
 // Caller returns caller address.
-func (h *DefaultHost) Caller(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
-	stack0 := getStackElement(stackPtr, 0)
-	padded0 := [12]byte{}
-	CopyFromBigToMachine(append(padded0[:], e.callContext.Contract.caller[:]...), stack0)
+func hostOpCaller(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
+	stack0 := getStackElement(stackPtr, -1) // push stack
+	CopyFromBigToMachine(common.LeftPadBytes(e.callContext.Contract.caller[:], 32), stack0)
 	return int64(ExecutionSuccess)
 }
 
@@ -231,7 +229,6 @@ func (h *DefaultHost) Caller(gas *uint64, e *EVMExecutor, stackPtr uintptr) int6
 func hostOpCoinbase(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	stack0 := getStackElement(stackPtr, -1) // push stack
 
-	CopyFromBigToMachine(e.evm.Context.Coinbase.Bytes(), stack0)
-
+	CopyFromBigToMachine(common.LeftPadBytes(e.evm.Context.Coinbase[:], 32), stack0)
 	return int64(ExecutionSuccess)
 }
