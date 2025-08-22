@@ -138,8 +138,8 @@ func Fib(n int) *uint256.Int {
 func GetFibCode(n uint32) []byte {
 	nbs := make([]byte, 4)
 	binary.BigEndian.PutUint32(nbs, n)
-	bytecode := []EVMOpcode{
-		PUSH4, EVMOpcode(nbs[0]), EVMOpcode(nbs[1]), EVMOpcode(nbs[2]), EVMOpcode(nbs[3]),
+	bytecode := []OpCode{
+		PUSH4, OpCode(nbs[0]), OpCode(nbs[1]), OpCode(nbs[2]), OpCode(nbs[3]),
 		PUSH1, 0,
 		PUSH1, 1,
 		// off 9

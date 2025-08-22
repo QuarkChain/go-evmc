@@ -28,284 +28,13 @@ type EVMCompiler struct {
 
 	hostFuncType llvm.Type
 	hostFunc     llvm.Value
-}
 
-type EVMOpcode uint8
-
-const (
-	STOP           EVMOpcode = 0x00
-	ADD            EVMOpcode = 0x01
-	MUL            EVMOpcode = 0x02
-	SUB            EVMOpcode = 0x03
-	DIV            EVMOpcode = 0x04
-	SDIV           EVMOpcode = 0x05
-	MOD            EVMOpcode = 0x06
-	SMOD           EVMOpcode = 0x07
-	ADDMOD         EVMOpcode = 0x08
-	MULMOD         EVMOpcode = 0x09
-	EXP            EVMOpcode = 0x0A
-	SIGNEXTEND     EVMOpcode = 0x0B
-	LT             EVMOpcode = 0x10
-	GT             EVMOpcode = 0x11
-	SLT            EVMOpcode = 0x12
-	SGT            EVMOpcode = 0x13
-	EQ             EVMOpcode = 0x14
-	ISZERO         EVMOpcode = 0x15
-	AND            EVMOpcode = 0x16
-	OR             EVMOpcode = 0x17
-	XOR            EVMOpcode = 0x18
-	NOT            EVMOpcode = 0x19
-	BYTE           EVMOpcode = 0x1A
-	SHL            EVMOpcode = 0x1B
-	SHR            EVMOpcode = 0x1C
-	SAR            EVMOpcode = 0x1D
-	SHA3           EVMOpcode = 0x20
-	ADDRESS        EVMOpcode = 0x30
-	BALANCE        EVMOpcode = 0x31
-	ORIGIN         EVMOpcode = 0x32
-	CALLER         EVMOpcode = 0x33
-	CALLVALUE      EVMOpcode = 0x34
-	CALLDATALOAD   EVMOpcode = 0x35
-	CALLDATASIZE   EVMOpcode = 0x36
-	CALLDATACOPY   EVMOpcode = 0x37
-	CODESIZE       EVMOpcode = 0x38
-	CODECOPY       EVMOpcode = 0x39
-	GASPRICE       EVMOpcode = 0x3A
-	EXTCODESIZE    EVMOpcode = 0x3B
-	EXTCODECOPY    EVMOpcode = 0x3C
-	RETURNDATASIZE EVMOpcode = 0x3D
-	RETURNDATACOPY EVMOpcode = 0x3E
-	EXTCODEHASH    EVMOpcode = 0x3F
-	BLOCKHASH      EVMOpcode = 0x40
-	COINBASE       EVMOpcode = 0x41
-	TIMESTAMP      EVMOpcode = 0x42
-	NUMBER         EVMOpcode = 0x43
-	PREVRANDAO     EVMOpcode = 0x44
-	GASLIMIT       EVMOpcode = 0x45
-	CHAINID        EVMOpcode = 0x46
-	SELFBALANCE    EVMOpcode = 0x47
-	BASEFEE        EVMOpcode = 0x48
-	POP            EVMOpcode = 0x50
-	MLOAD          EVMOpcode = 0x51
-	MSTORE         EVMOpcode = 0x52
-	MSTORE8        EVMOpcode = 0x53
-	SLOAD          EVMOpcode = 0x54
-	SSTORE         EVMOpcode = 0x55
-	JUMP           EVMOpcode = 0x56
-	JUMPI          EVMOpcode = 0x57
-	PC             EVMOpcode = 0x58
-	MSIZE          EVMOpcode = 0x59
-	GAS            EVMOpcode = 0x5A
-	JUMPDEST       EVMOpcode = 0x5B
-	LOG0           EVMOpcode = 0xA0
-	LOG4           EVMOpcode = 0xA4
-	CREATE         EVMOpcode = 0xF0
-	CALL           EVMOpcode = 0xF1
-	CALLCODE       EVMOpcode = 0xF2
-	RETURN         EVMOpcode = 0xF3
-	DELEGATECALL   EVMOpcode = 0xF4
-	CREATE2        EVMOpcode = 0xF5
-	STATICCALL     EVMOpcode = 0xFA
-	REVERT         EVMOpcode = 0xFD
-	INVALID        EVMOpcode = 0xFE
-	SELFDESTRUCT   EVMOpcode = 0xFF
-)
-
-const (
-	PUSH1 EVMOpcode = 0x60 + iota
-	PUSH2
-	PUSH3
-	PUSH4
-	PUSH5
-	PUSH6
-	PUSH7
-	PUSH8
-	PUSH9
-	PUSH10
-	PUSH11
-	PUSH12
-	PUSH13
-	PUSH14
-	PUSH15
-	PUSH16
-	PUSH17
-	PUSH18
-	PUSH19
-	PUSH20
-	PUSH21
-	PUSH22
-	PUSH23
-	PUSH24
-	PUSH25
-	PUSH26
-	PUSH27
-	PUSH28
-	PUSH29
-	PUSH30
-	PUSH31
-	PUSH32
-)
-
-const (
-	DUP1 EVMOpcode = 0x80 + iota
-	DUP2
-	DUP3
-	DUP4
-	DUP5
-	DUP6
-	DUP7
-	DUP8
-	DUP9
-	DUP10
-	DUP11
-	DUP12
-	DUP13
-	DUP14
-	DUP15
-	DUP16
-)
-
-const (
-	SWAP1 EVMOpcode = 0x90 + iota
-	SWAP2
-	SWAP3
-	SWAP4
-	SWAP5
-	SWAP6
-	SWAP7
-	SWAP8
-	SWAP9
-	SWAP10
-	SWAP11
-	SWAP12
-	SWAP13
-	SWAP14
-	SWAP15
-	SWAP16
-)
-
-// Gas costs for EVM opcodes (based on Ethereum Yellow Paper)
-var gasCosts = map[EVMOpcode]uint64{
-	// Base costs
-	STOP:       0,
-	ADD:        3,
-	MUL:        5,
-	SUB:        3,
-	DIV:        5,
-	SDIV:       5,
-	MOD:        5,
-	SMOD:       5,
-	ADDMOD:     8,
-	MULMOD:     8,
-	EXP:        10, // Base cost, additional cost for each byte in exponent
-	SIGNEXTEND: 5,
-
-	// Comparison and bitwise operations
-	LT:     3,
-	GT:     3,
-	SLT:    3,
-	SGT:    3,
-	EQ:     3,
-	ISZERO: 3,
-	AND:    3,
-	OR:     3,
-	XOR:    3,
-	NOT:    3,
-	BYTE:   3,
-	SHL:    3,
-	SHR:    3,
-	SAR:    3,
-
-	// SHA3
-	SHA3: 30, // Base cost, additional cost for each word hashed
-
-	// Environmental information
-	ADDRESS:        2,
-	BALANCE:        100, // Was 400 before EIP-1884
-	ORIGIN:         2,
-	CALLER:         2,
-	CALLVALUE:      2,
-	CALLDATALOAD:   3,
-	CALLDATASIZE:   2,
-	CALLDATACOPY:   3, // Base cost, additional cost for each byte copied
-	CODESIZE:       2,
-	CODECOPY:       3, // Base cost, additional cost for each byte copied
-	GASPRICE:       2,
-	EXTCODESIZE:    100, // Was 700 before EIP-1884
-	EXTCODECOPY:    100, // Base cost, additional cost for each byte copied
-	RETURNDATASIZE: 2,
-	RETURNDATACOPY: 3,   // Base cost, additional cost for each byte copied
-	EXTCODEHASH:    100, // Was 400 before EIP-1884
-
-	// Block information
-	BLOCKHASH:   20,
-	COINBASE:    2,
-	TIMESTAMP:   2,
-	NUMBER:      2,
-	PREVRANDAO:  2, // Formerly DIFFICULTY
-	GASLIMIT:    2,
-	CHAINID:     2,
-	SELFBALANCE: 5,
-	BASEFEE:     2,
-
-	// Stack, memory, storage and flow operations
-	POP:      2,
-	MLOAD:    3,
-	MSTORE:   3,
-	MSTORE8:  3,
-	SLOAD:    100, // Was 800 before EIP-1884, now 100
-	SSTORE:   100, // Base cost, actual cost depends on storage change
-	JUMP:     8,
-	JUMPI:    10,
-	PC:       2,
-	MSIZE:    2,
-	GAS:      2,
-	JUMPDEST: 1,
-
-	// Log operations
-	LOG0: 375,
-	LOG4: 375, // Base cost, additional cost for each topic and byte
-
-	// System operations
-	CREATE:       32000,
-	CALL:         100, // Base cost, additional costs apply
-	CALLCODE:     100, // Base cost, additional costs apply
-	RETURN:       0,
-	DELEGATECALL: 100, // Base cost, additional costs apply
-	CREATE2:      32000,
-	STATICCALL:   100, // Base cost, additional costs apply
-	REVERT:       0,
-	INVALID:      0,
-	SELFDESTRUCT: 5000, // Base cost, additional refund possible
-}
-
-// getGasCost returns the gas cost for an opcode
-func getGasCost(opcode EVMOpcode) uint64 {
-	if cost, exists := gasCosts[opcode]; exists {
-		return cost
-	}
-
-	// Handle PUSH opcodes
-	if opcode >= PUSH1 && opcode <= PUSH32 {
-		return 3
-	}
-
-	// Handle DUP opcodes
-	if opcode >= DUP1 && opcode <= DUP16 {
-		return 3
-	}
-
-	// Handle SWAP opcodes
-	if opcode >= SWAP1 && opcode <= SWAP16 {
-		return 3
-	}
-
-	// Unknown opcode
-	return 0
+	table     *JumpTable
+	extraEips []int
 }
 
 type EVMInstruction struct {
-	Opcode EVMOpcode
+	Opcode OpCode
 	Data   []byte
 	PC     uint64
 }
@@ -331,6 +60,8 @@ type EVMCompilationOpts struct {
 	DisableGas                    bool
 	DisableSectionGasOptimization bool
 	ContractAddress               common.Address // The address of the contract to be compiled
+	ChainRules                    params.Rules
+	ExtraEips                     []int
 }
 
 func DefaultEVMCompilationOpts() *EVMCompilationOpts {
@@ -400,7 +131,7 @@ func (c *EVMCompiler) ParseBytecode(bytecode []byte) ([]EVMInstruction, error) {
 	pc := uint64(0)
 
 	for pc < uint64(len(bytecode)) {
-		opcode := EVMOpcode(bytecode[pc])
+		opcode := OpCode(bytecode[pc])
 		instr := EVMInstruction{
 			Opcode: opcode,
 			PC:     pc,
@@ -427,9 +158,13 @@ func (c *EVMCompiler) CompileBytecode(bytecode []byte) (llvm.Module, error) {
 	return c.CompileBytecodeStatic(bytecode, &EVMCompilationOpts{DisableGas: false})
 }
 
-func (c *EVMCompiler) checkStackOverflow(stackPtrVal, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
+func (c *EVMCompiler) checkStackOverflow(stackPtrVal llvm.Value, num int, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
+	if num <= 0 {
+		return
+	}
+
 	// Check if we exceed stack limit
-	exceedsLimit := c.builder.CreateICmp(llvm.IntUGE, stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), 1024, false), "stack_overflow_cond")
+	exceedsLimit := c.builder.CreateICmp(llvm.IntUGT, stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), uint64(1024-num), false), "stack_overflow_cond")
 
 	// Create continuation block & stack overflow block
 	continueBlock := llvm.AddBasicBlock(c.builder.GetInsertBlock().Parent(), "stack_overflow_check_continue")
@@ -448,6 +183,9 @@ func (c *EVMCompiler) checkStackOverflow(stackPtrVal, errorCodePtr llvm.Value, e
 }
 
 func (c *EVMCompiler) checkStackUnderflow(stackPtrVal llvm.Value, num uint64, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
+	if num == 0 {
+		return
+	}
 	// Check if we exceed stack limit
 	exceedsLimit := c.builder.CreateICmp(llvm.IntULT, stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), num, false), "stack_underflow_cond")
 
@@ -467,16 +205,14 @@ func (c *EVMCompiler) checkStackUnderflow(stackPtrVal llvm.Value, num uint64, er
 	c.builder.SetInsertPointAtEnd(continueBlock)
 }
 
-func (c *EVMCompiler) pushStackEmpty(stackPtr, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
+func (c *EVMCompiler) pushStackEmpty(stackPtr llvm.Value) {
 	stackPtrVal := c.builder.CreateLoad(c.ctx.Int32Type(), stackPtr, "stack_ptr_val")
-	c.checkStackOverflow(stackPtrVal, errorCodePtr, errorBlock)
 	newStackPtr := c.builder.CreateAdd(stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), 1, false), "new_stack_ptr")
 	c.builder.CreateStore(newStackPtr, stackPtr)
 }
 
-func (c *EVMCompiler) pushStack(stack, stackPtr, value, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
+func (c *EVMCompiler) pushStack(stack, stackPtr, value llvm.Value) {
 	stackPtrVal := c.builder.CreateLoad(c.ctx.Int32Type(), stackPtr, "stack_ptr_val")
-	c.checkStackOverflow(stackPtrVal, errorCodePtr, errorBlock)
 
 	// Obtain stack value and store new stack idx
 	stackElem := c.builder.CreateGEP(c.ctx.IntType(256), stack, []llvm.Value{stackPtrVal}, "stack_elem")
@@ -485,9 +221,8 @@ func (c *EVMCompiler) pushStack(stack, stackPtr, value, errorCodePtr llvm.Value,
 	c.builder.CreateStore(newStackPtr, stackPtr)
 }
 
-func (c *EVMCompiler) popStack(stack, stackPtr, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) llvm.Value {
+func (c *EVMCompiler) popStack(stack, stackPtr llvm.Value) llvm.Value {
 	stackPtrVal := c.builder.CreateLoad(c.ctx.Int32Type(), stackPtr, "stack_ptr_val")
-	c.checkStackUnderflow(stackPtrVal, 1, errorCodePtr, errorBlock)
 	newStackPtr := c.builder.CreateSub(stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), 1, false), "new_stack_ptr")
 	c.builder.CreateStore(newStackPtr, stackPtr)
 	stackElem := c.builder.CreateGEP(c.ctx.IntType(256), stack, []llvm.Value{newStackPtr}, "stack_elem")
