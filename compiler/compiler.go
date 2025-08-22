@@ -357,6 +357,7 @@ func (c *EVMCompiler) CreateExecutor(blockCtx vm.BlockContext, statedb *state.St
 	evm := NewEVM(blockCtx, statedb, chainConfig, vm.Config{})
 	c.executor = evm.executor
 	c.executor.AddCompiledContract(c.codeHash, c.GetCompiledCode())
+	c.executor.AddInstructionTable(c.table)
 	return nil
 }
 

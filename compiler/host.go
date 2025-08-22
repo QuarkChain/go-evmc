@@ -99,14 +99,14 @@ func hostOpAddMod(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 }
 
 func hostOpSstore(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
-	if *gas < 20000 {
+	if *gas < e.table[SSTORE].constantGas {
 		return int64(ExecutionOutOfGas)
 	}
 
 	slot := common.BytesToHash(FromMachineToBigInplace(getStackElement(stackPtr, 0)))
 	value := common.BytesToHash(FromMachineToBigInplace(getStackElement(stackPtr, 1)))
 	contract := e.callContext.Contract
-	errno := chargeSstoreDynGas(gas, e.callContext.EVM, contract, stackPtr, e.callContext.Memory, uint64(e.callContext.Memory.Len()))
+	errno := chargeSstoreDynGas(gas, e, contract, stackPtr, e.callContext.Memory, uint64(e.callContext.Memory.Len()))
 	if errno != int64(ExecutionSuccess) {
 		return errno
 	}
@@ -115,9 +115,8 @@ func hostOpSstore(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	return int64(ExecutionSuccess)
 }
 
-// A simple Sload with constant 5000 gas
 func hostOpSload(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
-	if *gas < 5000 {
+	if *gas < e.table[SLOAD].constantGas {
 		return int64(ExecutionOutOfGas)
 	}
 
@@ -125,7 +124,7 @@ func hostOpSload(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	slot := common.BytesToHash(FromMachineToBigInplace(key))
 	address := e.callContext.Contract.address
 
-	errno := chargeSloadDynGas(gas, e.callContext.EVM, address, slot, e.callContext.Memory, uint64(e.callContext.Memory.Len()))
+	errno := chargeSloadDynGas(gas, e, address, slot, e.callContext.Memory, uint64(e.callContext.Memory.Len()))
 	if errno != int64(ExecutionSuccess) {
 		return errno
 	}
@@ -136,25 +135,21 @@ func hostOpSload(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	return int64(ExecutionSuccess)
 }
 
-func chargeSstoreDynGas(gas *uint64, evm *EVM, contract *Contract, stackPtr uintptr, mem *Memory, memorySize uint64) int64 {
+func chargeSstoreDynGas(gas *uint64, e *EVMExecutor, contract *Contract, stackPtr uintptr, mem *Memory, memorySize uint64) int64 {
 	var gasFn gasFunc
-	origGas := contract.Gas
-	contract.Gas = *gas
-	defer func() { contract.Gas = origGas }()
-
-	if evm.chainRules.IsLondon {
+	if e.evm.chainRules.IsLondon {
 		gasFn = makeGasSStoreFunc(params.SstoreClearsScheduleRefundEIP3529)
 	} else {
 		panic("Forks below London are not supported")
 	}
-	gasCost, err := gasFn(evm, contract, stackPtr, mem, memorySize)
+	gasCost, err := gasFn(e.evm, contract, stackPtr, mem, memorySize)
 	if err != nil {
 		// TODO: check error?
 		return int64(ExecutionOutOfGas)
 	}
 	// Deduct static gas already accounted for in consumeSectionGas
 	// TODO: consider fork
-	gasCost -= gasCosts[SSTORE]
+	gasCost -= e.table[SSTORE].constantGas
 
 	if *gas < gasCost {
 		return int64(ExecutionOutOfGas)
@@ -163,11 +158,11 @@ func chargeSstoreDynGas(gas *uint64, evm *EVM, contract *Contract, stackPtr uint
 	return int64(ExecutionSuccess)
 }
 
-func chargeSloadDynGas(gas *uint64, evm *EVM, address common.Address, slot common.Hash, mem *Memory, memorySize uint64) int64 {
+func chargeSloadDynGas(gas *uint64, e *EVMExecutor, address common.Address, slot common.Hash, mem *Memory, memorySize uint64) int64 {
 	var gasCost uint64
 	var err error
-	if evm.chainRules.IsLondon {
-		gasCost, err = gasSLoadEIP2929(evm, address, slot, mem, memorySize)
+	if e.evm.chainRules.IsLondon {
+		gasCost, err = gasSLoadEIP2929(e.evm, address, slot, mem, memorySize)
 	} else {
 		panic("Forks below London are not supported")
 	}
@@ -177,7 +172,7 @@ func chargeSloadDynGas(gas *uint64, evm *EVM, address common.Address, slot commo
 	}
 	// Deduct static gas already accounted for in consumeSectionGas
 	// TODO: consider fork
-	gasCost -= gasCosts[SLOAD]
+	gasCost -= e.table[SLOAD].constantGas
 
 	if *gas < gasCost {
 		return int64(ExecutionOutOfGas)

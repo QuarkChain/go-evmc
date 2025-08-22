@@ -29,6 +29,7 @@ type EVMExecutor struct {
 	table        *JumpTable
 
 	loadedContracts map[common.Hash]bool
+	table           *JumpTable
 }
 
 // CallContext is the current context of the call.
@@ -84,6 +85,14 @@ func (e *EVMExecutor) AddCompiledContract(codeHash common.Hash, compiledCode []b
 		e.engine.AddObjectFileFromBuffer(compiledCode)
 		e.loadedContracts[codeHash] = true
 	}
+}
+
+func (e *EVMExecutor) AddInstructionTable(table *JumpTable) {
+	if table == nil {
+		// no table is found
+		return
+	}
+	e.table = table
 }
 
 // Run a contract.
