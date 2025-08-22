@@ -11,7 +11,6 @@ import (
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/params/forks"
 	"tinygo.org/x/go-llvm"
 )
 
@@ -30,7 +29,6 @@ type EVMExecutor struct {
 	table        *JumpTable
 
 	loadedContracts map[common.Hash]bool
-	forkId          forks.Fork
 }
 
 // CallContext is the current context of the call.
@@ -89,9 +87,8 @@ func (e *EVMExecutor) AddCompiledContract(codeHash common.Hash, compiledCode []b
 }
 
 // Run a contract.
-func (e *EVMExecutor) Run(contract Contract, input []byte, readOnly bool, forkId forks.Fork) (ret *EVMExecutionResult, err error) {
+func (e *EVMExecutor) Run(contract Contract, input []byte, readOnly bool) (ret *EVMExecutionResult, err error) {
 	e.AddCompiledContract(contract.CodeHash, contract.CompiledCode)
-	e.forkId = forkId
 	// Get function pointer for direct execution
 	funcPtr := e.engine.GetFunctionAddress(GetContractFunction(contract.CodeHash))
 	if funcPtr == 0 {
@@ -150,8 +147,4 @@ func (e *EVMExecutor) callNativeFunction(funcPtr uint64, inst cgo.Handle, stack 
 	gasUsed := binary.LittleEndian.Uint64(output[OUTPUT_IDX_GAS*8:])
 	stackDepth := binary.LittleEndian.Uint64(output[OUTPUT_IDX_STACK_DEPTH*8:])
 	return int64(errorCode), int64(gasUsed), int64(stackDepth)
-}
-
-func (e *EVMExecutor) ForkId() forks.Fork {
-	return e.forkId
 }

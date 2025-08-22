@@ -8,8 +8,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/core/vm/runtime"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/params/forks"
 	"github.com/holiman/uint256"
 	"tinygo.org/x/go-llvm"
 )
@@ -52,9 +52,8 @@ type EVMExecutionResult struct {
 }
 
 type EVMExecutionOpts struct {
-	GasLimit uint64
-	StateDB  *state.StateDB
-	ForkId   forks.Fork
+	BlockCtx vm.BlockContext
+	Config   *runtime.Config
 }
 
 var defaultCompilationAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccc")
@@ -351,10 +350,11 @@ func (c *EVMCompiler) GetCompiledCode() []byte {
 	return mem.Bytes()
 }
 
-func (c *EVMCompiler) CreateExecutor() error {
-	// Create an in-memory state db
-	sdb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
-	evm := NewEVM(vm.BlockContext{Coinbase: defaultCoinbaseAddress}, sdb, params.TestChainConfig, vm.Config{})
+func (c *EVMCompiler) CreateExecutor(blockCtx vm.BlockContext, statedb *state.StateDB, chainConfig *params.ChainConfig) error {
+	if chainConfig == nil {
+		panic("ChainConfig must be provided.")
+	}
+	evm := NewEVM(blockCtx, statedb, chainConfig, vm.Config{})
 	c.executor = evm.executor
 	c.executor.AddCompiledContract(c.codeHash, c.GetCompiledCode())
 	return nil
@@ -362,13 +362,16 @@ func (c *EVMCompiler) CreateExecutor() error {
 
 // Execute the compiled EVM code
 func (c *EVMCompiler) Execute(opts *EVMExecutionOpts) (*EVMExecutionResult, error) {
-	return c.executor.Run(*NewContract(defaultCallerAddress, defaultCompilationAddress, uint256.NewInt(0), opts.GasLimit, c.codeHash), []byte{}, false, opts.ForkId)
+	return c.executor.Run(*NewContract(defaultCallerAddress, defaultCompilationAddress, uint256.NewInt(0), opts.Config.GasLimit, c.codeHash), []byte{}, false)
 }
 
 // ExecuteCompiled executes compiled EVM code using function pointer for better performance
 func (c *EVMCompiler) ExecuteCompiled(bytecode []byte) (*EVMExecutionResult, error) {
 	opts := &EVMExecutionOpts{
-		GasLimit: 1000000,
+		Config: &runtime.Config{
+			GasLimit:    1000000,
+			ChainConfig: params.TestChainConfig,
+		},
 	}
 
 	return c.ExecuteCompiledWithOpts(bytecode, DefaultEVMCompilationOpts(), opts)
@@ -383,7 +386,13 @@ func (c *EVMCompiler) ExecuteCompiledWithOpts(bytecode []byte, copts *EVMCompila
 	}
 
 	// Create executor
-	err = c.CreateExecutor(opts.StateDB)
+	if opts == nil {
+		panic("EVMExecutionOpts must be provided.")
+	}
+	if opts.Config == nil {
+		panic("runtime.Config must be provided in EVMExecutionOpts.")
+	}
+	err = c.CreateExecutor(opts.BlockCtx, opts.Config.State, opts.Config.ChainConfig)
 	if err != nil {
 		return nil, err
 	}

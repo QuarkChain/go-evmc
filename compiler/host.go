@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/params/forks"
 	"github.com/holiman/uint256"
 	"tinygo.org/x/go-llvm"
 )
@@ -107,7 +106,7 @@ func hostOpSstore(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	slot := common.BytesToHash(FromMachineToBigInplace(getStackElement(stackPtr, 0)))
 	value := common.BytesToHash(FromMachineToBigInplace(getStackElement(stackPtr, 1)))
 	contract := e.callContext.Contract
-	errno := chargeSstoreDynGas(gas, e.ForkId(), e.callContext.EVM, contract, stackPtr, e.callContext.Memory, uint64(e.callContext.Memory.Len()))
+	errno := chargeSstoreDynGas(gas, e.callContext.EVM, contract, stackPtr, e.callContext.Memory, uint64(e.callContext.Memory.Len()))
 	if errno != int64(ExecutionSuccess) {
 		return errno
 	}
@@ -126,7 +125,7 @@ func hostOpSload(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	slot := common.BytesToHash(FromMachineToBigInplace(key))
 	address := e.callContext.Contract.address
 
-	errno := chargeSloadDynGas(gas, e.ForkId(), e.callContext.EVM, address, slot, e.callContext.Memory, uint64(e.callContext.Memory.Len()))
+	errno := chargeSloadDynGas(gas, e.callContext.EVM, address, slot, e.callContext.Memory, uint64(e.callContext.Memory.Len()))
 	if errno != int64(ExecutionSuccess) {
 		return errno
 	}
@@ -137,9 +136,13 @@ func hostOpSload(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	return int64(ExecutionSuccess)
 }
 
-func chargeSstoreDynGas(gas *uint64, forkId forks.Fork, evm *EVM, contract *Contract, stackPtr uintptr, mem *Memory, memorySize uint64) int64 {
+func chargeSstoreDynGas(gas *uint64, evm *EVM, contract *Contract, stackPtr uintptr, mem *Memory, memorySize uint64) int64 {
 	var gasFn gasFunc
-	if forkId >= forks.London {
+	origGas := contract.Gas
+	contract.Gas = *gas
+	defer func() { contract.Gas = origGas }()
+
+	if evm.chainRules.IsLondon {
 		gasFn = makeGasSStoreFunc(params.SstoreClearsScheduleRefundEIP3529)
 	} else {
 		panic("Forks below London are not supported")
@@ -160,10 +163,10 @@ func chargeSstoreDynGas(gas *uint64, forkId forks.Fork, evm *EVM, contract *Cont
 	return int64(ExecutionSuccess)
 }
 
-func chargeSloadDynGas(gas *uint64, forkId forks.Fork, evm *EVM, address common.Address, slot common.Hash, mem *Memory, memorySize uint64) int64 {
+func chargeSloadDynGas(gas *uint64, evm *EVM, address common.Address, slot common.Hash, mem *Memory, memorySize uint64) int64 {
 	var gasCost uint64
 	var err error
-	if forkId >= forks.London {
+	if evm.chainRules.IsLondon {
 		gasCost, err = gasSLoadEIP2929(evm, address, slot, mem, memorySize)
 	} else {
 		panic("Forks below London are not supported")

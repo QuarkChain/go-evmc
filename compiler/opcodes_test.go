@@ -7,8 +7,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/core/vm/runtime"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/params/forks"
 	"github.com/holiman/uint256"
 )
 
@@ -86,9 +87,15 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 	}
 
 	opts := &EVMExecutionOpts{
-		GasLimit: testCase.gasLimit,
-		StateDB:  stateDB,
-		ForkId:   forks.Prague,
+		BlockCtx: vm.BlockContext{
+			Coinbase:    defaultCoinbaseAddress,
+			BlockNumber: common.Big0,
+		},
+		Config: &runtime.Config{
+			ChainConfig: params.MergedTestChainConfig,
+			GasLimit:    testCase.gasLimit,
+			State:       stateDB,
+		},
 	}
 
 	result, err := comp.ExecuteCompiledWithOpts(testCase.bytecode, DefaultEVMCompilationOpts(), opts)

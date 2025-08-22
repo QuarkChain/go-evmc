@@ -18,7 +18,6 @@ package compiler
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
@@ -29,7 +28,6 @@ type (
 )
 
 func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
-	// TODO: need to deduct gas cost from contract.gas in the interpreter
 	return func(evm *EVM, contract *Contract, stackPtr uintptr, mem *Memory, memorySize uint64) (uint64, error) {
 		// If we fail the minimum gas availability invariant, fail (0)
 		if contract.Gas <= params.SstoreSentryGasEIP2200 {
@@ -49,7 +47,6 @@ func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
 			evm.StateDB.AddSlotToAccessList(contract.Address(), slot)
 		}
 		value := common.Hash(y)
-		fmt.Println("slot:", slot, "origin:", original, "current:", current, "new:", value)
 
 		if current == value { // noop (1)
 			// EIP 2200 original clause:

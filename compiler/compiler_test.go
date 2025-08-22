@@ -6,6 +6,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/core/vm/runtime"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
@@ -327,7 +328,7 @@ func TestEVMExecuteFib(t *testing.T) {
 
 	n := uint32(10000000)
 
-	result, err := comp.ExecuteCompiledWithOpts(GetFibCode(n), DefaultEVMCompilationOpts(), &EVMExecutionOpts{GasLimit: uint64(n) * 100})
+	result, err := comp.ExecuteCompiledWithOpts(GetFibCode(n), DefaultEVMCompilationOpts(), &EVMExecutionOpts{Config: &runtime.Config{GasLimit: uint64(n) * 100, ChainConfig: params.TestChainConfig}})
 	if err != nil {
 		t.Fatalf("Execution failed: %v", err)
 	}
@@ -369,7 +370,7 @@ func TestEVMExecuteFibSectionGasOptimization(t *testing.T) {
 
 	n := uint32(10000000)
 
-	resultOpt, err := compOpt.ExecuteCompiledWithOpts(GetFibCode(n), DefaultEVMCompilationOpts(), &EVMExecutionOpts{GasLimit: uint64(n) * 100})
+	resultOpt, err := compOpt.ExecuteCompiledWithOpts(GetFibCode(n), DefaultEVMCompilationOpts(), &EVMExecutionOpts{Config: &runtime.Config{GasLimit: uint64(n) * 100, ChainConfig: params.TestChainConfig}})
 	if err != nil {
 		t.Fatalf("Execution failed: %v", err)
 	}
@@ -385,7 +386,7 @@ func TestEVMExecuteFibSectionGasOptimization(t *testing.T) {
 
 	copts := DefaultEVMCompilationOpts()
 	copts.DisableSectionGasOptimization = true
-	resultNoOpt, err := compNoOpt.ExecuteCompiledWithOpts(GetFibCode(n), copts, &EVMExecutionOpts{GasLimit: uint64(n) * 100})
+	resultNoOpt, err := compNoOpt.ExecuteCompiledWithOpts(GetFibCode(n), copts, &EVMExecutionOpts{Config: &runtime.Config{GasLimit: uint64(n) * 100, ChainConfig: params.TestChainConfig}})
 	if err != nil {
 		t.Fatalf("Execution failed: %v", err)
 	}
@@ -548,14 +549,14 @@ func BenchmarkEVMExecuteFibWithSectionGasOptimization(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Compilation failed: %v", err)
 	}
-	err = comp.CreateExecutor(nil)
+	err = comp.CreateExecutor(vm.BlockContext{}, nil, params.TestChainConfig)
 	if err != nil {
 		b.Fatalf("Engine failed: %v", err)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := comp.Execute(&EVMExecutionOpts{GasLimit: uint64(n) * 100})
+		_, err := comp.Execute(&EVMExecutionOpts{Config: &runtime.Config{GasLimit: uint64(n) * 100}})
 		if err != nil {
 			b.Fatalf("Execution failed: %v", err)
 		}
@@ -574,14 +575,14 @@ func BenchmarkEVMExecuteFibWithGas(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Compilation failed: %v", err)
 	}
-	err = comp.CreateExecutor(nil)
+	err = comp.CreateExecutor(vm.BlockContext{}, nil, params.TestChainConfig)
 	if err != nil {
 		b.Fatalf("Engine failed: %v", err)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := comp.Execute(&EVMExecutionOpts{GasLimit: uint64(n) * 100})
+		_, err := comp.Execute(&EVMExecutionOpts{Config: &runtime.Config{GasLimit: uint64(n) * 100}})
 		if err != nil {
 			b.Fatalf("Execution failed: %v", err)
 		}
@@ -598,14 +599,14 @@ func BenchmarkEVMExecuteFibWithoutGas(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Compilation failed: %v", err)
 	}
-	err = comp.CreateExecutor(nil)
+	err = comp.CreateExecutor(vm.BlockContext{}, nil, params.TestChainConfig)
 	if err != nil {
 		b.Fatalf("Engine failed: %v", err)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := comp.Execute(&EVMExecutionOpts{GasLimit: uint64(n) * 100})
+		_, err := comp.Execute(&EVMExecutionOpts{Config: &runtime.Config{GasLimit: uint64(n) * 100}})
 		if err != nil {
 			b.Fatalf("Execution failed: %v", err)
 		}
