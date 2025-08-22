@@ -204,8 +204,8 @@ func hostOpMstore8(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 // Address returns address of the current executing account.
 func (h *DefaultHost) Address(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	stack0 := getStackElement(stackPtr, 0)
-
-	CopyFromBigToMachine(e.callContext.Contract.address.Bytes(), stack0)
+	padded0 := [12]byte{}
+	CopyFromBigToMachine(append(padded0[:], e.callContext.Contract.address[:]...), stack0)
 
 	return int64(ExecutionSuccess)
 }
@@ -213,8 +213,8 @@ func (h *DefaultHost) Address(gas *uint64, e *EVMExecutor, stackPtr uintptr) int
 // Origin returns address of the execution origination address.
 func (h *DefaultHost) Origin(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	stack0 := getStackElement(stackPtr, 0)
-
-	CopyFromBigToMachine(e.evm.TxContext.Origin.Bytes(), stack0)
+	padded0 := [12]byte{}
+	CopyFromBigToMachine(append(padded0[:], e.evm.TxContext.Origin[:]...), stack0)
 
 	return int64(ExecutionSuccess)
 }
@@ -222,9 +222,8 @@ func (h *DefaultHost) Origin(gas *uint64, e *EVMExecutor, stackPtr uintptr) int6
 // Caller returns caller address.
 func (h *DefaultHost) Caller(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	stack0 := getStackElement(stackPtr, 0)
-
-	CopyFromBigToMachine(e.callContext.Contract.caller.Bytes(), stack0)
-
+	padded0 := [12]byte{}
+	CopyFromBigToMachine(append(padded0[:], e.callContext.Contract.caller[:]...), stack0)
 	return int64(ExecutionSuccess)
 }
 
