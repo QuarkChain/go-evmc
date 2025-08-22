@@ -87,6 +87,7 @@ const (
 	ExecutionOutOfGas
 	ExecutionStackOverflow
 	ExecutionStackUnderflow
+	ExecutionInvalidJumpDest
 )
 
 func init() {
@@ -340,7 +341,7 @@ func (c *EVMCompiler) GetCompiledCode() []byte {
 }
 
 func (c *EVMCompiler) CreateExecutor() error {
-	// Create an in-memory state db	
+	// Create an in-memory state db
 	sdb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
 	evm := NewEVM(vm.BlockContext{Coinbase: defaultCoinbaseAddress}, sdb, params.TestChainConfig, vm.Config{})
 	c.executor = evm.executor

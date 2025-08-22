@@ -492,7 +492,7 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 	case JUMP:
 		target := c.popStack(stack, stackPtr)
 		// Create dynamic jump using switch
-		c.createDynamicJump(target, analysis, exitBlock)
+		c.createDynamicJump(target, analysis, errorCodePtr, errorBlock)
 
 	case JUMPI:
 		target := c.popStack(stack, stackPtr)
@@ -505,7 +505,7 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 		c.builder.CreateCondBr(isNonZero, jumpBlock, nextBlock)
 
 		c.builder.SetInsertPointAtEnd(jumpBlock)
-		c.createDynamicJump(target, analysis, exitBlock)
+		c.createDynamicJump(target, analysis, errorCodePtr, errorBlock)
 
 	case PC:
 		// Push current PC as a constant (static analysis!)
@@ -529,9 +529,9 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 
 	default:
 		if instr.Opcode >= PUSH1 && instr.Opcode <= PUSH32 {
-			c.compilePushStatic(instr, stack, stackPtr, errorCodePtr, nextBlock, errorBlock)
+			c.compilePushStatic(instr, stack, stackPtr, nextBlock)
 		} else if instr.Opcode >= DUP1 && instr.Opcode <= DUP16 {
-			c.compileDupStatic(instr, stack, stackPtr, errorCodePtr, nextBlock, errorBlock)
+			c.compileDupStatic(instr, stack, stackPtr, nextBlock)
 		} else if instr.Opcode >= SWAP1 && instr.Opcode <= SWAP16 {
 			c.compileSwapStatic(instr, stack, stackPtr, nextBlock)
 		} else {
@@ -543,12 +543,15 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 }
 
 // createDynamicJump creates a switch statement for dynamic jumps
-func (c *EVMCompiler) createDynamicJump(target llvm.Value, analysis *PCAnalysis, exitBlock llvm.BasicBlock) {
+func (c *EVMCompiler) createDynamicJump(target llvm.Value, analysis *PCAnalysis, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
 	// Truncate 256-bit target to 64-bit PC
 	targetPC := c.builder.CreateTrunc(target, c.ctx.Int64Type(), "jump_target")
 
+	// Create invalid jump dest block
+	invalidJumpDestBlock := llvm.AddBasicBlock(c.builder.GetInsertBlock().Parent(), "invalid_jump_dest")
+
 	// Create switch instruction with all valid jump targets
-	switchInstr := c.builder.CreateSwitch(targetPC, exitBlock, len(analysis.jumpTargets))
+	switchInstr := c.builder.CreateSwitch(targetPC, invalidJumpDestBlock, len(analysis.jumpTargets))
 
 	// Add cases for all valid JUMPDEST locations
 	for pc := range analysis.jumpTargets {
@@ -557,18 +560,22 @@ func (c *EVMCompiler) createDynamicJump(target llvm.Value, analysis *PCAnalysis,
 			switchInstr.AddCase(pcConstant, block)
 		}
 	}
-	// TODO: add invalid JUMPDEST
+
+	c.builder.SetInsertPointAtEnd(invalidJumpDestBlock)
+	// Store error code and exit
+	c.builder.CreateStore(llvm.ConstInt(c.ctx.Int64Type(), uint64(ExecutionInvalidJumpDest), false), errorCodePtr)
+	c.builder.CreateBr(errorBlock)
 }
 
 // compilePushStatic compiles PUSH instructions with static next block
-func (c *EVMCompiler) compilePushStatic(instr EVMInstruction, stack, stackPtr, errorCodePtr llvm.Value, nextBlock, errorBlock llvm.BasicBlock) {
+func (c *EVMCompiler) compilePushStatic(instr EVMInstruction, stack, stackPtr llvm.Value, nextBlock llvm.BasicBlock) {
 	llvmValue := c.createUint256ConstantFromBytes(instr.Data)
 	c.pushStack(stack, stackPtr, llvmValue)
 	c.builder.CreateBr(nextBlock)
 }
 
 // compileDupStatic compiles DUP instructions with static next block
-func (c *EVMCompiler) compileDupStatic(instr EVMInstruction, stack, stackPtr, errorCodePtr llvm.Value, nextBlock, errorBlock llvm.BasicBlock) {
+func (c *EVMCompiler) compileDupStatic(instr EVMInstruction, stack, stackPtr llvm.Value, nextBlock llvm.BasicBlock) {
 	n := int(instr.Opcode - DUP1 + 1)
 	stackPtrVal := c.builder.CreateLoad(c.ctx.Int32Type(), stackPtr, "stack_ptr_val")
 	index := c.builder.CreateSub(stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), uint64(n), false), "dup_index")
