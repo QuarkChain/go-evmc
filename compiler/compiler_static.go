@@ -241,7 +241,24 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 	// Check stack overflow/underflow
 	stackPtrVal := c.builder.CreateLoad(c.ctx.Int32Type(), stackPtr, "")
 	c.checkStackUnderflow(stackPtrVal, uint64(c.table[instr.Opcode].minStack), errorCodePtr, errorBlock)
-	c.checkStackOverflow(stackPtrVal, c.table[instr.Opcode].maxStackPush, errorCodePtr, errorBlock)
+	c.checkStackOverflow(stackPtrVal, c.table[instr.Opcode].diffDiff, errorCodePtr, errorBlock)
+
+	// Check if it is host function
+	if c.table[instr.Opcode].execute != nil {
+		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
+		if c.table[instr.Opcode].diffDiff < 0 {
+			for i := 0; i < -c.table[instr.Opcode].diffDiff; i++ {
+				c.popStack(stack, stackPtr)
+			}
+		} else {
+			for i := 0; i < c.table[instr.Opcode].diffDiff; i++ {
+				c.pushStackEmpty(stackPtr)
+			}
+		}
+		// TODO: may not check if the opcode will not return error
+		c.checkHostReturn(ret, errorCodePtr, nextBlock, errorBlock)
+		return
+	}
 
 	switch instr.Opcode {
 	case STOP:
@@ -313,12 +330,6 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 		b := c.popStack(stack, stackPtr)
 		result := c.builder.CreateSRem(a, b, "smod_result") // mod by zero is already supported
 		c.pushStack(stack, stackPtr, result)
-		c.builder.CreateBr(nextBlock)
-
-	case ADDMOD:
-		c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
-		c.popStack(stack, stackPtr)
-		c.popStack(stack, stackPtr)
 		c.builder.CreateBr(nextBlock)
 
 	// case EXP:
@@ -474,24 +485,9 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 		c.pushStack(stack, stackPtr, result)
 		c.builder.CreateBr(nextBlock)
 
-	case COINBASE:
-		c.pushStackEmpty(stackPtr) // allocate a stack variable to write
-		c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
-		c.builder.CreateBr(nextBlock)
-
 	case POP:
 		c.popStack(stack, stackPtr)
 		c.builder.CreateBr(nextBlock)
-
-	case MLOAD, SLOAD:
-		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
-		c.checkHostReturn(ret, errorCodePtr, nextBlock, errorBlock)
-
-	case MSTORE, MSTORE8, SSTORE:
-		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
-		c.popStack(stack, stackPtr)
-		c.popStack(stack, stackPtr)
-		c.checkHostReturn(ret, errorCodePtr, nextBlock, errorBlock)
 
 	case JUMP:
 		target := c.popStack(stack, stackPtr)
@@ -638,57 +634,14 @@ func (c *EVMCompiler) CompileAndOptimizeStatic(bytecode []byte, opts *EVMCompila
 	c.initailizeHostFunctions()
 	c.contractAddress = opts.ContractAddress
 	c.codeHash = crypto.Keccak256Hash(bytecode)
-	// If jump table was not initialised we set the default one.
-	var table *JumpTable
-	switch {
-	case opts.ChainRules.IsOsaka:
-		table = &osakaInstructionSet
-	case opts.ChainRules.IsVerkle:
-		// TODO replace with proper instruction set when fork is specified
-		table = &verkleInstructionSet
-	case opts.ChainRules.IsPrague:
-		table = &pragueInstructionSet
-	case opts.ChainRules.IsCancun:
-		table = &cancunInstructionSet
-	case opts.ChainRules.IsShanghai:
-		table = &shanghaiInstructionSet
-	case opts.ChainRules.IsMerge:
-		table = &mergeInstructionSet
-	case opts.ChainRules.IsLondon:
-		table = &londonInstructionSet
-	case opts.ChainRules.IsBerlin:
-		table = &berlinInstructionSet
-	case opts.ChainRules.IsIstanbul:
-		table = &istanbulInstructionSet
-	case opts.ChainRules.IsConstantinople:
-		table = &constantinopleInstructionSet
-	case opts.ChainRules.IsByzantium:
-		table = &byzantiumInstructionSet
-	case opts.ChainRules.IsEIP158:
-		table = &spuriousDragonInstructionSet
-	case opts.ChainRules.IsEIP150:
-		table = &tangerineWhistleInstructionSet
-	case opts.ChainRules.IsHomestead:
-		table = &homesteadInstructionSet
-	default:
-		table = &frontierInstructionSet
-	}
-	var extraEips []int
-	if len(opts.ExtraEips) > 0 {
-		// Deep-copy jumptable to prevent modification of opcodes in other tables
-		table = copyJumpTable(table)
-	}
-	for _, eip := range opts.ExtraEips {
-		if err := EnableEIP(eip, table); err != nil {
-			return err
-		} else {
-			extraEips = append(extraEips, eip)
-		}
+	table, extraEips, err := getJumpTable(opts.ChainRules, opts.ExtraEips)
+	if err != nil {
+		return err
 	}
 	c.table = table
 	c.extraEips = extraEips
 
-	_, err := c.CompileBytecodeStatic(bytecode, opts)
+	_, err = c.CompileBytecodeStatic(bytecode, opts)
 	if err != nil {
 		return err
 	}

@@ -20,11 +20,6 @@ type EVMHost interface {
 	GetHostFunc(opcode OpCode) HostFunc
 }
 
-type DefaultHost struct {
-	state       map[common.Address]map[common.Hash]common.Hash
-	hostFuncMap map[OpCode]HostFunc
-}
-
 func createExecutionInstance(inst *EVMExecutor) cgo.Handle {
 	return cgo.NewHandle(inst)
 }
@@ -41,7 +36,7 @@ func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, gas *C.uint64_t, stackPtr
 		panic("execution instance not found or type mismatch")
 	}
 
-	f := e.host.GetHostFunc(OpCode(opcode))
+	f := e.table[OpCode(opcode)].execute
 	if f == nil {
 		panic(fmt.Sprintf("host function for opcode %d not found", opcode))
 	}
@@ -91,27 +86,7 @@ func (e *EVMExecutor) addGlobalMappingForHostFunctions() {
 	e.engine.AddGlobalMapping(e.hostFunc, unsafe.Pointer(C.callHostFunc))
 }
 
-func NewDefaultHost() *DefaultHost {
-	h := &DefaultHost{
-		state: make(map[common.Address]map[common.Hash]common.Hash),
-	}
-	h.hostFuncMap = map[OpCode]HostFunc{
-		ADDMOD:   h.AddMod,
-		COINBASE: h.Coinbase,
-		MLOAD:    h.Mload,
-		MSTORE:   h.Mstore,
-		MSTORE8:  h.Mstore8,
-		SLOAD:    h.Sload,
-		SSTORE:   h.Sstore,
-	}
-	return h
-}
-
-func (h *DefaultHost) GetHostFunc(opcode OpCode) HostFunc {
-	return h.hostFuncMap[opcode]
-}
-
-func (h *DefaultHost) AddMod(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
+func hostOpAddMod(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	x := loadUint256(stackPtr, 0)
 	y := loadUint256(stackPtr, 1)
 	m := loadUint256(stackPtr, 2)
@@ -122,43 +97,29 @@ func (h *DefaultHost) AddMod(gas *uint64, e *EVMExecutor, stackPtr uintptr) int6
 	return int64(ExecutionSuccess)
 }
 
-// A simple Sstore with constant 20000 gas
-func (h *DefaultHost) Sstore(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
+func hostOpSstore(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	if *gas < 20000 {
 		return int64(ExecutionOutOfGas)
 	}
 	*gas -= 20000
 
 	addrBytes := e.callContext.Contract.address
-	if _, ok := h.state[addrBytes]; !ok {
-		h.state[addrBytes] = make(map[common.Hash]common.Hash)
-	}
-
-	m := h.state[addrBytes]
 	keyBytes := common.BytesToHash(getStackElement(stackPtr, 0))
 	valueBytes := common.BytesToHash(getStackElement(stackPtr, 1))
-	m[keyBytes] = valueBytes
+	e.evm.StateDB.SetState(addrBytes, keyBytes, valueBytes)
 
 	return int64(ExecutionSuccess)
 }
 
-// A simple Sload with constant 5000 gas
-func (h *DefaultHost) Sload(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
+func hostOpSload(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	if *gas < 5000 {
 		return int64(ExecutionOutOfGas)
 	}
 	*gas -= 5000
 
 	keyOrValue := getStackElement(stackPtr, 0)
-
-	m := h.state[e.callContext.Contract.address]
-	if m == nil {
-		zeroBytes(keyOrValue)
-		return int64(ExecutionSuccess)
-	}
-
 	keyBytes := common.BytesToHash(keyOrValue)
-	valueBytes := m[keyBytes]
+	valueBytes := e.evm.StateDB.GetState(e.callContext.Contract.address, keyBytes)
 	copy(keyOrValue, valueBytes[:])
 
 	return int64(ExecutionSuccess)
@@ -192,8 +153,7 @@ func chargeMemoryGasAndResize(gas *uint64, memory *Memory, offset *uint256.Int, 
 	return memSize, int64(ExecutionSuccess)
 }
 
-// Mload behaves the same as Geth's.
-func (h *DefaultHost) Mload(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
+func hostOpMload(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	stack0 := getStackElement(stackPtr, 0)
 	offset := new(uint256.Int).SetBytes(FromMachineToBigInplace(stack0))
 	_, errno := chargeMemoryGasAndResize(gas, e.callContext.Memory, offset, 32)
@@ -206,8 +166,7 @@ func (h *DefaultHost) Mload(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64
 	return int64(ExecutionSuccess)
 }
 
-// Mstore behaves the same as Geth's.
-func (h *DefaultHost) Mstore(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
+func hostOpMstore(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	stack0 := getStackElement(stackPtr, 0)
 	offset := new(uint256.Int).SetBytes(FromMachineToBigInplace(stack0))
 	_, errno := chargeMemoryGasAndResize(gas, e.callContext.Memory, offset, 32)
@@ -222,8 +181,7 @@ func (h *DefaultHost) Mstore(gas *uint64, e *EVMExecutor, stackPtr uintptr) int6
 	return int64(ExecutionSuccess)
 }
 
-// Mstore8 behaves the same as Geth's.
-func (h *DefaultHost) Mstore8(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
+func hostOpMstore8(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	stack0 := getStackElement(stackPtr, 0)
 	offset := new(uint256.Int).SetBytes(FromMachineToBigInplace(stack0))
 	_, errno := chargeMemoryGasAndResize(gas, e.callContext.Memory, offset, 1)
@@ -244,8 +202,8 @@ func (h *DefaultHost) Mstore8(gas *uint64, e *EVMExecutor, stackPtr uintptr) int
 }
 
 // Coinbase returns the coinbase address of the block.
-func (h *DefaultHost) Coinbase(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
-	stack0 := getStackElement(stackPtr, 0)
+func hostOpCoinbase(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
+	stack0 := getStackElement(stackPtr, -1) // push stack
 
 	CopyFromBigToMachine(new(uint256.Int).SetBytes(e.evm.Context.Coinbase.Bytes()).Bytes(), stack0)
 

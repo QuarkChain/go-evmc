@@ -227,3 +227,54 @@ func memoryGasCost(mem *Memory, newMemSize uint64) (uint64, error) {
 	}
 	return 0, nil
 }
+
+func getJumpTable(chainRules params.Rules, optExtraEips []int) (*JumpTable, []int, error) {
+	// If jump table was not initialised we set the default one.
+	var table *JumpTable
+	switch {
+	case chainRules.IsOsaka:
+		table = &osakaInstructionSet
+	case chainRules.IsVerkle:
+		// TODO replace with proper instruction set when fork is specified
+		table = &verkleInstructionSet
+	case chainRules.IsPrague:
+		table = &pragueInstructionSet
+	case chainRules.IsCancun:
+		table = &cancunInstructionSet
+	case chainRules.IsShanghai:
+		table = &shanghaiInstructionSet
+	case chainRules.IsMerge:
+		table = &mergeInstructionSet
+	case chainRules.IsLondon:
+		table = &londonInstructionSet
+	case chainRules.IsBerlin:
+		table = &berlinInstructionSet
+	case chainRules.IsIstanbul:
+		table = &istanbulInstructionSet
+	case chainRules.IsConstantinople:
+		table = &constantinopleInstructionSet
+	case chainRules.IsByzantium:
+		table = &byzantiumInstructionSet
+	case chainRules.IsEIP158:
+		table = &spuriousDragonInstructionSet
+	case chainRules.IsEIP150:
+		table = &tangerineWhistleInstructionSet
+	case chainRules.IsHomestead:
+		table = &homesteadInstructionSet
+	default:
+		table = &frontierInstructionSet
+	}
+	var extraEips []int
+	if len(optExtraEips) > 0 {
+		// Deep-copy jumptable to prevent modification of opcodes in other tables
+		table = copyJumpTable(table)
+	}
+	for _, eip := range optExtraEips {
+		if err := EnableEIP(eip, table); err != nil {
+			return nil, nil, err
+		} else {
+			extraEips = append(extraEips, eip)
+		}
+	}
+	return table, extraEips, nil
+}
