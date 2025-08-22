@@ -361,7 +361,7 @@ func (c *EVMCompiler) ExecuteCompiled(bytecode []byte) (*EVMExecutionResult, err
 // ExecuteCompiled executes compiled EVM code using function pointer for better performance
 func (c *EVMCompiler) ExecuteCompiledWithOpts(bytecode []byte, copts *EVMCompilationOpts, opts *EVMExecutionOpts) (*EVMExecutionResult, error) {
 	// Compile if needed
-	err := c.CompileAndOptimize(bytecode)
+	err := c.CompileAndOptimizeWithOpts(bytecode, copts)
 	if err != nil {
 		return nil, fmt.Errorf("compilation failed: %v", err)
 	}
