@@ -353,6 +353,7 @@ const (
 	ExecutionError
 	ExecutionOutOfGas
 	ExecutionStackOverflow
+	ExecutionStackUnderflow
 )
 
 func init() {
@@ -426,12 +427,12 @@ func (c *EVMCompiler) CompileBytecode(bytecode []byte) (llvm.Module, error) {
 	return c.CompileBytecodeStatic(bytecode, &EVMCompilationOpts{DisableGas: false})
 }
 
-func (c *EVMCompiler) checkStackLimit(stackPtrVal, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
+func (c *EVMCompiler) checkStackOverflow(stackPtrVal, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
 	// Check if we exceed stack limit
-	exceedsLimit := c.builder.CreateICmp(llvm.IntUGE, stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), 1024, false), "exceeds_gas_limit")
+	exceedsLimit := c.builder.CreateICmp(llvm.IntUGE, stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), 1024, false), "stack_overflow_cond")
 
 	// Create continuation block & stack overflow block
-	continueBlock := llvm.AddBasicBlock(c.builder.GetInsertBlock().Parent(), "stack_check_continue")
+	continueBlock := llvm.AddBasicBlock(c.builder.GetInsertBlock().Parent(), "stack_overflow_check_continue")
 	stackOverflowBlock := llvm.AddBasicBlock(c.builder.GetInsertBlock().Parent(), "stack_overflow")
 
 	// Branch to stack overflow block if limit exceeded, otherwise continue
@@ -446,16 +447,36 @@ func (c *EVMCompiler) checkStackLimit(stackPtrVal, errorCodePtr llvm.Value, erro
 	c.builder.SetInsertPointAtEnd(continueBlock)
 }
 
+func (c *EVMCompiler) checkStackUnderflow(stackPtrVal llvm.Value, num uint64, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
+	// Check if we exceed stack limit
+	exceedsLimit := c.builder.CreateICmp(llvm.IntULT, stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), num, false), "stack_underflow_cond")
+
+	// Create continuation block & stack underflow block
+	continueBlock := llvm.AddBasicBlock(c.builder.GetInsertBlock().Parent(), "stack_underflow_check_continue")
+	stackUnderflowBlock := llvm.AddBasicBlock(c.builder.GetInsertBlock().Parent(), "stack_underflow")
+
+	// Branch to stack underflow block if limit exceeded, otherwise continue
+	c.builder.CreateCondBr(exceedsLimit, stackUnderflowBlock, continueBlock)
+
+	c.builder.SetInsertPointAtEnd(stackUnderflowBlock)
+	// Store error code and exit
+	c.builder.CreateStore(llvm.ConstInt(c.ctx.Int64Type(), uint64(ExecutionStackUnderflow), false), errorCodePtr)
+	c.builder.CreateBr(errorBlock)
+
+	// Insert to continueBlock so that we can insert the rest code
+	c.builder.SetInsertPointAtEnd(continueBlock)
+}
+
 func (c *EVMCompiler) pushStackEmpty(stackPtr, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
 	stackPtrVal := c.builder.CreateLoad(c.ctx.Int32Type(), stackPtr, "stack_ptr_val")
-	c.checkStackLimit(stackPtrVal, errorCodePtr, errorBlock)
+	c.checkStackOverflow(stackPtrVal, errorCodePtr, errorBlock)
 	newStackPtr := c.builder.CreateAdd(stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), 1, false), "new_stack_ptr")
 	c.builder.CreateStore(newStackPtr, stackPtr)
 }
 
 func (c *EVMCompiler) pushStack(stack, stackPtr, value, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
 	stackPtrVal := c.builder.CreateLoad(c.ctx.Int32Type(), stackPtr, "stack_ptr_val")
-	c.checkStackLimit(stackPtrVal, errorCodePtr, errorBlock)
+	c.checkStackOverflow(stackPtrVal, errorCodePtr, errorBlock)
 
 	// Obtain stack value and store new stack idx
 	stackElem := c.builder.CreateGEP(c.ctx.IntType(256), stack, []llvm.Value{stackPtrVal}, "stack_elem")
@@ -464,8 +485,9 @@ func (c *EVMCompiler) pushStack(stack, stackPtr, value, errorCodePtr llvm.Value,
 	c.builder.CreateStore(newStackPtr, stackPtr)
 }
 
-func (c *EVMCompiler) popStack(stack, stackPtr llvm.Value) llvm.Value {
+func (c *EVMCompiler) popStack(stack, stackPtr, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) llvm.Value {
 	stackPtrVal := c.builder.CreateLoad(c.ctx.Int32Type(), stackPtr, "stack_ptr_val")
+	c.checkStackUnderflow(stackPtrVal, 1, errorCodePtr, errorBlock)
 	newStackPtr := c.builder.CreateSub(stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), 1, false), "new_stack_ptr")
 	c.builder.CreateStore(newStackPtr, stackPtr)
 	stackElem := c.builder.CreateGEP(c.ctx.IntType(256), stack, []llvm.Value{newStackPtr}, "stack_elem")

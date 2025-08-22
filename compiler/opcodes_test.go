@@ -819,6 +819,23 @@ func TestStackOpcodes(t *testing.T) {
 			expectedStack: [][32]byte{}, // Empty stack
 		},
 		{
+			name: "POP_UNDERFLOW",
+			bytecode: []byte{
+				0x50, // POP
+				0x00, // STOP
+			},
+			expectedStatus: getExpectedStatus(ExecutionStackUnderflow),
+		},
+		{
+			name: "ADD_UNDERFLOW",
+			bytecode: []byte{
+				0x60, 0x05, // PUSH1 5
+				0x01, // ADD
+				0x00, // STOP
+			},
+			expectedStatus: getExpectedStatus(ExecutionStackUnderflow),
+		},
+		{
 			name: "DUP1",
 			bytecode: []byte{
 				0x60, 0x2A, // PUSH1 42
@@ -1229,15 +1246,42 @@ func TestComplexPrograms(t *testing.T) {
 // TestOpcodeErrorConditions tests error conditions and edge cases
 func TestOpcodeErrorConditions(t *testing.T) {
 	testCases := []OpcodeTestCase{
-		// {
-		// 	name: "STACK_UNDERFLOW_ADD",
-		// 	bytecode: []byte{
-		// 		0x60, 0x05, // PUSH1 5 (only one operand)
-		// 		0x01, // ADD (needs two operands)
-		// 		0x00, // STOP
-		// 	},
-		// 	expectError: true,
-		// },
+		{
+			name: "STACK_UNDERFLOW_POP",
+			bytecode: []byte{
+				0x50, // POP
+				0x00, // STOP
+			},
+			expectedStatus: getExpectedStatus(ExecutionStackUnderflow),
+		},
+		{
+			name: "STACK_UNDERFLOW_ADD",
+			bytecode: []byte{
+				0x60, 0x05, // PUSH1 5 (only one operand)
+				0x01, // ADD (needs two operands)
+				0x00, // STOP
+			},
+			expectedStatus: getExpectedStatus(ExecutionStackUnderflow),
+		},
+		{
+			name: "STACK_UNDERFLOW_MSTORE",
+			bytecode: []byte{
+				0x60, 0x42, // PUSH1 0x42 (value)
+				0x52, // MSTORE
+				0x00, // STOP
+			},
+			expectedStatus: getExpectedStatus(ExecutionStackUnderflow),
+		},
+		{
+			name: "STACK_UNDERFLOW_ADDMOD",
+			bytecode: []byte{
+				0x60, 0x08, // PUSH1 8, denominator
+				0x60, 0x0a, // PUSH1 10, second to add
+				0x08, // ADDMOD
+				0x00, // STOP
+			},
+			expectedStatus: getExpectedStatus(ExecutionStackUnderflow),
+		},
 		// {
 		// 	name: "INVALID_JUMP_TARGET",
 		// 	bytecode: []byte{
