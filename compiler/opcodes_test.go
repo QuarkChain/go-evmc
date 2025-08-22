@@ -75,7 +75,7 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 
 	if testCase.expectedStatus != nil {
 		if *testCase.expectedStatus != result.Status {
-			t.Errorf("Expected error but got none")
+			t.Errorf("Expected error %v but got %v", *testCase.expectedStatus, result.Status)
 		}
 		return
 	} else if result.Status != ExecutionSuccess {
@@ -1265,15 +1265,15 @@ func TestOpcodeErrorConditions(t *testing.T) {
 			},
 			expectedStatus: getExpectedStatus(ExecutionStackUnderflow),
 		},
-		// {
-		// 	name: "INVALID_JUMP_TARGET",
-		// 	bytecode: []byte{
-		// 		0x60, 0x05, // PUSH1 5 (invalid jump target)
-		// 		0x56, // JUMP
-		// 		0x00, // STOP
-		// 	},
-		// 	expectError: true,
-		// },
+		{
+			name: "INVALID_JUMP_TARGET",
+			bytecode: []byte{
+				0x60, 0x05, // PUSH1 5 (invalid jump target)
+				0x56, // JUMP
+				0x00, // STOP
+			},
+			expectedStatus: getExpectedStatus(ExecutionInvalidJumpDest),
+		},
 	}
 
 	for _, tc := range testCases {
