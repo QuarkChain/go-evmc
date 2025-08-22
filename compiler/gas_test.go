@@ -10,7 +10,7 @@ import (
 func TestGasCosts(t *testing.T) {
 	testCases := []struct {
 		name     string
-		opcode   EVMOpcode
+		opcode   OpCode
 		expected uint64
 	}{
 		{"STOP", STOP, 0},
@@ -41,9 +41,11 @@ func TestGasCosts(t *testing.T) {
 		{"SWAP16", SWAP16, 3},
 	}
 
+	table := &osakaInstructionSet
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cost := getGasCost(tc.opcode)
+			cost := table[tc.opcode].constantGas
 			if cost != tc.expected {
 				t.Errorf("Expected gas cost %d for %s, got %d", tc.expected, tc.name, cost)
 			}

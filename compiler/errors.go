@@ -76,7 +76,7 @@ func (e ErrStackOverflow) Unwrap() error {
 
 // ErrInvalidOpCode wraps an evm error when an invalid opcode is encountered.
 type ErrInvalidOpCode struct {
-	opcode EVMOpcode
+	opcode OpCode
 }
 
 func (e *ErrInvalidOpCode) Error() string { return fmt.Sprintf("invalid opcode: %d", e.opcode) }

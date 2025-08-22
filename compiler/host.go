@@ -17,12 +17,12 @@ import (
 type HostFunc func(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64
 
 type EVMHost interface {
-	GetHostFunc(opcode EVMOpcode) HostFunc
+	GetHostFunc(opcode OpCode) HostFunc
 }
 
 type DefaultHost struct {
 	state       map[common.Address]map[common.Hash]common.Hash
-	hostFuncMap map[EVMOpcode]HostFunc
+	hostFuncMap map[OpCode]HostFunc
 }
 
 func createExecutionInstance(inst *EVMExecutor) cgo.Handle {
@@ -41,7 +41,7 @@ func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, gas *C.uint64_t, stackPtr
 		panic("execution instance not found or type mismatch")
 	}
 
-	f := e.host.GetHostFunc(EVMOpcode(opcode))
+	f := e.host.GetHostFunc(OpCode(opcode))
 	if f == nil {
 		panic(fmt.Sprintf("host function for opcode %d not found", opcode))
 	}
@@ -95,8 +95,8 @@ func NewDefaultHost() *DefaultHost {
 	h := &DefaultHost{
 		state: make(map[common.Address]map[common.Hash]common.Hash),
 	}
-	h.hostFuncMap = map[EVMOpcode]HostFunc{
-		ADDMOD: h.AddMod,
+	h.hostFuncMap = map[OpCode]HostFunc{
+		ADDMOD:   h.AddMod,
 		COINBASE: h.Coinbase,
 		MLOAD:    h.Mload,
 		MSTORE:   h.Mstore,
@@ -107,7 +107,7 @@ func NewDefaultHost() *DefaultHost {
 	return h
 }
 
-func (h *DefaultHost) GetHostFunc(opcode EVMOpcode) HostFunc {
+func (h *DefaultHost) GetHostFunc(opcode OpCode) HostFunc {
 	return h.hostFuncMap[opcode]
 }
 

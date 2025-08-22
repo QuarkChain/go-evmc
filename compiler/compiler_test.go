@@ -51,7 +51,7 @@ func TestEVMCompilerParseBytecode(t *testing.T) {
 		t.Fatalf("Failed to parse bytecode: %v", err)
 	}
 
-	expectedOpcodes := []EVMOpcode{
+	expectedOpcodes := []OpCode{
 		PUSH1,
 		DUP1,
 		SWAP1,

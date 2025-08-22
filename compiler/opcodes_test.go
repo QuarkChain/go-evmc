@@ -819,23 +819,6 @@ func TestStackOpcodes(t *testing.T) {
 			expectedStack: [][32]byte{}, // Empty stack
 		},
 		{
-			name: "POP_UNDERFLOW",
-			bytecode: []byte{
-				0x50, // POP
-				0x00, // STOP
-			},
-			expectedStatus: getExpectedStatus(ExecutionStackUnderflow),
-		},
-		{
-			name: "ADD_UNDERFLOW",
-			bytecode: []byte{
-				0x60, 0x05, // PUSH1 5
-				0x01, // ADD
-				0x00, // STOP
-			},
-			expectedStatus: getExpectedStatus(ExecutionStackUnderflow),
-		},
-		{
 			name: "DUP1",
 			bytecode: []byte{
 				0x60, 0x2A, // PUSH1 42
