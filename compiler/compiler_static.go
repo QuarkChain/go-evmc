@@ -86,7 +86,7 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 
 	// Consume the initial section gas
 	if !opts.DisableGas && !opts.DisableSectionGasOptimization {
-		c.consumeSectionGas(c.initSectionGas, gasPtr, errorCodePtr, errorBlock)
+		c.consumeGas(c.initSectionGas, gasPtr, errorCodePtr, errorBlock)
 	}
 
 	// Create exit block
@@ -231,10 +231,10 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 	// Add gas consumption for this instruction
 	if !opts.DisableGas {
 		if opts.DisableSectionGasOptimization {
-			c.consumeGas(instr.Opcode, gasPtr, errorCodePtr, errorBlock)
+			c.consumeGas(c.table[instr.Opcode].constantGas, gasPtr, errorCodePtr, errorBlock)
 		} else {
 			gasCost := analysis.sectionGas[instr.PC]
-			c.consumeSectionGas(gasCost, gasPtr, errorCodePtr, errorBlock)
+			c.consumeGas(gasCost, gasPtr, errorCodePtr, errorBlock)
 		}
 	}
 
@@ -602,40 +602,7 @@ func (c *EVMCompiler) compileSwapStatic(instr EVMInstruction, stack, stackPtr ll
 }
 
 // consumeGas adds gas consumption for an opcode and checks for out-of-gas condition
-func (c *EVMCompiler) consumeGas(opcode OpCode, gasPtr, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
-	// Get gas cost for this opcode
-	gasCost := c.table[opcode].constantGas
-	if gasCost == 0 {
-		return // No gas consumption for this opcode
-	}
-
-	// Load current gas used
-	currentGas := c.builder.CreateLoad(c.ctx.Int64Type(), gasPtr, "gas_remaining")
-
-	// Check if we exceed gas limit
-	gasCostValue := llvm.ConstInt(c.ctx.Int64Type(), gasCost, false)
-	exceedsLimit := c.builder.CreateICmp(llvm.IntUGT, gasCostValue, currentGas, "exceeds_gas_limit")
-
-	// Create continuation block & out-of-gas block
-	continueBlock := llvm.AddBasicBlock(c.builder.GetInsertBlock().Parent(), "gas_check_continue")
-	outOfGasBlock := llvm.AddBasicBlock(c.builder.GetInsertBlock().Parent(), "out_of_gas")
-
-	// Branch to out-of-gas block if limit exceeded, otherwise continue
-	c.builder.CreateCondBr(exceedsLimit, outOfGasBlock, continueBlock)
-
-	c.builder.SetInsertPointAtEnd(outOfGasBlock)
-	// Store error code and exit
-	c.builder.CreateStore(llvm.ConstInt(c.ctx.Int64Type(), uint64(ExecutionOutOfGas), false), errorCodePtr)
-	c.builder.CreateBr(errorBlock)
-
-	c.builder.SetInsertPointAtEnd(continueBlock)
-	// Sub gas cost and store
-	newGas := c.builder.CreateSub(currentGas, gasCostValue, "new_gas_used")
-	c.builder.CreateStore(newGas, gasPtr)
-}
-
-// consumeGas adds gas consumption for an opcode and checks for out-of-gas condition
-func (c *EVMCompiler) consumeSectionGas(gasCost uint64, gasPtr, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
+func (c *EVMCompiler) consumeGas(gasCost uint64, gasPtr, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
 	// Get gas cost for this opcode
 	if gasCost == 0 {
 		return // No gas consumption for this opcode
@@ -646,14 +613,14 @@ func (c *EVMCompiler) consumeSectionGas(gasCost uint64, gasPtr, errorCodePtr llv
 
 	// Check if we exceed gas limit
 	gasCostValue := llvm.ConstInt(c.ctx.Int64Type(), gasCost, false)
-	exceedsLimit := c.builder.CreateICmp(llvm.IntUGT, gasCostValue, currentGas, "exceeds_gas_limit")
+	notExceedsLimit := c.builder.CreateICmp(llvm.IntULE, gasCostValue, currentGas, "exceeds_gas_limit")
 
 	// Create continuation block
 	continueBlock := llvm.AddBasicBlock(c.builder.GetInsertBlock().Parent(), "gas_check_continue")
 	outOfGasBlock := llvm.AddBasicBlock(c.builder.GetInsertBlock().Parent(), "out_of_gas")
 
 	// Branch to out-of-gas block if limit exceeded, otherwise continue
-	c.builder.CreateCondBr(exceedsLimit, outOfGasBlock, continueBlock)
+	c.builder.CreateCondBr(notExceedsLimit, continueBlock, outOfGasBlock)
 
 	c.builder.SetInsertPointAtEnd(outOfGasBlock)
 	// Store error code and exit

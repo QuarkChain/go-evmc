@@ -336,10 +336,9 @@ func TestEVMExecuteFib(t *testing.T) {
 		t.Fatalf("Expected success status, got %v", result.Status)
 	}
 
-	// TODO:
-	// if len(result.Stack) != 2 {
-	// 	t.Fatalf("Expected 2 stack items, got %d", len(result.Stack))
-	// }
+	if len(result.Stack) != 1 {
+		t.Fatalf("Expected 1 stack items, got %d", len(result.Stack))
+	}
 
 	expected := Fib(int(n))
 	actual := FromMachineToUint256(result.Stack[0])
@@ -347,20 +346,20 @@ func TestEVMExecuteFib(t *testing.T) {
 	if actual.Cmp(expected) != 0 {
 		t.Fatalf("Expected %s, got %s", expected, actual)
 	}
-}
-
-func TestEVMExecuteFibInterp(t *testing.T) {
 
 	var (
-		n        = uint64(1000000)
 		evm      = vm.NewEVM(vm.BlockContext{}, &dummyStatedb{}, params.TestChainConfig, vm.Config{})
-		contract = vm.NewContract(common.Address{}, common.Address{}, new(uint256.Int), n*100, nil)
+		contract = vm.NewContract(common.Address{}, common.Address{}, new(uint256.Int), uint64(n)*100, nil)
 	)
 
 	contract.Code = GetFibCode(uint32(n))
-	_, err := evm.Interpreter().Run(contract, []byte{}, false)
+	_, err = evm.Interpreter().Run(contract, []byte{}, false)
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	if contract.Gas != result.GasRemaining {
+		t.Fatalf("Expected gas %d, got %d", contract.Gas, result.GasRemaining)
 	}
 }
 
