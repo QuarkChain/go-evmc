@@ -479,6 +479,32 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 		c.popStack(stack, stackPtr)
 		c.builder.CreateBr(nextBlock)
 
+	case MLOAD:
+		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
+		c.checkHostReturn(ret, errorCodePtr, nextBlock, errorBlock)
+
+	case MSTORE:
+		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
+		c.popStack(stack, stackPtr)
+		c.popStack(stack, stackPtr)
+		c.checkHostReturn(ret, errorCodePtr, nextBlock, errorBlock)
+
+	case MSTORE8:
+		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
+		c.popStack(stack, stackPtr)
+		c.popStack(stack, stackPtr)
+		c.checkHostReturn(ret, errorCodePtr, nextBlock, errorBlock)
+
+	case SLOAD:
+		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
+		c.checkHostReturn(ret, errorCodePtr, nextBlock, errorBlock)
+
+	case SSTORE:
+		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
+		c.popStack(stack, stackPtr)
+		c.popStack(stack, stackPtr)
+		c.checkHostReturn(ret, errorCodePtr, nextBlock, errorBlock)
+
 	case JUMP:
 		target := c.popStack(stack, stackPtr)
 		// Create dynamic jump using switch
@@ -497,41 +523,15 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 		c.builder.SetInsertPointAtEnd(jumpBlock)
 		c.createDynamicJump(target, analysis, exitBlock)
 
-	case JUMPDEST:
-		// JUMPDEST is a no-op, charge the section gas before continue to next instruction
-		c.builder.CreateBr(nextBlock)
-
 	case PC:
 		// Push current PC as a constant (static analysis!)
 		pcValue := llvm.ConstInt(uint256Type, instr.PC, false)
 		c.pushStack(stack, stackPtr, pcValue, errorCodePtr, errorBlock)
 		c.builder.CreateBr(nextBlock)
 
-	case MLOAD:
-		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
-		c.checkHostReturn(ret, errorCodePtr, nextBlock, errorBlock)
-
-	case MSTORE:
-		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
-		c.popStack(stack, stackPtr)
-		c.popStack(stack, stackPtr)
-		c.checkHostReturn(ret, errorCodePtr, nextBlock, errorBlock)
-
-	case MSTORE8:
-		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
-		c.popStack(stack, stackPtr)
-		c.popStack(stack, stackPtr)
-		c.checkHostReturn(ret, errorCodePtr, nextBlock, errorBlock)
-
-	case SSTORE:
-		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
-		c.popStack(stack, stackPtr)
-		c.popStack(stack, stackPtr)
-		c.checkHostReturn(ret, errorCodePtr, nextBlock, errorBlock)
-
-	case SLOAD:
-		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
-		c.checkHostReturn(ret, errorCodePtr, nextBlock, errorBlock)
+	case JUMPDEST:
+		// JUMPDEST is a no-op, charge the section gas before continue to next instruction
+		c.builder.CreateBr(nextBlock)
 
 	case RETURN:
 		_ = c.popStack(stack, stackPtr) // offset
