@@ -24,9 +24,9 @@ type EVMExecutor struct {
 
 	evm *EVM
 
-	host         EVMHost
 	hostFuncType llvm.Type
 	hostFunc     llvm.Value
+	table        *JumpTable
 
 	loadedContracts map[common.Hash]bool
 }
@@ -39,7 +39,6 @@ type CallContext struct {
 }
 
 type EVMExecutorOptions struct {
-	Host EVMHost
 }
 
 func NewEVMExecutor(evm *EVM) *EVMExecutor {
@@ -53,15 +52,23 @@ func NewEVMExecutor(evm *EVM) *EVMExecutor {
 		panic(fmt.Errorf("failed to create JIT compiler: %v", err))
 	}
 
+	table, extraEips, err := getJumpTable(evm.chainRules, evm.Config.ExtraEips)
+	if err != nil {
+		// return
+		// TODO: log error
+	}
+
+	evm.Config.ExtraEips = extraEips
+
 	e := &EVMExecutor{
 		ctx:             ctx,
 		module:          module,
 		engine:          &engine,
 		evm:             evm,
-		host:            NewDefaultHost(),
 		hostFuncType:    hostFuncType,
 		hostFunc:        hostFunc,
 		loadedContracts: make(map[common.Hash]bool),
+		table:           table,
 	}
 	e.addGlobalMappingForHostFunctions()
 	return e

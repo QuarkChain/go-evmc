@@ -5,8 +5,12 @@ import (
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/holiman/uint256"
 	"tinygo.org/x/go-llvm"
 )
@@ -338,7 +342,12 @@ func (c *EVMCompiler) GetCompiledCode() []byte {
 }
 
 func (c *EVMCompiler) CreateExecutor() error {
-	evm := NewEVM(vm.BlockContext{Coinbase: defaultCoinbaseAddress}, nil, params.TestChainConfig, vm.Config{})
+	// Create an in-memory state db
+	db := rawdb.NewMemoryDatabase()
+	triedb := triedb.NewDatabase(db, &triedb.Config{Preimages: true})
+	tdb := state.NewDatabase(triedb, nil)
+	sdb, _ := state.New(types.EmptyRootHash, tdb)
+	evm := NewEVM(vm.BlockContext{Coinbase: defaultCoinbaseAddress}, sdb, params.TestChainConfig, vm.Config{})
 	c.executor = evm.executor
 	c.executor.AddCompiledContract(c.codeHash, c.GetCompiledCode())
 	return nil
