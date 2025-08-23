@@ -10,12 +10,11 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 	"tinygo.org/x/go-llvm"
 )
 
-type HostFunc func(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64
+type HostFunc func(e *EVMExecutor, stack *Stack) int64
 
 type EVMHost interface {
 	GetHostFunc(opcode OpCode) HostFunc
@@ -37,14 +36,64 @@ func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, gas *C.uint64_t, stackPtr
 		panic("execution instance not found or type mismatch")
 	}
 
-	f := e.table[OpCode(opcode)].execute
+	instr := e.table[OpCode(opcode)]
+	f := instr.execute
 	if f == nil {
 		panic(fmt.Sprintf("host function for opcode %d not found", opcode))
 	}
 
-	gas1 := uint64(*gas)
-	ret := C.int64_t(f(&gas1, e, uintptr(stackPtr)))
-	*gas = C.uint64_t(gas1)
+	// Construct stack for inputs
+	// TODO: may create uint256 on-demand as we don't need them all.
+	stackData := make([]*uint256.Int, instr.minStack)
+	for i := 0; i < instr.minStack; i++ {
+		stackData[i] = loadUint256(uintptr(stackPtr), instr.minStack-i-1)
+	}
+
+	stack := &Stack{
+		data:     stackData,
+		stackPtr: uintptr(stackPtr),
+	}
+
+	// Set the gas in the contract, which may be used in dynamic gas.
+	e.callContext.Contract.Gas = uint64(*gas)
+
+	// All ops with a dynamic memory usage also has a dynamic gas cost.
+	var memorySize uint64
+	if instr.dynamicGas != nil {
+		// calculate the new memory size and expand the memory to fit
+		// the operation
+		// Memory check needs to be done prior to evaluating the dynamic gas portion,
+		// to detect calculation overflows
+		if instr.memorySize != nil {
+			memSize, overflow := instr.memorySize(stack)
+			if overflow {
+				return C.int64_t(ExecutionOutOfGas)
+			}
+			// memory is expanded in words of 32 bytes. Gas
+			// is also calculated in words.
+			if memorySize, overflow = math.SafeMul(toWordSize(memSize), 32); overflow {
+				return C.int64_t(ExecutionOutOfGas)
+			}
+		}
+		// Consume the gas and return an error if not enough gas is available.
+		// cost is explicitly set so that the capture state defer method can get the proper cost
+		var dynamicCost uint64
+		dynamicCost, err := instr.dynamicGas(e.evm, e.callContext.Contract, stack, e.callContext.Memory, memorySize)
+		if err != nil {
+			return C.int64_t(ExecutionOutOfGas)
+		}
+		// for tracing: this gas consumption event is emitted below in the debug section.
+		if e.callContext.Contract.Gas < dynamicCost {
+			return C.int64_t(ExecutionOutOfGas)
+		} else {
+			e.callContext.Contract.Gas -= dynamicCost
+		}
+	}
+
+	e.callContext.Memory.Resize(memorySize)
+
+	ret := C.int64_t(f(e, stack))
+	*gas = C.uint64_t(e.callContext.Contract.Gas)
 	return ret
 }
 
@@ -87,209 +136,100 @@ func (e *EVMExecutor) addGlobalMappingForHostFunctions() {
 	e.engine.AddGlobalMapping(e.hostFunc, unsafe.Pointer(C.callHostFunc))
 }
 
-func hostOpAddMod(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
-	x := loadUint256(stackPtr, 0)
-	y := loadUint256(stackPtr, 1)
-	m := loadUint256(stackPtr, 2)
+func hostOpAddMod(e *EVMExecutor, stack *Stack) int64 {
+	x := stack.Back(0)
+	y := stack.Back(1)
+	m := stack.Back(2)
 	x.AddMod(x, y, m)
 	res := x.Bytes32()
-	CopyFromBigToMachine(res[:], getStackElement(stackPtr, 2))
+	CopyFromBigToMachine(res[:], getStackElement(stack.stackPtr, 2))
 
 	return int64(ExecutionSuccess)
 }
 
-func hostOpMulMod(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
-	x := loadUint256(stackPtr, 0)
-	y := loadUint256(stackPtr, 1)
-	m := loadUint256(stackPtr, 2)
+func hostOpMulMod(e *EVMExecutor, stack *Stack) int64 {
+	x := stack.Back(0)
+	y := stack.Back(1)
+	m := stack.Back(2)
 	x.MulMod(x, y, m)
 	res := x.Bytes32()
-	CopyFromBigToMachine(res[:], getStackElement(stackPtr, 2))
+	CopyFromBigToMachine(res[:], getStackElement(stack.stackPtr, 2))
 
 	return int64(ExecutionSuccess)
 }
 
-func hostOpSstore(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
-	slot := common.BytesToHash(FromMachineToBigInplace(getStackElement(stackPtr, 0)))
-	value := common.BytesToHash(FromMachineToBigInplace(getStackElement(stackPtr, 1)))
+func hostOpSstore(e *EVMExecutor, stack *Stack) int64 {
+	slot := stack.Back(0).Bytes32()
+	value := stack.Back(1).Bytes32()
 	contract := e.callContext.Contract
-	errno := chargeSstoreDynGas(gas, e, contract, stackPtr, e.callContext.Memory, uint64(e.callContext.Memory.Len()))
-	if errno != int64(ExecutionSuccess) {
-		return errno
-	}
-
 	e.evm.StateDB.SetState(contract.address, slot, value)
 	return int64(ExecutionSuccess)
 }
 
-func hostOpSload(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
-	key := getStackElement(stackPtr, 0)
-	slot := common.BytesToHash(FromMachineToBigInplace(key))
+func hostOpSload(e *EVMExecutor, stack *Stack) int64 {
+	slot := stack.Back(0).Bytes32()
 	address := e.callContext.Contract.address
-
-	errno := chargeSloadDynGas(gas, e, address, slot, e.callContext.Memory, uint64(e.callContext.Memory.Len()))
-	if errno != int64(ExecutionSuccess) {
-		return errno
-	}
-
 	valueBytes := e.evm.StateDB.GetState(address, slot)
-	CopyFromBigToMachine(valueBytes[:], key)
-
+	CopyFromBigToMachine(valueBytes[:], getStackElement(stack.stackPtr, 0))
 	return int64(ExecutionSuccess)
 }
 
-func chargeSstoreDynGas(gas *uint64, e *EVMExecutor, contract *Contract, stackPtr uintptr, mem *Memory, memorySize uint64) int64 {
-	var gasFn gasFunc
-	originGas := contract.Gas
-	contract.Gas = *gas
-	defer func() { contract.Gas = originGas }()
-
-	if e.evm.chainRules.IsLondon {
-		gasFn = makeGasSStoreFunc(params.SstoreClearsScheduleRefundEIP3529)
-	} else {
-		panic("Forks below London are not supported")
-	}
-	gasCost, err := gasFn(e.evm, contract, stackPtr, mem, memorySize)
-	if err != nil {
-		// TODO: check error?
-		return int64(ExecutionOutOfGas)
-	}
-	// Deduct static gas already accounted for in consumeSectionGas
-	// TODO: consider fork
-	gasCost -= e.table[SSTORE].constantGas
-
-	if *gas < gasCost {
-		return int64(ExecutionOutOfGas)
-	}
-	*gas -= gasCost
-	return int64(ExecutionSuccess)
-}
-
-func chargeSloadDynGas(gas *uint64, e *EVMExecutor, address common.Address, slot common.Hash, mem *Memory, memorySize uint64) int64 {
-	var gasCost uint64
-	var err error
-	if e.evm.chainRules.IsLondon {
-		gasCost, err = gasSLoadEIP2929(e.evm, address, slot, mem, memorySize)
-	} else {
-		panic("Forks below London are not supported")
-	}
-	if err != nil {
-		// TODO: check error?
-		return int64(ExecutionOutOfGas)
-	}
-	// Deduct static gas already accounted for in consumeSectionGas
-	// TODO: consider fork
-	gasCost -= e.table[SLOAD].constantGas
-
-	if *gas < gasCost {
-		return int64(ExecutionOutOfGas)
-	}
-	*gas -= gasCost
-	return int64(ExecutionSuccess)
-}
-
-func chargeMemoryGasAndResize(gas *uint64, memory *Memory, offset *uint256.Int, length uint64) (uint64, int64) {
-	// obtain memory size by offset + length
-	memSize, overflow := calcMemSize64WithUint(offset, length)
-	if overflow {
-		// TODO: gas overflow error?
-		return 0, int64(ExecutionOutOfGas)
-	}
-
-	// memory is expanded in words of 32 bytes. Gas is also calculated in words.
-	if memSize, overflow = math.SafeMul(toWordSize(memSize), 32); overflow {
-		return 0, int64(ExecutionOutOfGas)
-	}
-
-	gasCost, err := memoryGasCost(memory, memSize)
-	if err != nil {
-		// TODO: check error?
-		return 0, int64(ExecutionOutOfGas)
-	}
-
-	if *gas < gasCost {
-		return 0, int64(ExecutionOutOfGas)
-	}
-	*gas -= gasCost
-
-	memory.Resize(memSize)
-	return memSize, int64(ExecutionSuccess)
-}
-
-func hostOpMload(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
-	stack0 := getStackElement(stackPtr, 0)
-	offset := new(uint256.Int).SetBytes(FromMachineToBigInplace(stack0))
-	_, errno := chargeMemoryGasAndResize(gas, e.callContext.Memory, offset, 32)
-	if errno != int64(ExecutionSuccess) {
-		return errno
-	}
-
+func hostOpMload(e *EVMExecutor, stack *Stack) int64 {
+	stack0 := getStackElement(stack.stackPtr, 0)
+	offset := stack.Back(0)
 	CopyFromBigToMachine(e.callContext.Memory.GetPtr(offset.Uint64(), 32), stack0)
 	return int64(ExecutionSuccess)
 }
 
-func hostOpMstore(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
-	stack0 := getStackElement(stackPtr, 0)
-	offset := new(uint256.Int).SetBytes(FromMachineToBigInplace(stack0))
-	_, errno := chargeMemoryGasAndResize(gas, e.callContext.Memory, offset, 32)
-	if errno != int64(ExecutionSuccess) {
-		return errno
-	}
-
-	// Copy the stack value to the memory
-	value := getStackElement(stackPtr, 1)
-	CopyFromMachineToBig(value, e.callContext.Memory.GetPtr(offset.Uint64(), 32))
+func hostOpMstore(e *EVMExecutor, stack *Stack) int64 {
+	offset := stack.Back(0)
+	value := stack.Back(1)
+	copy(e.callContext.Memory.GetPtr(offset.Uint64(), 32), value.PaddedBytes(32))
 
 	return int64(ExecutionSuccess)
 }
 
-func hostOpMstore8(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
-	stack0 := getStackElement(stackPtr, 0)
-	offset := new(uint256.Int).SetBytes(FromMachineToBigInplace(stack0))
-	_, errno := chargeMemoryGasAndResize(gas, e.callContext.Memory, offset, 1)
-	if errno != int64(ExecutionSuccess) {
-		return errno
-	}
+func hostOpMstore8(e *EVMExecutor, stack *Stack) int64 {
+	offset := stack.Back(0)
+	value := stack.Back(1)
 
 	// Copy the stack value to the memory
 	m := e.callContext.Memory.GetPtr(offset.Uint64(), 1)
-	value := getStackElement(stackPtr, 1)
 	if IsMachineBigEndian() {
-		m[0] = value[31]
+		m[0] = byte(value.Uint64())
 	} else {
-		m[0] = value[0]
+		m[0] = byte(value.Uint64())
 	}
 
 	return int64(ExecutionSuccess)
 }
 
 // Address returns address of the current executing account.
-func hostOpAddress(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
-	stack0 := getStackElement(stackPtr, -1) // push stack
-
+func hostOpAddress(e *EVMExecutor, stack *Stack) int64 {
+	stack0 := getStackElement(stack.stackPtr, -1) // push stack
 	CopyFromBigToMachine(common.LeftPadBytes(e.callContext.Contract.address[:], 32), stack0)
 
 	return int64(ExecutionSuccess)
 }
 
 // Origin returns address of the execution origination address.
-func hostOpOrigin(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
-	stack0 := getStackElement(stackPtr, -1) // push stack
+func hostOpOrigin(e *EVMExecutor, stack *Stack) int64 {
+	stack0 := getStackElement(stack.stackPtr, -1) // push stack
 	CopyFromBigToMachine(common.LeftPadBytes(e.evm.TxContext.Origin[:], 32), stack0)
 
 	return int64(ExecutionSuccess)
 }
 
 // Caller returns caller address.
-func hostOpCaller(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
-	stack0 := getStackElement(stackPtr, -1) // push stack
+func hostOpCaller(e *EVMExecutor, stack *Stack) int64 {
+	stack0 := getStackElement(stack.stackPtr, -1) // push stack
 	CopyFromBigToMachine(common.LeftPadBytes(e.callContext.Contract.caller[:], 32), stack0)
 	return int64(ExecutionSuccess)
 }
 
 // Coinbase returns the coinbase address of the block.
-func hostOpCoinbase(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
-	stack0 := getStackElement(stackPtr, -1) // push stack
+func hostOpCoinbase(e *EVMExecutor, stack *Stack) int64 {
+	stack0 := getStackElement(stack.stackPtr, -1) // push stack
 
 	CopyFromBigToMachine(common.LeftPadBytes(e.evm.Context.Coinbase[:], 32), stack0)
 	return int64(ExecutionSuccess)
