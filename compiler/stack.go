@@ -17,22 +17,55 @@
 package compiler
 
 import (
+	"sync"
+
 	"github.com/holiman/uint256"
 )
 
-// Stack is an object for basic stack operations. Items popped to the stack are
-// expected to be changed and modified. stack does not take care of adding newly
-// initialized objects.
-type Stack struct {
-	data     []*uint256.Int
-	stackPtr uintptr
+var stackPool = sync.Pool{
+	New: func() interface{} {
+		return &Stack{data: make([]uint256.Int, 1024)}
+	},
 }
 
-// Back returns the n'th item in stack in uint256
-func (st *Stack) Back(n int) *uint256.Int {
-	return st.data[len(st.data)-n-1]
+// The stack pointer is managed by the compiled code itself.
+type Stack struct {
+	data []uint256.Int
+}
+
+func newstack() *Stack {
+	return stackPool.Get().(*Stack)
+}
+
+func returnStack(s *Stack) {
+	s.data = s.data[:1024]
+	stackPool.Put(s)
+}
+
+func (st *Stack) push(d *uint256.Int) {
+	// NOTE push limit (1024) is checked in baseCheck in interpreter/compiler
+	st.data = append(st.data, *d)
+}
+
+func (st *Stack) pop() (ret uint256.Int) {
+	ret = st.data[len(st.data)-1]
+	st.data = st.data[:len(st.data)-1]
+	return
+}
+
+func (st *Stack) len() int {
+	return len(st.data)
+}
+
+func (st *Stack) resetLen(len int) {
+	st.data = st.data[:len]
 }
 
 func (st *Stack) peek() *uint256.Int {
-	return st.data[len(st.data)-1]
+	return &st.data[st.len()-1]
+}
+
+// Back returns the n'th item in stack
+func (st *Stack) Back(n int) *uint256.Int {
+	return &st.data[st.len()-n-1]
 }

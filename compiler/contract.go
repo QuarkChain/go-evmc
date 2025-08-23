@@ -36,6 +36,14 @@ func (c *Contract) Address() common.Address {
 	return c.address
 }
 
+// Caller returns the caller of the contract.
+//
+// Caller will recursively call caller when the contract is a delegate
+// call, including that of caller's caller.
+func (c *Contract) Caller() common.Address {
+	return c.caller
+}
+
 // UseGas attempts the use gas and subtracts it and returns true on success
 func (c *Contract) UseGas(gas uint64, logger *tracing.Hooks, reason tracing.GasChangeReason) (ok bool) {
 	if c.Gas < gas {

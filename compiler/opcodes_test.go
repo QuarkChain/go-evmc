@@ -107,7 +107,7 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 		}
 		return
 	} else if result.Status != ExecutionSuccess {
-		t.Errorf("Expected success but got none")
+		t.Errorf("Expected success but got error %v", result.Status)
 	}
 
 	if err != nil {

@@ -245,7 +245,7 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 
 	// Check if it is host function
 	if c.table[instr.Opcode].execute != nil {
-		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, c.peekStackPtr(stack, stackPtr)}, "")
+		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, stackPtr}, "")
 		if c.table[instr.Opcode].diffDiff < 0 {
 			for i := 0; i < -c.table[instr.Opcode].diffDiff; i++ {
 				c.popStack(stack, stackPtr)
