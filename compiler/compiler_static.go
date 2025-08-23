@@ -641,6 +641,7 @@ func (c *EVMCompiler) CompileAndOptimizeStatic(bytecode []byte, opts *EVMCompila
 	c.initailizeHostFunctions()
 	c.contractAddress = opts.ContractAddress
 	c.codeHash = crypto.Keccak256Hash(bytecode)
+	fmt.Println("chainrules osaka", opts.ChainRules.IsOsaka)
 	table, extraEips, err := getJumpTable(opts.ChainRules, opts.ExtraEips)
 	if err != nil {
 		return err
