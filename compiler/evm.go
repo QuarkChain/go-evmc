@@ -2,8 +2,10 @@ package compiler
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/core/vm/runtime"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -65,4 +67,30 @@ func (evm *EVM) SetTxContext(txCtx vm.TxContext) {
 		txCtx.AccessEvents = state.NewAccessEvents(evm.StateDB.PointCache())
 	}
 	evm.TxContext = txCtx
+}
+
+func NewEnv(cfg *runtime.Config) *EVM {
+	txContext := vm.TxContext{
+		Origin:     cfg.Origin,
+		GasPrice:   cfg.GasPrice,
+		BlobHashes: cfg.BlobHashes,
+		BlobFeeCap: cfg.BlobFeeCap,
+	}
+	blockContext := vm.BlockContext{
+		CanTransfer: core.CanTransfer,
+		Transfer:    core.Transfer,
+		GetHash:     cfg.GetHashFn,
+		Coinbase:    cfg.Coinbase,
+		BlockNumber: cfg.BlockNumber,
+		Time:        cfg.Time,
+		Difficulty:  cfg.Difficulty,
+		GasLimit:    cfg.GasLimit,
+		BaseFee:     cfg.BaseFee,
+		BlobBaseFee: cfg.BlobBaseFee,
+		Random:      cfg.Random,
+	}
+
+	evm := NewEVM(blockContext, cfg.State, cfg.ChainConfig, cfg.EVMConfig)
+	evm.SetTxContext(txContext)
+	return evm
 }

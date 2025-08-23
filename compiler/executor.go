@@ -15,6 +15,11 @@ import (
 )
 
 // An executor to execute native compiled code within EVM.
+// Data layout rules:
+// - Pushed data on stack: always big-endian padded first (handled in createUint256ConstantFromBytes)
+// - Stack elements: always machine-endian encoded (LLVM-native representation)
+// - Memory: always big-endian encoded as in execution spec
+// - Storage: always big-endian encoded as in execution spec
 type EVMExecutor struct {
 	callContext *CallContext // current call context
 
@@ -26,9 +31,9 @@ type EVMExecutor struct {
 
 	hostFuncType llvm.Type
 	hostFunc     llvm.Value
-	table        *JumpTable
 
 	loadedContracts map[common.Hash]bool
+	table           *JumpTable
 }
 
 // CallContext is the current context of the call.
@@ -83,6 +88,14 @@ func (e *EVMExecutor) AddCompiledContract(codeHash common.Hash, compiledCode []b
 		e.engine.AddObjectFileFromBuffer(compiledCode)
 		e.loadedContracts[codeHash] = true
 	}
+}
+
+func (e *EVMExecutor) AddInstructionTable(table *JumpTable) {
+	if table == nil {
+		// no table is found
+		return
+	}
+	e.table = table
 }
 
 // Run a contract.

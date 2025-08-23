@@ -3,6 +3,8 @@ package compiler
 import (
 	"testing"
 
+	"github.com/ethereum/go-ethereum/core/vm/runtime"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
 
@@ -97,7 +99,7 @@ func TestGasConsumptionBasic(t *testing.T) {
 			comp := NewEVMCompiler()
 			defer comp.Dispose()
 
-			opts := &EVMExecutionOpts{GasLimit: tc.gasLimit}
+			opts := &EVMExecutionOpts{Config: &runtime.Config{GasLimit: tc.gasLimit, ChainConfig: params.TestChainConfig}}
 			result, err := comp.ExecuteCompiledWithOpts(tc.bytecode, DefaultEVMCompilationOpts(), opts)
 			if err != nil {
 				t.Fatalf("Execution failed: %v", err)
@@ -161,7 +163,7 @@ func TestGasMemoryOperations(t *testing.T) {
 			comp := NewEVMCompiler()
 			defer comp.Dispose()
 
-			opts := &EVMExecutionOpts{GasLimit: tc.gasLimit}
+			opts := &EVMExecutionOpts{Config: &runtime.Config{GasLimit: tc.gasLimit, ChainConfig: params.TestChainConfig}}
 			result, err := comp.ExecuteCompiledWithOpts(tc.bytecode, DefaultEVMCompilationOpts(), opts)
 			if err != nil {
 				if !tc.expectError {
@@ -218,7 +220,7 @@ func TestGasStackOperations(t *testing.T) {
 			comp := NewEVMCompiler()
 			defer comp.Dispose()
 
-			opts := &EVMExecutionOpts{GasLimit: tc.gasLimit}
+			opts := &EVMExecutionOpts{Config: &runtime.Config{GasLimit: tc.gasLimit, ChainConfig: params.TestChainConfig}}
 			result, err := comp.ExecuteCompiledWithOpts(tc.bytecode, DefaultEVMCompilationOpts(), opts)
 			if err != nil {
 				t.Fatalf("Execution failed: %v", err)
@@ -268,7 +270,7 @@ func TestGasJumpOperations(t *testing.T) {
 			comp := NewEVMCompiler()
 			defer comp.Dispose()
 
-			opts := &EVMExecutionOpts{GasLimit: tc.gasLimit}
+			opts := &EVMExecutionOpts{Config: &runtime.Config{GasLimit: tc.gasLimit, ChainConfig: params.TestChainConfig}}
 			result, err := comp.ExecuteCompiledWithOpts(tc.bytecode, DefaultEVMCompilationOpts(), opts)
 			if err != nil {
 				t.Fatalf("Execution failed: %v", err)
@@ -334,7 +336,7 @@ func TestGasComplexContract(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			opts := &EVMExecutionOpts{GasLimit: tc.gasLimit}
+			opts := &EVMExecutionOpts{Config: &runtime.Config{GasLimit: tc.gasLimit, ChainConfig: params.TestChainConfig}}
 			result, err := comp.ExecuteCompiledWithOpts(bytecode, DefaultEVMCompilationOpts(), opts)
 			if err != nil {
 				t.Fatalf("Execution failed: %v", err)
@@ -381,14 +383,13 @@ func BenchmarkGasConsumption(b *testing.B) {
 
 	// Simple ADD operation
 	bytecode := []byte{0x60, 0x05, 0x60, 0x03, 0x01, 0x00} // PUSH1 5, PUSH1 3, ADD, STOP
-	opts := &EVMExecutionOpts{GasLimit: 1000000}
-
+	opts := &EVMExecutionOpts{Config: &runtime.Config{GasLimit: 1000000}}
 	// Pre-compile
 	err := comp.CompileAndOptimize(bytecode)
 	if err != nil {
 		b.Fatalf("Compilation failed: %v", err)
 	}
-	err = comp.CreateExecutor(&EVMExecutionOpts{})
+	err = comp.CreateExecutor(&defaultExecutionOpts)
 	if err != nil {
 		b.Fatalf("Executor failed: %v", err)
 	}
@@ -427,7 +428,7 @@ func BenchmarkGasComplexContract(b *testing.B) {
 		0x00, // STOP
 	}
 
-	opts := &EVMExecutionOpts{GasLimit: 1000000}
+	opts := &EVMExecutionOpts{Config: &runtime.Config{GasLimit: 1000000}}
 
 	// Pre-compile
 	err := comp.CompileAndOptimize(bytecode)
@@ -435,7 +436,7 @@ func BenchmarkGasComplexContract(b *testing.B) {
 		b.Fatalf("Compilation failed: %v", err)
 	}
 
-	err = comp.CreateExecutor(&EVMExecutionOpts{})
+	err = comp.CreateExecutor(&defaultExecutionOpts)
 	if err != nil {
 		b.Fatalf("Executor failed: %v", err)
 	}

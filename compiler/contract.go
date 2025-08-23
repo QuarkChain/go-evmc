@@ -30,3 +30,7 @@ func NewContract(caller common.Address, address common.Address, value *uint256.I
 func (c *Contract) SetCompiledCode(compiledCode []byte) {
 	c.CompiledCode = compiledCode
 }
+
+func (c *Contract) Address() common.Address {
+	return c.address
+}
