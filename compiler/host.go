@@ -54,7 +54,8 @@ func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, gas *C.uint64_t, stackPtr
 		stackPtr: uintptr(stackPtr),
 	}
 
-	gas1 := uint64(*gas)
+	// Set the gas in the contract, which may be used in dynamic gas.
+	e.callContext.Contract.Gas = uint64(*gas)
 
 	// All ops with a dynamic memory usage also has a dynamic gas cost.
 	var memorySize uint64
@@ -82,17 +83,17 @@ func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, gas *C.uint64_t, stackPtr
 			return C.int64_t(ExecutionOutOfGas)
 		}
 		// for tracing: this gas consumption event is emitted below in the debug section.
-		if gas1 < dynamicCost {
+		if e.callContext.Contract.Gas < dynamicCost {
 			return C.int64_t(ExecutionOutOfGas)
 		} else {
-			gas1 -= dynamicCost
+			e.callContext.Contract.Gas -= dynamicCost
 		}
 	}
 
 	e.callContext.Memory.Resize(memorySize)
 
-	ret := C.int64_t(f(&gas1, e, stack))
-	*gas = C.uint64_t(gas1)
+	ret := C.int64_t(f(&e.callContext.Contract.Gas, e, stack))
+	*gas = C.uint64_t(e.callContext.Contract.Gas)
 	return ret
 }
 
