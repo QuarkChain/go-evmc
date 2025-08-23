@@ -12,7 +12,6 @@ import (
 )
 
 var defaultExecutionOpts = EVMExecutionOpts{
-	BlockCtx: vm.BlockContext{},
 	Config: &runtime.Config{
 		ChainConfig: params.TestChainConfig,
 	},

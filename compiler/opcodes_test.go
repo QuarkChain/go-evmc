@@ -8,7 +8,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/core/vm/runtime"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
@@ -89,21 +88,15 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 		stateDB.Finalise(false)
 	}
 
-	txCtx := vm.TxContext{
-		Origin: defaultOriginAddress,
-	}
-
 	opts := &EVMExecutionOpts{
-		BlockCtx: vm.BlockContext{
-			Coinbase:    defaultCoinbaseAddress,
-			BlockNumber: common.Big0,
-		},
 		Config: &runtime.Config{
 			ChainConfig: params.MergedTestChainConfig,
 			GasLimit:    testCase.gasLimit,
 			State:       stateDB,
+			Origin:      defaultOriginAddress,
+			Coinbase:    defaultCoinbaseAddress,
+			BlockNumber: common.Big0,
 		},
-		TxContext: txCtx,
 	}
 
 	result, err := comp.ExecuteCompiledWithOpts(testCase.bytecode, DefaultEVMCompilationOpts(), opts)

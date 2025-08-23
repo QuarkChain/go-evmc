@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/core/vm/runtime"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
@@ -50,10 +49,8 @@ type EVMExecutionResult struct {
 }
 
 type EVMExecutionOpts struct {
-	BlockCtx  vm.BlockContext
-	Config    *runtime.Config
-	GasLimit  uint64
-	TxContext vm.TxContext
+	Config   *runtime.Config
+	GasLimit uint64
 }
 
 var defaultCompilationAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccc")
@@ -353,8 +350,7 @@ func (c *EVMCompiler) CreateExecutor(opts *EVMExecutionOpts) error {
 	if opts.Config.ChainConfig == nil {
 		panic("ChainConfig must be provided.")
 	}
-	evm := NewEVM(opts.BlockCtx, opts.Config.State, opts.Config.ChainConfig, vm.Config{})
-	evm.SetTxContext(opts.TxContext)
+	evm := NewEnv(opts.Config)
 	c.executor = evm.executor
 	c.executor.AddCompiledContract(c.codeHash, c.GetCompiledCode())
 	c.executor.AddInstructionTable(c.table)
