@@ -125,6 +125,7 @@ func (e *EVMExecutor) Run(contract Contract, input []byte, readOnly bool) (ret *
 	}
 
 	defer returnStack(stack)
+	contract.Input = input
 
 	// Execute using function pointer
 	inst := createExecutionInstance(e)

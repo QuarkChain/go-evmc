@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"fmt"
+	"math/big"
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -51,12 +52,15 @@ type EVMExecutionResult struct {
 type EVMExecutionOpts struct {
 	Config   *runtime.Config
 	GasLimit uint64
+	Input    []byte
 }
 
 var defaultCompilationAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccc")
 var defaultOriginAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccd")
 var defaultCallerAddress = common.HexToAddress("ccccccccccccccccccccccccccccccccccccccce")
 var defaultCoinbaseAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccf")
+var defaultCallValue = big.NewInt(100)
+var defaultInput = uint256.NewInt(101).Bytes32()
 
 type EVMCompilationOpts struct {
 	DisableGas                    bool
@@ -361,7 +365,7 @@ func (c *EVMCompiler) CreateExecutor(opts *EVMExecutionOpts) error {
 
 // Execute the compiled EVM code
 func (c *EVMCompiler) Execute(opts *EVMExecutionOpts) (*EVMExecutionResult, error) {
-	return c.executor.Run(*NewContract(defaultCallerAddress, defaultCompilationAddress, uint256.NewInt(0), opts.Config.GasLimit, c.codeHash), []byte{}, false)
+	return c.executor.Run(*NewContract(defaultCallerAddress, defaultCompilationAddress, uint256.MustFromBig(opts.Config.Value), opts.Config.GasLimit, c.codeHash), opts.Input, false)
 }
 
 // ExecuteCompiled executes compiled EVM code using function pointer for better performance

@@ -17,6 +17,8 @@
 package compiler
 
 import (
+	"math"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/holiman/uint256"
 )
@@ -262,44 +264,44 @@ func opCaller(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte
 	return nil, nil
 }
 
-// func opCallValue(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	scope.Stack.push(scope.Contract.value)
-// 	return nil, nil
-// }
+func opCallValue(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	scope.Stack.push(scope.Contract.value)
+	return nil, nil
+}
 
-// func opCallDataLoad(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	x := scope.Stack.peek()
-// 	if offset, overflow := x.Uint64WithOverflow(); !overflow {
-// 		data := getData(scope.Contract.Input, offset, 32)
-// 		x.SetBytes(data)
-// 	} else {
-// 		x.Clear()
-// 	}
-// 	return nil, nil
-// }
+func opCallDataLoad(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	x := scope.Stack.peek()
+	if offset, overflow := x.Uint64WithOverflow(); !overflow {
+		data := getData(scope.Contract.Input, offset, 32)
+		x.SetBytes(data)
+	} else {
+		x.Clear()
+	}
+	return nil, nil
+}
 
-// func opCallDataSize(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	scope.Stack.push(new(uint256.Int).SetUint64(uint64(len(scope.Contract.Input))))
-// 	return nil, nil
-// }
+func opCallDataSize(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	scope.Stack.push(new(uint256.Int).SetUint64(uint64(len(scope.Contract.Input))))
+	return nil, nil
+}
 
-// func opCallDataCopy(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	var (
-// 		memOffset  = scope.Stack.pop()
-// 		dataOffset = scope.Stack.pop()
-// 		length     = scope.Stack.pop()
-// 	)
-// 	dataOffset64, overflow := dataOffset.Uint64WithOverflow()
-// 	if overflow {
-// 		dataOffset64 = math.MaxUint64
-// 	}
-// 	// These values are checked for overflow during gas cost calculation
-// 	memOffset64 := memOffset.Uint64()
-// 	length64 := length.Uint64()
-// 	scope.Memory.Set(memOffset64, length64, getData(scope.Contract.Input, dataOffset64, length64))
+func opCallDataCopy(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	var (
+		memOffset  = scope.Stack.pop()
+		dataOffset = scope.Stack.pop()
+		length     = scope.Stack.pop()
+	)
+	dataOffset64, overflow := dataOffset.Uint64WithOverflow()
+	if overflow {
+		dataOffset64 = math.MaxUint64
+	}
+	// These values are checked for overflow during gas cost calculation
+	memOffset64 := memOffset.Uint64()
+	length64 := length.Uint64()
+	scope.Memory.Set(memOffset64, length64, getData(scope.Contract.Input, dataOffset64, length64))
 
-// 	return nil, nil
-// }
+	return nil, nil
+}
 
 // func opReturnDataSize(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.push(new(uint256.Int).SetUint64(uint64(len(interpreter.returnData))))

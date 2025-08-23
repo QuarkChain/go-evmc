@@ -91,7 +91,6 @@ func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, gas *C.uint64_t, stackIdx
 		ret = int64(ExecutionOutOfGas)
 	} else {
 		// TODO: rest of errors? panic?
-		fmt.Println(ret)
 		ret = int64(ExecutionUnknown)
 	}
 	*gas = C.uint64_t(e.callContext.Contract.Gas)

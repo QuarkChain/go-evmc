@@ -106,7 +106,9 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 			Origin:      defaultOriginAddress,
 			Coinbase:    defaultCoinbaseAddress,
 			BlockNumber: common.Big0,
+			Value:       defaultCallValue,
 		},
+		Input: defaultInput[:],
 	}
 
 	result, err := comp.ExecuteCompiledWithOpts(testCase.bytecode, DefaultEVMCompilationOpts(), opts)
@@ -1695,6 +1697,74 @@ func TestOpcodeBlockContext(t *testing.T) {
 				CopyFromBigToMachine(defaultCallerAddress.Bytes(), buf[:])
 				return buf
 			}()},
+		},
+		{
+			name: "CALLVALUE",
+			bytecode: []byte{
+				0x34, // CALLVALUE
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{func() [32]byte {
+				var buf [32]byte
+				CopyFromBigToMachine(defaultCallValue.Bytes(), buf[:])
+				return buf
+			}()},
+			expectedGas: 2,
+		},
+		{
+			name: "CALLDATALOAD",
+			bytecode: []byte{
+				0x60, 0x00, // PUSH1 0x00
+				0x35, // CALLDATALOAD
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{func() [32]byte {
+				var buf [32]byte
+				CopyFromBigToMachine(defaultInput[:], buf[:])
+				return buf
+			}()},
+			expectedGas: 3 + 3,
+		},
+		{
+			name: "CALLDATASIZE",
+			bytecode: []byte{
+				0x36, // CALLDATASIZE
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(uint64(len(defaultInput)))},
+			expectedGas:   2,
+		},
+		{
+			name: "CALLDATACOPY_SIZE_0",
+			bytecode: []byte{
+				0x60, 0x00, // PUSH1 0 (size to copy)
+				0x60, 0x20, // PUSH1 32 (offset in the calldata)
+				0x60, 0x00, // PUSH1 0 (offset in the memory)
+				0x37, // CALLDATACOPY
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{},
+			expectedMemory: &Memory{
+				store:       []byte{},
+				lastGasCost: 0,
+			},
+			expectedGas: 3*3 + 3,
+		},
+		{
+			name: "CALLDATACOPY_SIZE_N0",
+			bytecode: []byte{
+				0x60, 0x20, // PUSH1 0x20 (size to copy)
+				0x60, 0x00, // PUSH1 0 (offset in the calldata)
+				0x60, 0x00, // PUSH1 0 (offset in the memory)
+				0x37, // CALLDATACOPY
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{},
+			expectedMemory: &Memory{
+				store:       defaultInput[:],
+				lastGasCost: 3,
+			},
+			expectedGas: 3*3 + 9,
 		},
 		{
 			name: "COINBASE",
