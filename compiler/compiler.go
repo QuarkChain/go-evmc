@@ -154,8 +154,8 @@ func (c *EVMCompiler) ParseBytecode(bytecode []byte) ([]EVMInstruction, error) {
 			PC:     pc,
 		}
 
-		if opcode >= PUSH1 && opcode <= PUSH32 {
-			dataSize := int(opcode - PUSH1 + 1)
+		if opcode >= PUSH0 && opcode <= PUSH32 {
+			dataSize := int(opcode - PUSH0)
 			if pc+uint64(dataSize) >= uint64(len(bytecode)) {
 				return nil, fmt.Errorf("invalid PUSH instruction at PC %d", pc)
 			}
