@@ -23,6 +23,8 @@ import (
 )
 
 type (
+	HostFunc func(pc *uint64, e *EVM, scope *ScopeContext) ([]byte, error)
+
 	// executionFunc func(pc *uint64, interpreter *EVMInterpreter, callContext *ScopeContext) ([]byte, error)
 	gasFunc func(*EVM, *Contract, *Stack, *Memory, uint64) (uint64, error) // last parameter is the requested memory size as a uint64
 	// memorySizeFunc returns the required size, and whether the operation overflowed a uint64
@@ -325,13 +327,13 @@ func newFrontierInstructionSet() JumpTable {
 			diffDiff:    diffStack(2, 1),
 		},
 		ADDMOD: {
-			execute:     hostOpAddMod,
+			execute:     opAddmod,
 			constantGas: GasMidStep,
 			minStack:    minStack(3, 1),
 			diffDiff:    diffStack(3, 1),
 		},
 		MULMOD: {
-			execute:     hostOpMulMod,
+			execute:     opMulmod,
 			constantGas: GasMidStep,
 			minStack:    minStack(3, 1),
 			diffDiff:    diffStack(3, 1),
@@ -423,7 +425,7 @@ func newFrontierInstructionSet() JumpTable {
 			// // memorySize:  memoryKeccak256,
 		},
 		ADDRESS: {
-			execute:     hostOpAddress,
+			execute:     opAddress,
 			constantGas: GasQuickStep,
 			minStack:    minStack(0, 1),
 			diffDiff:    diffStack(0, 1),
@@ -435,13 +437,13 @@ func newFrontierInstructionSet() JumpTable {
 			diffDiff:    diffStack(1, 1),
 		},
 		ORIGIN: {
-			execute:     hostOpOrigin,
+			execute:     opOrigin,
 			constantGas: GasQuickStep,
 			minStack:    minStack(0, 1),
 			diffDiff:    diffStack(0, 1),
 		},
 		CALLER: {
-			execute:     hostOpCaller,
+			execute:     opCaller,
 			constantGas: GasQuickStep,
 			minStack:    minStack(0, 1),
 			diffDiff:    diffStack(0, 1),
@@ -513,7 +515,7 @@ func newFrontierInstructionSet() JumpTable {
 			diffDiff:    diffStack(1, 1),
 		},
 		COINBASE: {
-			execute:     hostOpCoinbase,
+			execute:     opCoinbase,
 			constantGas: GasQuickStep,
 			minStack:    minStack(0, 1),
 			diffDiff:    diffStack(0, 1),
@@ -549,7 +551,7 @@ func newFrontierInstructionSet() JumpTable {
 			diffDiff:    diffStack(1, 0),
 		},
 		MLOAD: {
-			execute:     hostOpMload,
+			execute:     opMload,
 			constantGas: GasFastestStep,
 			dynamicGas:  gasMLoad,
 			minStack:    minStack(1, 1),
@@ -557,7 +559,7 @@ func newFrontierInstructionSet() JumpTable {
 			memorySize:  memoryMLoad,
 		},
 		MSTORE: {
-			execute:     hostOpMstore,
+			execute:     opMstore,
 			constantGas: GasFastestStep,
 			dynamicGas:  gasMStore,
 			minStack:    minStack(2, 0),
@@ -565,7 +567,7 @@ func newFrontierInstructionSet() JumpTable {
 			memorySize:  memoryMStore,
 		},
 		MSTORE8: {
-			execute:     hostOpMstore8,
+			execute:     opMstore8,
 			constantGas: GasFastestStep,
 			dynamicGas:  gasMStore8,
 			memorySize:  memoryMStore8,
@@ -573,13 +575,13 @@ func newFrontierInstructionSet() JumpTable {
 			diffDiff:    diffStack(2, 0),
 		},
 		SLOAD: {
-			execute:     hostOpSload,
+			execute:     opSload,
 			constantGas: params.SloadGasFrontier,
 			minStack:    minStack(1, 1),
 			diffDiff:    diffStack(1, 1),
 		},
 		SSTORE: {
-			execute:    hostOpSstore,
+			execute:    opSstore,
 			dynamicGas: gasSStore,
 			minStack:   minStack(2, 0),
 			diffDiff:   diffStack(2, 0),

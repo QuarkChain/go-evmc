@@ -21,7 +21,7 @@ import (
 // - Memory: always big-endian encoded as in execution spec
 // - Storage: always big-endian encoded as in execution spec
 type EVMExecutor struct {
-	callContext *CallContext // current call context
+	callContext *ScopeContext // current call context
 
 	ctx    llvm.Context
 	module llvm.Module
@@ -36,11 +36,11 @@ type EVMExecutor struct {
 	table           *JumpTable
 }
 
-// CallContext is the current context of the call.
-// It is similar to ScopeContext in geth, but does not have Stack because compiled code manages the stack by itself.
-type CallContext struct {
+// ScopeContext is the current context of the call.
+type ScopeContext struct {
 	Memory   *Memory
 	Contract *Contract
+	Stack    *Stack
 }
 
 type EVMExecutorOptions struct {
@@ -108,19 +108,22 @@ func (e *EVMExecutor) Run(contract Contract, input []byte, readOnly bool) (ret *
 	}
 
 	// Prepare execution environment
-	const stackSize = 1024
-	stack := make([][32]byte, stackSize)
 	memory := NewMemory()
-	e.callContext = &CallContext{
+	stack := newstack()
+	e.callContext = &ScopeContext{
 		Contract: &contract,
 		Memory:   memory,
+		Stack:    stack,
 	}
+
+	defer returnStack(stack)
 
 	// Execute using function pointer
 	inst := createExecutionInstance(e)
 	defer removeExecutionInstance(inst)
 	gas := contract.Gas
-	errorCode, gasRemainingResult, stackDepth := e.callNativeFunction(funcPtr, inst, unsafe.Pointer(&stack[0]), gas)
+	// TODO: passing uint256 pointer as stack to compiled code only works for little-endianess machine!
+	errorCode, gasRemainingResult, stackDepth := e.callNativeFunction(funcPtr, inst, unsafe.Pointer(&stack.data[0][0]), gas)
 
 	gasRemaining := uint64(gasRemainingResult)
 
@@ -138,8 +141,14 @@ func (e *EVMExecutor) Run(contract Contract, input []byte, readOnly bool) (ret *
 	// Update remaining gas of the contract call
 	contract.Gas = gasRemaining
 
+	stackByte := make([][32]byte, stackDepth)
+	stack.resetLen(int(stackDepth))
+	for i := 0; i < int(stackDepth); i++ {
+		stackByte[i] = FromMachineToBig32Bytes(stack.data[i].Bytes32())
+	}
+
 	return &EVMExecutionResult{
-		Stack:        stack[:stackDepth],
+		Stack:        stackByte,
 		Memory:       memory,
 		Status:       ExecutionStatus(errorCode),
 		GasUsed:      gas - gasRemaining,

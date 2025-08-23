@@ -89,6 +89,7 @@ const (
 	ExecutionStackOverflow
 	ExecutionStackUnderflow
 	ExecutionInvalidJumpDest
+	ExecutionUnknown
 )
 
 func init() {
