@@ -50,13 +50,16 @@ type EVMExecutionResult struct {
 }
 
 type EVMExecutionOpts struct {
-	BlockCtx vm.BlockContext
-	Config   *runtime.Config
+	BlockCtx  vm.BlockContext
+	Config    *runtime.Config
+	GasLimit  uint64
+	TxContext vm.TxContext
 }
 
 var defaultCompilationAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccc")
-var defaultCallerAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccd")
-var defaultCoinbaseAddress = common.HexToAddress("ccccccccccccccccccccccccccccccccccccccce")
+var defaultOriginAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccd")
+var defaultCallerAddress = common.HexToAddress("ccccccccccccccccccccccccccccccccccccccce")
+var defaultCoinbaseAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccf")
 
 type EVMCompilationOpts struct {
 	DisableGas                    bool
@@ -351,6 +354,7 @@ func (c *EVMCompiler) CreateExecutor(opts *EVMExecutionOpts) error {
 		panic("ChainConfig must be provided.")
 	}
 	evm := NewEVM(opts.BlockCtx, opts.Config.State, opts.Config.ChainConfig, vm.Config{})
+	evm.SetTxContext(opts.TxContext)
 	c.executor = evm.executor
 	c.executor.AddCompiledContract(c.codeHash, c.GetCompiledCode())
 	c.executor.AddInstructionTable(c.table)

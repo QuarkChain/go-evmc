@@ -539,7 +539,7 @@ func BenchmarkEVMExecuteMemoryOperations(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := comp.Execute(&EVMExecutionOpts{Config: &runtime.Config{ChainConfig: params.TestChainConfig}})
+		_, err := comp.Execute(&defaultExecutionOpts)
 		if err != nil {
 			b.Fatalf("Execution failed: %v", err)
 		}

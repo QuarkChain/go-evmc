@@ -98,6 +98,17 @@ func hostOpAddMod(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	return int64(ExecutionSuccess)
 }
 
+func hostOpMulMod(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
+	x := loadUint256(stackPtr, 0)
+	y := loadUint256(stackPtr, 1)
+	m := loadUint256(stackPtr, 2)
+	x.MulMod(x, y, m)
+	res := x.Bytes32()
+	CopyFromBigToMachine(res[:], getStackElement(stackPtr, 2))
+
+	return int64(ExecutionSuccess)
+}
+
 func hostOpSstore(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	slot := common.BytesToHash(FromMachineToBigInplace(getStackElement(stackPtr, 0)))
 	value := common.BytesToHash(FromMachineToBigInplace(getStackElement(stackPtr, 1)))
@@ -252,11 +263,34 @@ func hostOpMstore8(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	return int64(ExecutionSuccess)
 }
 
+// Address returns address of the current executing account.
+func hostOpAddress(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
+	stack0 := getStackElement(stackPtr, -1) // push stack
+
+	CopyFromBigToMachine(common.LeftPadBytes(e.callContext.Contract.address[:], 32), stack0)
+
+	return int64(ExecutionSuccess)
+}
+
+// Origin returns address of the execution origination address.
+func hostOpOrigin(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
+	stack0 := getStackElement(stackPtr, -1) // push stack
+	CopyFromBigToMachine(common.LeftPadBytes(e.evm.TxContext.Origin[:], 32), stack0)
+
+	return int64(ExecutionSuccess)
+}
+
+// Caller returns caller address.
+func hostOpCaller(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
+	stack0 := getStackElement(stackPtr, -1) // push stack
+	CopyFromBigToMachine(common.LeftPadBytes(e.callContext.Contract.caller[:], 32), stack0)
+	return int64(ExecutionSuccess)
+}
+
 // Coinbase returns the coinbase address of the block.
 func hostOpCoinbase(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 	stack0 := getStackElement(stackPtr, -1) // push stack
 
-	CopyFromBigToMachine(new(uint256.Int).SetBytes(e.evm.Context.Coinbase.Bytes()).Bytes(), stack0)
-
+	CopyFromBigToMachine(common.LeftPadBytes(e.evm.Context.Coinbase[:], 32), stack0)
 	return int64(ExecutionSuccess)
 }

@@ -89,6 +89,10 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 		stateDB.Finalise(false)
 	}
 
+	txCtx := vm.TxContext{
+		Origin: defaultOriginAddress,
+	}
+
 	opts := &EVMExecutionOpts{
 		BlockCtx: vm.BlockContext{
 			Coinbase:    defaultCoinbaseAddress,
@@ -99,6 +103,7 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 			GasLimit:    testCase.gasLimit,
 			State:       stateDB,
 		},
+		TxContext: txCtx,
 	}
 
 	result, err := comp.ExecuteCompiledWithOpts(testCase.bytecode, DefaultEVMCompilationOpts(), opts)
@@ -371,6 +376,49 @@ func TestArithmeticOpcodes(t *testing.T) {
 				)...,
 			),
 			expectedStack: [][32]byte{uint64ToBytes32(1)},
+		},
+		{
+			name: "MULMOD",
+			bytecode: []byte{
+				0x60, 0x08, // PUSH1 8, denominator
+				0x60, 0x0a, // PUSH1 10, second to mul
+				0x60, 0x0a, // PUSH1 10, first to mul
+				0x09, // MULMOD
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(4)},
+		},
+		{
+			name: "MULMOD_ZERO",
+			bytecode: []byte{
+				0x60, 0x00, // PUSH1 0, denominator
+				0x60, 0x0a, // PUSH1 10, second to mul
+				0x60, 0x0a, // PUSH1 10, first to mul
+				0x09, // MULMOD
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0)},
+		},
+		{
+			name: "MULMOD_NEGATIVE",
+			bytecode: append(
+				[]byte{
+					0x60, 0x0c, // PUSH1 12, denominator
+					0x7F, // PUSH32
+				},
+				append(
+					hexutil.MustDecode("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")[:], // -1=2^256-1, second to mul
+					append(
+						[]byte{0x7F},
+						append(
+							hexutil.MustDecode("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")[:], // -1=2^256-1, first to mul
+							0x09, // MULMOD
+							0x00, // STOP
+						)...,
+					)...,
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(9)},
 		},
 		// {
 		// 	name: "EXP",
@@ -1543,6 +1591,42 @@ func TestOpcodeErrorConditions(t *testing.T) {
 func TestOpcodeBlockContext(t *testing.T) {
 	testCases := []OpcodeTestCase{
 		{
+			name: "ADDRESS",
+			bytecode: []byte{
+				0x30, // ADDRESS
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{func() [32]byte {
+				var buf [32]byte
+				CopyFromBigToMachine(defaultCompilationAddress.Bytes(), buf[:])
+				return buf
+			}()},
+		},
+		{
+			name: "ORIGIN",
+			bytecode: []byte{
+				0x32, // ORIGIN
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{func() [32]byte {
+				var buf [32]byte
+				CopyFromBigToMachine(defaultOriginAddress.Bytes(), buf[:])
+				return buf
+			}()},
+		},
+		{
+			name: "CALLER",
+			bytecode: []byte{
+				0x33, // CALLER
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{func() [32]byte {
+				var buf [32]byte
+				CopyFromBigToMachine(defaultCallerAddress.Bytes(), buf[:])
+				return buf
+			}()},
+		},
+		{
 			name: "COINBASE",
 			bytecode: []byte{
 				0x41, // COINBASE
@@ -1550,7 +1634,7 @@ func TestOpcodeBlockContext(t *testing.T) {
 			},
 			expectedStack: [][32]byte{func() [32]byte {
 				var buf [32]byte
-				CopyFromBigToMachine(new(uint256.Int).SetBytes(defaultCoinbaseAddress.Bytes()).Bytes(), buf[:])
+				CopyFromBigToMachine(defaultCoinbaseAddress.Bytes(), buf[:])
 				return buf
 			}()},
 		},

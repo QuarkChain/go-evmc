@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 )
@@ -55,4 +56,13 @@ func NewEVM(blockCtx vm.BlockContext, statedb vm.StateDB, chainConfig *params.Ch
 	evm.precompiles = activePrecompiledContracts(evm.chainRules)
 	evm.executor = NewEVMExecutor(evm)
 	return evm
+}
+
+// SetTxContext resets the EVM with a new transaction context.
+// This is not threadsafe and should only be done very cautiously.
+func (evm *EVM) SetTxContext(txCtx vm.TxContext) {
+	if evm.chainRules.IsEIP4762 {
+		txCtx.AccessEvents = state.NewAccessEvents(evm.StateDB.PointCache())
+	}
+	evm.TxContext = txCtx
 }
