@@ -99,10 +99,6 @@ func hostOpAddMod(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 }
 
 func hostOpSstore(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
-	if *gas < e.table[SSTORE].constantGas {
-		return int64(ExecutionOutOfGas)
-	}
-
 	slot := common.BytesToHash(FromMachineToBigInplace(getStackElement(stackPtr, 0)))
 	value := common.BytesToHash(FromMachineToBigInplace(getStackElement(stackPtr, 1)))
 	contract := e.callContext.Contract
@@ -111,15 +107,11 @@ func hostOpSstore(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 		return errno
 	}
 
-	e.callContext.EVM.StateDB.SetState(contract.address, slot, value)
+	e.evm.StateDB.SetState(contract.address, slot, value)
 	return int64(ExecutionSuccess)
 }
 
 func hostOpSload(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
-	if *gas < e.table[SLOAD].constantGas {
-		return int64(ExecutionOutOfGas)
-	}
-
 	key := getStackElement(stackPtr, 0)
 	slot := common.BytesToHash(FromMachineToBigInplace(key))
 	address := e.callContext.Contract.address
@@ -129,7 +121,7 @@ func hostOpSload(gas *uint64, e *EVMExecutor, stackPtr uintptr) int64 {
 		return errno
 	}
 
-	valueBytes := e.callContext.EVM.StateDB.GetState(address, slot)
+	valueBytes := e.evm.StateDB.GetState(address, slot)
 	CopyFromBigToMachine(valueBytes[:], key)
 
 	return int64(ExecutionSuccess)

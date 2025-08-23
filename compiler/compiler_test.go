@@ -11,6 +11,13 @@ import (
 	"github.com/holiman/uint256"
 )
 
+var defaultExecutionOpts = EVMExecutionOpts{
+	BlockCtx: vm.BlockContext{},
+	Config: &runtime.Config{
+		ChainConfig: params.TestChainConfig,
+	},
+}
+
 func TestEVMCompilerBasic(t *testing.T) {
 	comp := NewEVMCompiler()
 	defer comp.Dispose()
@@ -525,7 +532,7 @@ func BenchmarkEVMExecuteMemoryOperations(b *testing.B) {
 	}
 
 	// Create executor
-	err = comp.CreateExecutor(vm.BlockContext{}, nil, params.TestChainConfig)
+	err = comp.CreateExecutor(&defaultExecutionOpts)
 	if err != nil {
 		b.Fatalf("Executor failed: %v", err)
 	}
@@ -549,7 +556,7 @@ func BenchmarkEVMExecuteFibWithSectionGasOptimization(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Compilation failed: %v", err)
 	}
-	err = comp.CreateExecutor(vm.BlockContext{}, nil, params.TestChainConfig)
+	err = comp.CreateExecutor(&defaultExecutionOpts)
 	if err != nil {
 		b.Fatalf("Engine failed: %v", err)
 	}
@@ -575,7 +582,7 @@ func BenchmarkEVMExecuteFibWithGas(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Compilation failed: %v", err)
 	}
-	err = comp.CreateExecutor(vm.BlockContext{}, nil, params.TestChainConfig)
+	err = comp.CreateExecutor(&defaultExecutionOpts)
 	if err != nil {
 		b.Fatalf("Engine failed: %v", err)
 	}
@@ -599,7 +606,7 @@ func BenchmarkEVMExecuteFibWithoutGas(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Compilation failed: %v", err)
 	}
-	err = comp.CreateExecutor(vm.BlockContext{}, nil, params.TestChainConfig)
+	err = comp.CreateExecutor(&defaultExecutionOpts)
 	if err != nil {
 		b.Fatalf("Engine failed: %v", err)
 	}

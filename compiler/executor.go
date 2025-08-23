@@ -18,8 +18,8 @@ import (
 // Data layout rules:
 // - Pushed data on stack: always big-endian padded first (handled in createUint256ConstantFromBytes)
 // - Stack elements: always machine-endian encoded (LLVM-native representation)
-// - Memory: always big-endian encoded (to match Geth’s convention)
-// - Storage: always big-endian encoded (to match Geth’s convention)
+// - Memory: always big-endian encoded as in execution spec
+// - Storage: always big-endian encoded as in execution spec
 type EVMExecutor struct {
 	callContext *CallContext // current call context
 
@@ -39,7 +39,6 @@ type EVMExecutor struct {
 // CallContext is the current context of the call.
 // It is similar to ScopeContext in geth, but does not have Stack because compiled code manages the stack by itself.
 type CallContext struct {
-	EVM      *EVM
 	Memory   *Memory
 	Contract *Contract
 }
@@ -113,7 +112,6 @@ func (e *EVMExecutor) Run(contract Contract, input []byte, readOnly bool) (ret *
 	stack := make([][32]byte, stackSize)
 	memory := NewMemory()
 	e.callContext = &CallContext{
-		EVM:      e.evm,
 		Contract: &contract,
 		Memory:   memory,
 	}

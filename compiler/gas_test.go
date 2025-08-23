@@ -3,7 +3,6 @@ package compiler
 import (
 	"testing"
 
-	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/core/vm/runtime"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
@@ -390,7 +389,7 @@ func BenchmarkGasConsumption(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Compilation failed: %v", err)
 	}
-	err = comp.CreateExecutor(vm.BlockContext{}, nil, params.TestChainConfig)
+	err = comp.CreateExecutor(&defaultExecutionOpts)
 	if err != nil {
 		b.Fatalf("Executor failed: %v", err)
 	}
@@ -437,7 +436,7 @@ func BenchmarkGasComplexContract(b *testing.B) {
 		b.Fatalf("Compilation failed: %v", err)
 	}
 
-	err = comp.CreateExecutor(vm.BlockContext{}, nil, params.TestChainConfig)
+	err = comp.CreateExecutor(&defaultExecutionOpts)
 	if err != nil {
 		b.Fatalf("Executor failed: %v", err)
 	}

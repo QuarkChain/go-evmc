@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/core/vm/runtime"
 	"github.com/ethereum/go-ethereum/params"
@@ -341,11 +340,17 @@ func (c *EVMCompiler) GetCompiledCode() []byte {
 	return mem.Bytes()
 }
 
-func (c *EVMCompiler) CreateExecutor(blockCtx vm.BlockContext, statedb *state.StateDB, chainConfig *params.ChainConfig) error {
-	if chainConfig == nil {
+func (c *EVMCompiler) CreateExecutor(opts *EVMExecutionOpts) error {
+	if opts == nil {
+		panic("EVMExecutionOpts must be provided.")
+	}
+	if opts.Config == nil {
+		panic("Runtime config must be provided.")
+	}
+	if opts.Config.ChainConfig == nil {
 		panic("ChainConfig must be provided.")
 	}
-	evm := NewEVM(blockCtx, statedb, chainConfig, vm.Config{})
+	evm := NewEVM(opts.BlockCtx, opts.Config.State, opts.Config.ChainConfig, vm.Config{})
 	c.executor = evm.executor
 	c.executor.AddCompiledContract(c.codeHash, c.GetCompiledCode())
 	c.executor.AddInstructionTable(c.table)
@@ -382,9 +387,9 @@ func (c *EVMCompiler) ExecuteCompiledWithOpts(bytecode []byte, copts *EVMCompila
 		panic("EVMExecutionOpts must be provided.")
 	}
 	if opts.Config == nil {
-		panic("runtime.Config must be provided in EVMExecutionOpts.")
+		panic("Runtime config must be provided in EVMExecutionOpts.")
 	}
-	err = c.CreateExecutor(opts.BlockCtx, opts.Config.State, opts.Config.ChainConfig)
+	err = c.CreateExecutor(opts)
 	if err != nil {
 		return nil, err
 	}
