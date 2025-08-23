@@ -83,7 +83,7 @@ func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, gas *C.uint64_t, stackIdx
 
 	// TODO: pass pc
 	pc := uint64(0)
-	_, err := f(&pc, e.evm, e.callContext)
+	_, err := f(&pc, e, e.callContext)
 	var ret int64
 	if err == nil {
 		ret = int64(ExecutionSuccess)

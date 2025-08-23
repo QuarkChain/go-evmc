@@ -23,7 +23,7 @@ import (
 )
 
 type (
-	HostFunc func(pc *uint64, e *EVM, scope *ScopeContext) ([]byte, error)
+	HostFunc func(pc *uint64, e *EVMExecutor, scope *ScopeContext) ([]byte, error)
 
 	// executionFunc func(pc *uint64, interpreter *EVMInterpreter, callContext *ScopeContext) ([]byte, error)
 	gasFunc func(*EVM, *Contract, *Stack, *Memory, uint64) (uint64, error) // last parameter is the requested memory size as a uint64
@@ -242,7 +242,7 @@ func newByzantiumInstructionSet() JumpTable {
 // EIP 158 a.k.a Spurious Dragon
 func newSpuriousDragonInstructionSet() JumpTable {
 	instructionSet := newTangerineWhistleInstructionSet()
-	// instructionSet[EXP].dynamicGas = gasExpEIP158
+	instructionSet[EXP].dynamicGas = gasExpEIP158
 	return validate(instructionSet)
 }
 
@@ -339,10 +339,10 @@ func newFrontierInstructionSet() JumpTable {
 			diffDiff:    diffStack(3, 1),
 		},
 		EXP: {
-			// execute:    opExp,
-			// // dynamicGas: gasExpFrontier,
-			minStack: minStack(2, 1),
-			diffDiff: diffStack(2, 1),
+			execute:    opExp,
+			dynamicGas: gasExpFrontier,
+			minStack:   minStack(2, 1),
+			diffDiff:   diffStack(2, 1),
 		},
 		SIGNEXTEND: {
 			// execute:     opSignExtend,
@@ -417,12 +417,12 @@ func newFrontierInstructionSet() JumpTable {
 			diffDiff:    diffStack(2, 1),
 		},
 		KECCAK256: {
-			// execute:     opKeccak256,
+			execute:     opKeccak256,
 			constantGas: params.Keccak256Gas,
-			// // dynamicGas:  gasKeccak256,
-			minStack: minStack(2, 1),
-			diffDiff: diffStack(2, 1),
-			// // memorySize:  memoryKeccak256,
+			dynamicGas:  gasKeccak256,
+			minStack:    minStack(2, 1),
+			diffDiff:    diffStack(2, 1),
+			memorySize:  memoryKeccak256,
 		},
 		ADDRESS: {
 			execute:     opAddress,
@@ -431,7 +431,7 @@ func newFrontierInstructionSet() JumpTable {
 			diffDiff:    diffStack(0, 1),
 		},
 		BALANCE: {
-			// execute:     opBalance,
+			execute:     opBalance,
 			constantGas: params.BalanceGasFrontier,
 			minStack:    minStack(1, 1),
 			diffDiff:    diffStack(1, 1),

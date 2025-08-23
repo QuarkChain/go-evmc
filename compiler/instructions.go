@@ -21,67 +21,67 @@ import (
 	"github.com/holiman/uint256"
 )
 
-// func opAdd(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opAdd(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	x, y := scope.Stack.pop(), scope.Stack.peek()
 // 	y.Add(&x, y)
 // 	return nil, nil
 // }
 
-// func opSub(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opSub(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	x, y := scope.Stack.pop(), scope.Stack.peek()
 // 	y.Sub(&x, y)
 // 	return nil, nil
 // }
 
-// func opMul(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opMul(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	x, y := scope.Stack.pop(), scope.Stack.peek()
 // 	y.Mul(&x, y)
 // 	return nil, nil
 // }
 
-// func opDiv(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opDiv(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	x, y := scope.Stack.pop(), scope.Stack.peek()
 // 	y.Div(&x, y)
 // 	return nil, nil
 // }
 
-// func opSdiv(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opSdiv(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	x, y := scope.Stack.pop(), scope.Stack.peek()
 // 	y.SDiv(&x, y)
 // 	return nil, nil
 // }
 
-// func opMod(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opMod(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	x, y := scope.Stack.pop(), scope.Stack.peek()
 // 	y.Mod(&x, y)
 // 	return nil, nil
 // }
 
-// func opSmod(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opSmod(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	x, y := scope.Stack.pop(), scope.Stack.peek()
 // 	y.SMod(&x, y)
 // 	return nil, nil
 // }
 
-// func opExp(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-// 	base, exponent := scope.Stack.pop(), scope.Stack.peek()
-// 	exponent.Exp(&base, exponent)
-// 	return nil, nil
-// }
+func opExp(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	base, exponent := scope.Stack.pop(), scope.Stack.peek()
+	exponent.Exp(&base, exponent)
+	return nil, nil
+}
 
-// func opSignExtend(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opSignExtend(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	back, num := scope.Stack.pop(), scope.Stack.peek()
 // 	num.ExtendSign(num, &back)
 // 	return nil, nil
 // }
 
-// func opNot(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opNot(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	x := scope.Stack.peek()
 // 	x.Not(x)
 // 	return nil, nil
 // }
 
-// func opLt(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opLt(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	x, y := scope.Stack.pop(), scope.Stack.peek()
 // 	if x.Lt(y) {
 // 		y.SetOne()
@@ -91,7 +91,7 @@ import (
 // 	return nil, nil
 // }
 
-// func opGt(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opGt(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	x, y := scope.Stack.pop(), scope.Stack.peek()
 // 	if x.Gt(y) {
 // 		y.SetOne()
@@ -101,7 +101,7 @@ import (
 // 	return nil, nil
 // }
 
-// func opSlt(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opSlt(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	x, y := scope.Stack.pop(), scope.Stack.peek()
 // 	if x.Slt(y) {
 // 		y.SetOne()
@@ -111,7 +111,7 @@ import (
 // 	return nil, nil
 // }
 
-// func opSgt(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opSgt(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	x, y := scope.Stack.pop(), scope.Stack.peek()
 // 	if x.Sgt(y) {
 // 		y.SetOne()
@@ -121,7 +121,7 @@ import (
 // 	return nil, nil
 // }
 
-// func opEq(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opEq(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	x, y := scope.Stack.pop(), scope.Stack.peek()
 // 	if x.Eq(y) {
 // 		y.SetOne()
@@ -131,7 +131,7 @@ import (
 // 	return nil, nil
 // }
 
-// func opIszero(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opIszero(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	x := scope.Stack.peek()
 // 	if x.IsZero() {
 // 		x.SetOne()
@@ -141,46 +141,46 @@ import (
 // 	return nil, nil
 // }
 
-// func opAnd(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opAnd(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	x, y := scope.Stack.pop(), scope.Stack.peek()
 // 	y.And(&x, y)
 // 	return nil, nil
 // }
 
-// func opOr(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opOr(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	x, y := scope.Stack.pop(), scope.Stack.peek()
 // 	y.Or(&x, y)
 // 	return nil, nil
 // }
 
-// func opXor(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opXor(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	x, y := scope.Stack.pop(), scope.Stack.peek()
 // 	y.Xor(&x, y)
 // 	return nil, nil
 // }
 
-// func opByte(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opByte(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	th, val := scope.Stack.pop(), scope.Stack.peek()
 // 	val.Byte(&th)
 // 	return nil, nil
 // }
 
-func opAddmod(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+func opAddmod(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 	x, y, z := scope.Stack.pop(), scope.Stack.pop(), scope.Stack.peek()
 	z.AddMod(&x, &y, z)
 	return nil, nil
 }
 
-func opMulmod(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+func opMulmod(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 	x, y, z := scope.Stack.pop(), scope.Stack.pop(), scope.Stack.peek()
 	z.MulMod(&x, &y, z)
 	return nil, nil
 }
 
-// // opSHL implements Shift Left
-// // The SHL instruction (shift left) pops 2 values from the stack, first arg1 and then arg2,
-// // and pushes on the stack arg2 shifted to the left by arg1 number of bits.
-// func opSHL(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// opSHL implements Shift Left
+// The SHL instruction (shift left) pops 2 values from the stack, first arg1 and then arg2,
+// and pushes on the stack arg2 shifted to the left by arg1 number of bits.
+// func opSHL(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	// Note, second operand is left in the stack; accumulate result into it, and no need to push it afterwards
 // 	shift, value := scope.Stack.pop(), scope.Stack.peek()
 // 	if shift.LtUint64(256) {
@@ -191,10 +191,10 @@ func opMulmod(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 // 	return nil, nil
 // }
 
-// // opSHR implements Logical Shift Right
-// // The SHR instruction (logical shift right) pops 2 values from the stack, first arg1 and then arg2,
-// // and pushes on the stack arg2 shifted to the right by arg1 number of bits with zero fill.
-// func opSHR(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// opSHR implements Logical Shift Right
+// The SHR instruction (logical shift right) pops 2 values from the stack, first arg1 and then arg2,
+// and pushes on the stack arg2 shifted to the right by arg1 number of bits with zero fill.
+// func opSHR(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	// Note, second operand is left in the stack; accumulate result into it, and no need to push it afterwards
 // 	shift, value := scope.Stack.pop(), scope.Stack.peek()
 // 	if shift.LtUint64(256) {
@@ -205,10 +205,10 @@ func opMulmod(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 // 	return nil, nil
 // }
 
-// // opSAR implements Arithmetic Shift Right
-// // The SAR instruction (arithmetic shift right) pops 2 values from the stack, first arg1 and then arg2,
-// // and pushes on the stack arg2 shifted to the right by arg1 number of bits with sign extension.
-// func opSAR(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// opSAR implements Arithmetic Shift Right
+// The SAR instruction (arithmetic shift right) pops 2 values from the stack, first arg1 and then arg2,
+// and pushes on the stack arg2 shifted to the right by arg1 number of bits with sign extension.
+// func opSAR(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	shift, value := scope.Stack.pop(), scope.Stack.peek()
 // 	if shift.GtUint64(256) {
 // 		if value.Sign() >= 0 {
@@ -224,49 +224,50 @@ func opMulmod(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 // 	return nil, nil
 // }
 
-// func opKeccak256(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-// 	offset, size := scope.Stack.pop(), scope.Stack.peek()
-// 	data := scope.Memory.GetPtr(offset.Uint64(), size.Uint64())
+func opKeccak256(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	offset, size := scope.Stack.pop(), scope.Stack.peek()
+	data := scope.Memory.GetPtr(offset.Uint64(), size.Uint64())
 
-// 	evm.hasher.Reset()
-// 	evm.hasher.Write(data)
-// 	evm.hasher.Read(evm.hasherBuf[:])
+	interpreter.hasher.Reset()
+	interpreter.hasher.Write(data)
+	interpreter.hasher.Read(interpreter.hasherBuf[:])
 
-// 	if evm.Config.EnablePreimageRecording {
-// 		evm.StateDB.AddPreimage(evm.hasherBuf, data)
-// 	}
-// 	size.SetBytes(evm.hasherBuf[:])
-// 	return nil, nil
-// }
+	evm := interpreter.evm
+	if evm.Config.EnablePreimageRecording {
+		evm.StateDB.AddPreimage(interpreter.hasherBuf, data)
+	}
+	size.SetBytes(interpreter.hasherBuf[:])
+	return nil, nil
+}
 
-func opAddress(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+func opAddress(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 	scope.Stack.push(new(uint256.Int).SetBytes(scope.Contract.Address().Bytes()))
 	return nil, nil
 }
 
-func opBalance(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+func opBalance(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 	slot := scope.Stack.peek()
 	address := common.Address(slot.Bytes20())
-	slot.Set(evm.StateDB.GetBalance(address))
+	slot.Set(interpreter.evm.StateDB.GetBalance(address))
 	return nil, nil
 }
 
-func opOrigin(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-	scope.Stack.push(new(uint256.Int).SetBytes(evm.Origin.Bytes()))
+func opOrigin(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	scope.Stack.push(new(uint256.Int).SetBytes(interpreter.evm.Origin.Bytes()))
 	return nil, nil
 }
 
-func opCaller(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+func opCaller(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 	scope.Stack.push(new(uint256.Int).SetBytes(scope.Contract.Caller().Bytes()))
 	return nil, nil
 }
 
-// func opCallValue(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opCallValue(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.push(scope.Contract.value)
 // 	return nil, nil
 // }
 
-// func opCallDataLoad(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opCallDataLoad(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	x := scope.Stack.peek()
 // 	if offset, overflow := x.Uint64WithOverflow(); !overflow {
 // 		data := getData(scope.Contract.Input, offset, 32)
@@ -277,12 +278,12 @@ func opCaller(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 // 	return nil, nil
 // }
 
-// func opCallDataSize(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opCallDataSize(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.push(new(uint256.Int).SetUint64(uint64(len(scope.Contract.Input))))
 // 	return nil, nil
 // }
 
-// func opCallDataCopy(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opCallDataCopy(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	var (
 // 		memOffset  = scope.Stack.pop()
 // 		dataOffset = scope.Stack.pop()
@@ -300,12 +301,12 @@ func opCaller(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 // 	return nil, nil
 // }
 
-// func opReturnDataSize(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-// 	scope.Stack.push(new(uint256.Int).SetUint64(uint64(len(evm.returnData))))
+// func opReturnDataSize(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+// 	scope.Stack.push(new(uint256.Int).SetUint64(uint64(len(interpreter.returnData))))
 // 	return nil, nil
 // }
 
-// func opReturnDataCopy(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opReturnDataCopy(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	var (
 // 		memOffset  = scope.Stack.pop()
 // 		dataOffset = scope.Stack.pop()
@@ -320,25 +321,25 @@ func opCaller(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 // 	var end = dataOffset
 // 	end.Add(&dataOffset, &length)
 // 	end64, overflow := end.Uint64WithOverflow()
-// 	if overflow || uint64(len(evm.returnData)) < end64 {
+// 	if overflow || uint64(len(interpreter.returnData)) < end64 {
 // 		return nil, ErrReturnDataOutOfBounds
 // 	}
-// 	scope.Memory.Set(memOffset.Uint64(), length.Uint64(), evm.returnData[offset64:end64])
+// 	scope.Memory.Set(memOffset.Uint64(), length.Uint64(), interpreter.returnData[offset64:end64])
 // 	return nil, nil
 // }
 
-// func opExtCodeSize(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opExtCodeSize(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	slot := scope.Stack.peek()
-// 	slot.SetUint64(uint64(evm.StateDB.GetCodeSize(slot.Bytes20())))
+// 	slot.SetUint64(uint64(interpreter.evm.StateDB.GetCodeSize(slot.Bytes20())))
 // 	return nil, nil
 // }
 
-// func opCodeSize(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opCodeSize(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.push(new(uint256.Int).SetUint64(uint64(len(scope.Contract.Code))))
 // 	return nil, nil
 // }
 
-// func opCodeCopy(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opCodeCopy(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	var (
 // 		memOffset  = scope.Stack.pop()
 // 		codeOffset = scope.Stack.pop()
@@ -354,7 +355,7 @@ func opCaller(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 // 	return nil, nil
 // }
 
-// func opExtCodeCopy(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opExtCodeCopy(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	var (
 // 		stack      = scope.Stack
 // 		a          = stack.pop()
@@ -367,57 +368,57 @@ func opCaller(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 // 		uint64CodeOffset = math.MaxUint64
 // 	}
 // 	addr := common.Address(a.Bytes20())
-// 	code := evm.StateDB.GetCode(addr)
+// 	code := interpreter.evm.StateDB.GetCode(addr)
 // 	codeCopy := getData(code, uint64CodeOffset, length.Uint64())
 // 	scope.Memory.Set(memOffset.Uint64(), length.Uint64(), codeCopy)
 
 // 	return nil, nil
 // }
 
-// // opExtCodeHash returns the code hash of a specified account.
-// // There are several cases when the function is called, while we can relay everything
-// // to `state.GetCodeHash` function to ensure the correctness.
-// //
-// //  1. Caller tries to get the code hash of a normal contract account, state
-// //     should return the relative code hash and set it as the result.
-// //
-// //  2. Caller tries to get the code hash of a non-existent account, state should
-// //     return common.Hash{} and zero will be set as the result.
-// //
-// //  3. Caller tries to get the code hash for an account without contract code, state
-// //     should return emptyCodeHash(0xc5d246...) as the result.
-// //
-// //  4. Caller tries to get the code hash of a precompiled account, the result should be
-// //     zero or emptyCodeHash.
-// //
-// // It is worth noting that in order to avoid unnecessary create and clean, all precompile
-// // accounts on mainnet have been transferred 1 wei, so the return here should be
-// // emptyCodeHash. If the precompile account is not transferred any amount on a private or
-// // customized chain, the return value will be zero.
-// //
-// //  5. Caller tries to get the code hash for an account which is marked as self-destructed
-// //     in the current transaction, the code hash of this account should be returned.
-// //
-// //  6. Caller tries to get the code hash for an account which is marked as deleted, this
-// //     account should be regarded as a non-existent account and zero should be returned.
-// func opExtCodeHash(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// opExtCodeHash returns the code hash of a specified account.
+// There are several cases when the function is called, while we can relay everything
+// to `state.GetCodeHash` function to ensure the correctness.
+//
+//  1. Caller tries to get the code hash of a normal contract account, state
+//     should return the relative code hash and set it as the result.
+//
+//  2. Caller tries to get the code hash of a non-existent account, state should
+//     return common.Hash{} and zero will be set as the result.
+//
+//  3. Caller tries to get the code hash for an account without contract code, state
+//     should return emptyCodeHash(0xc5d246...) as the result.
+//
+//  4. Caller tries to get the code hash of a precompiled account, the result should be
+//     zero or emptyCodeHash.
+//
+// It is worth noting that in order to avoid unnecessary create and clean, all precompile
+// accounts on mainnet have been transferred 1 wei, so the return here should be
+// emptyCodeHash. If the precompile account is not transferred any amount on a private or
+// customized chain, the return value will be zero.
+//
+//  5. Caller tries to get the code hash for an account which is marked as self-destructed
+//     in the current transaction, the code hash of this account should be returned.
+//
+//  6. Caller tries to get the code hash for an account which is marked as deleted, this
+//     account should be regarded as a non-existent account and zero should be returned.
+// func opExtCodeHash(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	slot := scope.Stack.peek()
 // 	address := common.Address(slot.Bytes20())
-// 	if evm.StateDB.Empty(address) {
+// 	if interpreter.evm.StateDB.Empty(address) {
 // 		slot.Clear()
 // 	} else {
-// 		slot.SetBytes(evm.StateDB.GetCodeHash(address).Bytes())
+// 		slot.SetBytes(interpreter.evm.StateDB.GetCodeHash(address).Bytes())
 // 	}
 // 	return nil, nil
 // }
 
-// func opGasprice(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-// 	v, _ := uint256.FromBig(evm.GasPrice)
+// func opGasprice(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+// 	v, _ := uint256.FromBig(interpreter.evm.GasPrice)
 // 	scope.Stack.push(v)
 // 	return nil, nil
 // }
 
-// func opBlockhash(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opBlockhash(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	num := scope.Stack.peek()
 // 	num64, overflow := num.Uint64WithOverflow()
 // 	if overflow {
@@ -426,18 +427,18 @@ func opCaller(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 // 	}
 
 // 	var upper, lower uint64
-// 	upper = evm.Context.BlockNumber.Uint64()
+// 	upper = interpreter.evm.Context.BlockNumber.Uint64()
 // 	if upper < 257 {
 // 		lower = 0
 // 	} else {
 // 		lower = upper - 256
 // 	}
 // 	if num64 >= lower && num64 < upper {
-// 		res := evm.Context.GetHash(num64)
-// 		if witness := evm.StateDB.Witness(); witness != nil {
+// 		res := interpreter.evm.Context.GetHash(num64)
+// 		if witness := interpreter.evm.StateDB.Witness(); witness != nil {
 // 			witness.AddBlockHash(num64)
 // 		}
-// 		if tracer := evm.Config.Tracer; tracer != nil && tracer.OnBlockHashRead != nil {
+// 		if tracer := interpreter.evm.Config.Tracer; tracer != nil && tracer.OnBlockHashRead != nil {
 // 			tracer.OnBlockHashRead(num64, res)
 // 		}
 // 		num.SetBytes(res[:])
@@ -447,83 +448,83 @@ func opCaller(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 // 	return nil, nil
 // }
 
-func opCoinbase(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-	scope.Stack.push(new(uint256.Int).SetBytes(evm.Context.Coinbase.Bytes()))
+func opCoinbase(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	scope.Stack.push(new(uint256.Int).SetBytes(interpreter.evm.Context.Coinbase.Bytes()))
 	return nil, nil
 }
 
-// func opTimestamp(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-// 	scope.Stack.push(new(uint256.Int).SetUint64(evm.Context.Time))
+// func opTimestamp(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+// 	scope.Stack.push(new(uint256.Int).SetUint64(interpreter.evm.Context.Time))
 // 	return nil, nil
 // }
 
-// func opNumber(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-// 	v, _ := uint256.FromBig(evm.Context.BlockNumber)
+// func opNumber(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+// 	v, _ := uint256.FromBig(interpreter.evm.Context.BlockNumber)
 // 	scope.Stack.push(v)
 // 	return nil, nil
 // }
 
-// func opDifficulty(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-// 	v, _ := uint256.FromBig(evm.Context.Difficulty)
+// func opDifficulty(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+// 	v, _ := uint256.FromBig(interpreter.evm.Context.Difficulty)
 // 	scope.Stack.push(v)
 // 	return nil, nil
 // }
 
-// func opRandom(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-// 	v := new(uint256.Int).SetBytes(evm.Context.Random.Bytes())
+// func opRandom(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+// 	v := new(uint256.Int).SetBytes(interpreter.evm.Context.Random.Bytes())
 // 	scope.Stack.push(v)
 // 	return nil, nil
 // }
 
-// func opGasLimit(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-// 	scope.Stack.push(new(uint256.Int).SetUint64(evm.Context.GasLimit))
+// func opGasLimit(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+// 	scope.Stack.push(new(uint256.Int).SetUint64(interpreter.evm.Context.GasLimit))
 // 	return nil, nil
 // }
 
-// func opPop(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opPop(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.pop()
 // 	return nil, nil
 // }
 
-func opMload(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+func opMload(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 	v := scope.Stack.peek()
 	offset := v.Uint64()
 	v.SetBytes(scope.Memory.GetPtr(offset, 32))
 	return nil, nil
 }
 
-func opMstore(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+func opMstore(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 	mStart, val := scope.Stack.pop(), scope.Stack.pop()
 	scope.Memory.Set32(mStart.Uint64(), &val)
 	return nil, nil
 }
 
-func opMstore8(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+func opMstore8(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 	off, val := scope.Stack.pop(), scope.Stack.pop()
 	scope.Memory.store[off.Uint64()] = byte(val.Uint64())
 	return nil, nil
 }
 
-func opSload(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+func opSload(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 	loc := scope.Stack.peek()
 	hash := common.Hash(loc.Bytes32())
-	val := evm.StateDB.GetState(scope.Contract.Address(), hash)
+	val := interpreter.evm.StateDB.GetState(scope.Contract.Address(), hash)
 	loc.SetBytes(val.Bytes())
 	return nil, nil
 }
 
-func opSstore(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-	// if evm.readOnly {
-	// 	return nil, ErrWriteProtection
-	// }
+func opSstore(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	if interpreter.readOnly {
+		return nil, ErrWriteProtection
+	}
 	loc := scope.Stack.pop()
 	val := scope.Stack.pop()
-	evm.StateDB.SetState(scope.Contract.Address(), loc.Bytes32(), val.Bytes32())
+	interpreter.evm.StateDB.SetState(scope.Contract.Address(), loc.Bytes32(), val.Bytes32())
 	return nil, nil
 }
 
-// func opJump(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-// 	if evm.abort.Load() {
+// func opJump(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+// 	if interpreter.evm.abort.Load() {
 // 		return nil, errStopToken
 // 	}
 // 	pos := scope.Stack.pop()
@@ -534,8 +535,8 @@ func opSstore(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 // 	return nil, nil
 // }
 
-// func opJumpi(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-// 	if evm.abort.Load() {
+// func opJumpi(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+// 	if interpreter.evm.abort.Load() {
 // 		return nil, errStopToken
 // 	}
 // 	pos, cond := scope.Stack.pop(), scope.Stack.pop()
@@ -548,107 +549,107 @@ func opSstore(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 // 	return nil, nil
 // }
 
-// func opJumpdest(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opJumpdest(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	return nil, nil
 // }
 
-// func opPc(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opPc(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.push(new(uint256.Int).SetUint64(*pc))
 // 	return nil, nil
 // }
 
-// func opMsize(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opMsize(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.push(new(uint256.Int).SetUint64(uint64(scope.Memory.Len())))
 // 	return nil, nil
 // }
 
-// func opGas(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opGas(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.push(new(uint256.Int).SetUint64(scope.Contract.Gas))
 // 	return nil, nil
 // }
 
-// func opSwap1(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opSwap1(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.swap1()
 // 	return nil, nil
 // }
 
-// func opSwap2(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opSwap2(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.swap2()
 // 	return nil, nil
 // }
 
-// func opSwap3(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opSwap3(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.swap3()
 // 	return nil, nil
 // }
 
-// func opSwap4(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opSwap4(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.swap4()
 // 	return nil, nil
 // }
 
-// func opSwap5(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opSwap5(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.swap5()
 // 	return nil, nil
 // }
 
-// func opSwap6(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opSwap6(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.swap6()
 // 	return nil, nil
 // }
 
-// func opSwap7(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opSwap7(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.swap7()
 // 	return nil, nil
 // }
 
-// func opSwap8(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opSwap8(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.swap8()
 // 	return nil, nil
 // }
 
-// func opSwap9(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opSwap9(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.swap9()
 // 	return nil, nil
 // }
 
-// func opSwap10(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opSwap10(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.swap10()
 // 	return nil, nil
 // }
 
-// func opSwap11(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opSwap11(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.swap11()
 // 	return nil, nil
 // }
 
-// func opSwap12(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opSwap12(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.swap12()
 // 	return nil, nil
 // }
 
-// func opSwap13(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opSwap13(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.swap13()
 // 	return nil, nil
 // }
 
-// func opSwap14(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opSwap14(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.swap14()
 // 	return nil, nil
 // }
 
-// func opSwap15(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opSwap15(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.swap15()
 // 	return nil, nil
 // }
 
-// func opSwap16(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opSwap16(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.swap16()
 // 	return nil, nil
 // }
 
-// func opCreate(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-// 	if evm.readOnly {
+// func opCreate(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+// 	if interpreter.readOnly {
 // 		return nil, ErrWriteProtection
 // 	}
 // 	var (
@@ -657,21 +658,21 @@ func opSstore(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 // 		input        = scope.Memory.GetCopy(offset.Uint64(), size.Uint64())
 // 		gas          = scope.Contract.Gas
 // 	)
-// 	if evm.chainRules.IsEIP150 {
+// 	if interpreter.evm.chainRules.IsEIP150 {
 // 		gas -= gas / 64
 // 	}
 
 // 	// reuse size int for stackvalue
 // 	stackvalue := size
 
-// 	scope.Contract.UseGas(gas, evm.Config.Tracer, tracing.GasChangeCallContractCreation)
+// 	scope.Contract.UseGas(gas, interpreter.evm.Config.Tracer, tracing.GasChangeCallContractCreation)
 
-// 	res, addr, returnGas, suberr := evm.Create(scope.Contract.Address(), input, gas, &value)
+// 	res, addr, returnGas, suberr := interpreter.evm.Create(scope.Contract.Address(), input, gas, &value)
 // 	// Push item on the stack based on the returned error. If the ruleset is
 // 	// homestead we must check for CodeStoreOutOfGasError (homestead only
 // 	// rule) and treat as an error, if the ruleset is frontier we must
 // 	// ignore this error and pretend the operation was successful.
-// 	if evm.chainRules.IsHomestead && suberr == ErrCodeStoreOutOfGas {
+// 	if interpreter.evm.chainRules.IsHomestead && suberr == ErrCodeStoreOutOfGas {
 // 		stackvalue.Clear()
 // 	} else if suberr != nil && suberr != ErrCodeStoreOutOfGas {
 // 		stackvalue.Clear()
@@ -680,18 +681,18 @@ func opSstore(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 // 	}
 // 	scope.Stack.push(&stackvalue)
 
-// 	scope.Contract.RefundGas(returnGas, evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
+// 	scope.Contract.RefundGas(returnGas, interpreter.evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
 
 // 	if suberr == ErrExecutionReverted {
-// 		evm.returnData = res // set REVERT data to return data buffer
+// 		interpreter.returnData = res // set REVERT data to return data buffer
 // 		return res, nil
 // 	}
-// 	evm.returnData = nil // clear dirty return data buffer
+// 	interpreter.returnData = nil // clear dirty return data buffer
 // 	return nil, nil
 // }
 
-// func opCreate2(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-// 	if evm.readOnly {
+// func opCreate2(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+// 	if interpreter.readOnly {
 // 		return nil, ErrWriteProtection
 // 	}
 // 	var (
@@ -704,10 +705,10 @@ func opSstore(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 
 // 	// Apply EIP150
 // 	gas -= gas / 64
-// 	scope.Contract.UseGas(gas, evm.Config.Tracer, tracing.GasChangeCallContractCreation2)
+// 	scope.Contract.UseGas(gas, interpreter.evm.Config.Tracer, tracing.GasChangeCallContractCreation2)
 // 	// reuse size int for stackvalue
 // 	stackvalue := size
-// 	res, addr, returnGas, suberr := evm.Create2(scope.Contract.Address(), input, gas,
+// 	res, addr, returnGas, suberr := interpreter.evm.Create2(scope.Contract.Address(), input, gas,
 // 		&endowment, &salt)
 // 	// Push item on the stack based on the returned error.
 // 	if suberr != nil {
@@ -716,35 +717,35 @@ func opSstore(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 // 		stackvalue.SetBytes(addr.Bytes())
 // 	}
 // 	scope.Stack.push(&stackvalue)
-// 	scope.Contract.RefundGas(returnGas, evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
+// 	scope.Contract.RefundGas(returnGas, interpreter.evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
 
 // 	if suberr == ErrExecutionReverted {
-// 		evm.returnData = res // set REVERT data to return data buffer
+// 		interpreter.returnData = res // set REVERT data to return data buffer
 // 		return res, nil
 // 	}
-// 	evm.returnData = nil // clear dirty return data buffer
+// 	interpreter.returnData = nil // clear dirty return data buffer
 // 	return nil, nil
 // }
 
-// func opCall(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opCall(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	stack := scope.Stack
-// 	// Pop gas. The actual gas in evm.callGasTemp.
+// 	// Pop gas. The actual gas in interpreter.evm.callGasTemp.
 // 	// We can use this as a temporary value
 // 	temp := stack.pop()
-// 	gas := evm.callGasTemp
+// 	gas := interpreter.evm.callGasTemp
 // 	// Pop other call parameters.
 // 	addr, value, inOffset, inSize, retOffset, retSize := stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop()
 // 	toAddr := common.Address(addr.Bytes20())
 // 	// Get the arguments from the memory.
 // 	args := scope.Memory.GetPtr(inOffset.Uint64(), inSize.Uint64())
 
-// 	if evm.readOnly && !value.IsZero() {
+// 	if interpreter.readOnly && !value.IsZero() {
 // 		return nil, ErrWriteProtection
 // 	}
 // 	if !value.IsZero() {
 // 		gas += params.CallStipend
 // 	}
-// 	ret, returnGas, err := evm.Call(scope.Contract.Address(), toAddr, args, gas, &value)
+// 	ret, returnGas, err := interpreter.evm.Call(scope.Contract.Address(), toAddr, args, gas, &value)
 
 // 	if err != nil {
 // 		temp.Clear()
@@ -756,18 +757,18 @@ func opSstore(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 // 		scope.Memory.Set(retOffset.Uint64(), retSize.Uint64(), ret)
 // 	}
 
-// 	scope.Contract.RefundGas(returnGas, evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
+// 	scope.Contract.RefundGas(returnGas, interpreter.evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
 
-// 	evm.returnData = ret
+// 	interpreter.returnData = ret
 // 	return ret, nil
 // }
 
-// func opCallCode(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-// 	// Pop gas. The actual gas is in evm.callGasTemp.
+// func opCallCode(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+// 	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
 // 	stack := scope.Stack
 // 	// We use it as a temporary value
 // 	temp := stack.pop()
-// 	gas := evm.callGasTemp
+// 	gas := interpreter.evm.callGasTemp
 // 	// Pop other call parameters.
 // 	addr, value, inOffset, inSize, retOffset, retSize := stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop()
 // 	toAddr := common.Address(addr.Bytes20())
@@ -778,7 +779,7 @@ func opSstore(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 // 		gas += params.CallStipend
 // 	}
 
-// 	ret, returnGas, err := evm.CallCode(scope.Contract.Address(), toAddr, args, gas, &value)
+// 	ret, returnGas, err := interpreter.evm.CallCode(scope.Contract.Address(), toAddr, args, gas, &value)
 // 	if err != nil {
 // 		temp.Clear()
 // 	} else {
@@ -789,25 +790,25 @@ func opSstore(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 // 		scope.Memory.Set(retOffset.Uint64(), retSize.Uint64(), ret)
 // 	}
 
-// 	scope.Contract.RefundGas(returnGas, evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
+// 	scope.Contract.RefundGas(returnGas, interpreter.evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
 
-// 	evm.returnData = ret
+// 	interpreter.returnData = ret
 // 	return ret, nil
 // }
 
-// func opDelegateCall(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opDelegateCall(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	stack := scope.Stack
-// 	// Pop gas. The actual gas is in evm.callGasTemp.
+// 	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
 // 	// We use it as a temporary value
 // 	temp := stack.pop()
-// 	gas := evm.callGasTemp
+// 	gas := interpreter.evm.callGasTemp
 // 	// Pop other call parameters.
 // 	addr, inOffset, inSize, retOffset, retSize := stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop()
 // 	toAddr := common.Address(addr.Bytes20())
 // 	// Get arguments from the memory.
 // 	args := scope.Memory.GetPtr(inOffset.Uint64(), inSize.Uint64())
 
-// 	ret, returnGas, err := evm.DelegateCall(scope.Contract.Caller(), scope.Contract.Address(), toAddr, args, gas, scope.Contract.value)
+// 	ret, returnGas, err := interpreter.evm.DelegateCall(scope.Contract.Caller(), scope.Contract.Address(), toAddr, args, gas, scope.Contract.value)
 // 	if err != nil {
 // 		temp.Clear()
 // 	} else {
@@ -818,25 +819,25 @@ func opSstore(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 // 		scope.Memory.Set(retOffset.Uint64(), retSize.Uint64(), ret)
 // 	}
 
-// 	scope.Contract.RefundGas(returnGas, evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
+// 	scope.Contract.RefundGas(returnGas, interpreter.evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
 
-// 	evm.returnData = ret
+// 	interpreter.returnData = ret
 // 	return ret, nil
 // }
 
-// func opStaticCall(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-// 	// Pop gas. The actual gas is in evm.callGasTemp.
+// func opStaticCall(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+// 	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
 // 	stack := scope.Stack
 // 	// We use it as a temporary value
 // 	temp := stack.pop()
-// 	gas := evm.callGasTemp
+// 	gas := interpreter.evm.callGasTemp
 // 	// Pop other call parameters.
 // 	addr, inOffset, inSize, retOffset, retSize := stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop()
 // 	toAddr := common.Address(addr.Bytes20())
 // 	// Get arguments from the memory.
 // 	args := scope.Memory.GetPtr(inOffset.Uint64(), inSize.Uint64())
 
-// 	ret, returnGas, err := evm.StaticCall(scope.Contract.Address(), toAddr, args, gas)
+// 	ret, returnGas, err := interpreter.evm.StaticCall(scope.Contract.Address(), toAddr, args, gas)
 // 	if err != nil {
 // 		temp.Clear()
 // 	} else {
@@ -847,80 +848,80 @@ func opSstore(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 // 		scope.Memory.Set(retOffset.Uint64(), retSize.Uint64(), ret)
 // 	}
 
-// 	scope.Contract.RefundGas(returnGas, evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
+// 	scope.Contract.RefundGas(returnGas, interpreter.evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
 
-// 	evm.returnData = ret
+// 	interpreter.returnData = ret
 // 	return ret, nil
 // }
 
-// func opReturn(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opReturn(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	offset, size := scope.Stack.pop(), scope.Stack.pop()
 // 	ret := scope.Memory.GetCopy(offset.Uint64(), size.Uint64())
 
 // 	return ret, errStopToken
 // }
 
-// func opRevert(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opRevert(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	offset, size := scope.Stack.pop(), scope.Stack.pop()
 // 	ret := scope.Memory.GetCopy(offset.Uint64(), size.Uint64())
 
-// 	evm.returnData = ret
+// 	interpreter.returnData = ret
 // 	return ret, ErrExecutionReverted
 // }
 
-// func opUndefined(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opUndefined(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	return nil, &ErrInvalidOpCode{opcode: OpCode(scope.Contract.Code[*pc])}
 // }
 
-// func opStop(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// func opStop(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	return nil, errStopToken
 // }
 
-// func opSelfdestruct(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-// 	if evm.readOnly {
+// func opSelfdestruct(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+// 	if interpreter.readOnly {
 // 		return nil, ErrWriteProtection
 // 	}
 // 	beneficiary := scope.Stack.pop()
-// 	balance := evm.StateDB.GetBalance(scope.Contract.Address())
-// 	evm.StateDB.AddBalance(beneficiary.Bytes20(), balance, tracing.BalanceIncreaseSelfdestruct)
-// 	evm.StateDB.SelfDestruct(scope.Contract.Address())
-// 	if tracer := evm.Config.Tracer; tracer != nil {
+// 	balance := interpreter.evm.StateDB.GetBalance(scope.Contract.Address())
+// 	interpreter.evm.StateDB.AddBalance(beneficiary.Bytes20(), balance, tracing.BalanceIncreaseSelfdestruct)
+// 	interpreter.evm.StateDB.SelfDestruct(scope.Contract.Address())
+// 	if tracer := interpreter.evm.Config.Tracer; tracer != nil {
 // 		if tracer.OnEnter != nil {
-// 			tracer.OnEnter(evm.depth, byte(SELFDESTRUCT), scope.Contract.Address(), beneficiary.Bytes20(), []byte{}, 0, balance.ToBig())
+// 			tracer.OnEnter(interpreter.evm.depth, byte(SELFDESTRUCT), scope.Contract.Address(), beneficiary.Bytes20(), []byte{}, 0, balance.ToBig())
 // 		}
 // 		if tracer.OnExit != nil {
-// 			tracer.OnExit(evm.depth, []byte{}, 0, nil, false)
+// 			tracer.OnExit(interpreter.evm.depth, []byte{}, 0, nil, false)
 // 		}
 // 	}
 // 	return nil, errStopToken
 // }
 
-// func opSelfdestruct6780(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-// 	if evm.readOnly {
+// func opSelfdestruct6780(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+// 	if interpreter.readOnly {
 // 		return nil, ErrWriteProtection
 // 	}
 // 	beneficiary := scope.Stack.pop()
-// 	balance := evm.StateDB.GetBalance(scope.Contract.Address())
-// 	evm.StateDB.SubBalance(scope.Contract.Address(), balance, tracing.BalanceDecreaseSelfdestruct)
-// 	evm.StateDB.AddBalance(beneficiary.Bytes20(), balance, tracing.BalanceIncreaseSelfdestruct)
-// 	evm.StateDB.SelfDestruct6780(scope.Contract.Address())
-// 	if tracer := evm.Config.Tracer; tracer != nil {
+// 	balance := interpreter.evm.StateDB.GetBalance(scope.Contract.Address())
+// 	interpreter.evm.StateDB.SubBalance(scope.Contract.Address(), balance, tracing.BalanceDecreaseSelfdestruct)
+// 	interpreter.evm.StateDB.AddBalance(beneficiary.Bytes20(), balance, tracing.BalanceIncreaseSelfdestruct)
+// 	interpreter.evm.StateDB.SelfDestruct6780(scope.Contract.Address())
+// 	if tracer := interpreter.evm.Config.Tracer; tracer != nil {
 // 		if tracer.OnEnter != nil {
-// 			tracer.OnEnter(evm.depth, byte(SELFDESTRUCT), scope.Contract.Address(), beneficiary.Bytes20(), []byte{}, 0, balance.ToBig())
+// 			tracer.OnEnter(interpreter.evm.depth, byte(SELFDESTRUCT), scope.Contract.Address(), beneficiary.Bytes20(), []byte{}, 0, balance.ToBig())
 // 		}
 // 		if tracer.OnExit != nil {
-// 			tracer.OnExit(evm.depth, []byte{}, 0, nil, false)
+// 			tracer.OnExit(interpreter.evm.depth, []byte{}, 0, nil, false)
 // 		}
 // 	}
 // 	return nil, errStopToken
 // }
 
-// // following functions are used by the instruction jump  table
+// following functions are used by the instruction jump  table
 
-// // make log instruction function
+// make log instruction function
 // func makeLog(size int) executionFunc {
-// 	return func(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-// 		if evm.readOnly {
+// 	return func(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+// 		if interpreter.readOnly {
 // 			return nil, ErrWriteProtection
 // 		}
 // 		topics := make([]common.Hash, size)
@@ -932,21 +933,21 @@ func opSstore(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 // 		}
 
 // 		d := scope.Memory.GetCopy(mStart.Uint64(), mSize.Uint64())
-// 		evm.StateDB.AddLog(&types.Log{
+// 		interpreter.evm.StateDB.AddLog(&types.Log{
 // 			Address: scope.Contract.Address(),
 // 			Topics:  topics,
 // 			Data:    d,
 // 			// This is a non-consensus field, but assigned here because
 // 			// core/state doesn't know the current block number.
-// 			BlockNumber: evm.Context.BlockNumber.Uint64(),
+// 			BlockNumber: interpreter.evm.Context.BlockNumber.Uint64(),
 // 		})
 
 // 		return nil, nil
 // 	}
 // }
 
-// // opPush1 is a specialized version of pushN
-// func opPush1(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// opPush1 is a specialized version of pushN
+// func opPush1(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	var (
 // 		codeLen = uint64(len(scope.Contract.Code))
 // 		integer = new(uint256.Int)
@@ -960,8 +961,8 @@ func opSstore(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 // 	return nil, nil
 // }
 
-// // opPush2 is a specialized version of pushN
-// func opPush2(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// opPush2 is a specialized version of pushN
+// func opPush2(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	var (
 // 		codeLen = uint64(len(scope.Contract.Code))
 // 		integer = new(uint256.Int)
@@ -977,9 +978,9 @@ func opSstore(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 // 	return nil, nil
 // }
 
-// // make push instruction function
+// make push instruction function
 // func makePush(size uint64, pushByteSize int) executionFunc {
-// 	return func(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
+// 	return func(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 		var (
 // 			codeLen = len(scope.Contract.Code)
 // 			start   = min(codeLen, int(*pc+1))
@@ -997,10 +998,10 @@ func opSstore(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 // 	}
 // }
 
-// // make dup instruction function
-// func makeDup(size int) executionFunc {
-// 	return func(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-// 		scope.Stack.dup(size)
+// make dup instruction function
+// func makeDup(size int64) executionFunc {
+// 	return func(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+// 		scope.Stack.dup(int(size))
 // 		return nil, nil
 // 	}
 // }

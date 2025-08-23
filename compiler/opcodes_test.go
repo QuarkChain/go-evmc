@@ -7,6 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm/runtime"
 	"github.com/ethereum/go-ethereum/params"
@@ -65,6 +66,8 @@ type OpcodeTestCase struct {
 	expectedMemory  *Memory       // skip if nil, check big-endian encoded
 	expectedStorage state.Storage // skip if nil, check big-endian encoded
 	originStorage   state.Storage
+	originAccount   *types.StateAccount
+	originCode      []byte
 }
 
 // Helper function to run individual opcode test
@@ -80,13 +83,20 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 
 	// create a new stateDB for each testCase to avoid state pollution.
 	stateDB, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+	if acct := testCase.originAccount; acct != nil {
+		stateDB.AddBalance(defaultCompilationAddress, acct.Balance, tracing.BalanceChangeUnspecified)
+		stateDB.SetNonce(defaultCompilationAddress, acct.Nonce, tracing.NonceChangeUnspecified)
+	}
+	if code := testCase.originCode; code != nil {
+		stateDB.SetCode(defaultCompilationAddress, code)
+	}
 	if len(testCase.originStorage) > 0 {
 		for key, value := range testCase.originStorage {
 			stateDB.SetState(defaultCompilationAddress, key, value)
 		}
-		// Finalise stateDB to clear dirty storage and set the above state as original storage
-		stateDB.Finalise(false)
 	}
+	// Finalise stateDB to clear dirty storage and set the above state as original storage
+	stateDB.Finalise(false)
 
 	opts := &EVMExecutionOpts{
 		Config: &runtime.Config{
@@ -221,8 +231,8 @@ func TestArithmeticOpcodes(t *testing.T) {
 		{
 			name: "SDIV",
 			bytecode: []byte{
-				0x60, 0x04, // PUSH32 4, denominator
-				0x60, 0x14, // PUSH32 20, numerator
+				0x60, 0x04, // PUSH1 4, denominator
+				0x60, 0x14, // PUSH1 20, numerator
 				0x05, // SDIV
 				0x00, // STOP
 			},
@@ -231,8 +241,8 @@ func TestArithmeticOpcodes(t *testing.T) {
 		{
 			name: "SDIV_BY_ZERO",
 			bytecode: []byte{
-				0x60, 0x00, // PUSH32 0, denominator
-				0x60, 0x14, // PUSH32 20, numerator
+				0x60, 0x00, // PUSH1 0, denominator
+				0x60, 0x14, // PUSH1 20, numerator
 				0x05, // SDIV
 				0x00, // STOP
 			},
@@ -413,16 +423,28 @@ func TestArithmeticOpcodes(t *testing.T) {
 			),
 			expectedStack: [][32]byte{uint64ToBytes32(9)},
 		},
-		// {
-		// 	name: "EXP",
-		// 	bytecode: []byte{
-		// 		0x60, 0x02, // PUSH1 2
-		// 		0x60, 0x03, // PUSH1 3
-		// 		0x0A, // EXP
-		// 		0x00, // STOP
-		// 	},
-		// 	expectedStack: [][32]byte{uint64ToBytes32(8)},
-		// },
+		{
+			name: "EXP",
+			bytecode: []byte{
+				0x60, 0x02, // PUSH1 2 (exp)
+				0x60, 0x03, // PUSH1 3 (base)
+				0x0A, // EXP
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(9)},
+			expectedGas:   3*2 + 60,
+		},
+		{
+			name: "EXP_2BYTES",
+			bytecode: []byte{
+				0x61, 0x02, 0x01, // PUSH2 0x0101 (exp)
+				0x60, 0x02, // PUSH1 2 (base)
+				0x0A, // EXP
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0)},
+			expectedGas:   3*2 + 110,
+		},
 		{
 			name: "SIGNEXTEND",
 			bytecode: []byte{
@@ -1580,6 +1602,44 @@ func TestOpcodeErrorConditions(t *testing.T) {
 	}
 }
 
+func TestPrecompiledOpcodes(t *testing.T) {
+	testCases := []OpcodeTestCase{
+		{
+			name: "KECCAK256",
+			bytecode: append(
+				[]byte{0x7F}, // PUSH32
+				append(
+					hexutil.MustDecode("0xFFFFFFFF00000000000000000000000000000000000000000000000000000000")[:],
+					0x60, 0x00, // PUSH1 0x00
+					0x52,       // MSTORE
+					0x60, 0x04, // PUSH1 0x04
+					0x60, 0x00, // PUSH1 0x00
+					0x20, // KECCAK256
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{hexToLittleEndianBytes32("0x29045a592007d0c246ef02c2223570da9522d0cf0f73282c79a1bc8f0bb2c238")},
+			expectedGas:   3*4 + 6 + 36,
+		},
+		{
+			name: "KECCAK256_SIZE2",
+			bytecode: []byte{
+				0x60, 0x04, // PUSH1 0x04
+				0x60, 0x20, // PUSH1 32
+				0x20, // KECCAK256
+				0x00, // STOP
+			},
+			expectedGas: 3*2 + 42,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			runOpcodeTest(t, tc)
+		})
+	}
+}
+
 // TestOpcodeBlockContext tests block context opcodes
 func TestOpcodeBlockContext(t *testing.T) {
 	testCases := []OpcodeTestCase{
@@ -1594,6 +1654,23 @@ func TestOpcodeBlockContext(t *testing.T) {
 				CopyFromBigToMachine(defaultCompilationAddress.Bytes(), buf[:])
 				return buf
 			}()},
+		},
+		{
+			name: "BALANCE",
+			originAccount: &types.StateAccount{
+				Balance: uint256.NewInt(10000),
+			},
+			bytecode: []byte{
+				0x30, // ADDRESS (defaultCompilationAddress)
+				0x31, // BALANCE
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{func() [32]byte {
+				var buf [32]byte
+				CopyFromBigToMachine(uint256.NewInt(10000).Bytes(), buf[:])
+				return buf
+			}()},
+			expectedGas: 102,
 		},
 		{
 			name: "ORIGIN",
