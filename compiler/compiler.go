@@ -71,6 +71,7 @@ func DefaultEVMCompilationOpts() *EVMCompilationOpts {
 		DisableGas:                    false,
 		DisableSectionGasOptimization: false,
 		ContractAddress:               defaultCompilationAddress,
+		ChainRules:                    params.Rules{IsOsaka: true},
 	}
 }
 

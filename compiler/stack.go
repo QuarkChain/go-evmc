@@ -32,3 +32,7 @@ type Stack struct {
 func (st *Stack) Back(n int) *uint256.Int {
 	return st.data[len(st.data)-n-1]
 }
+
+func (st *Stack) peek() *uint256.Int {
+	return st.data[len(st.data)-1]
+}
