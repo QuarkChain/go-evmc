@@ -159,7 +159,7 @@ func enable2929(jt *JumpTable) {
 // - Reduces refunds for SSTORE
 // - Reduces max refunds to 20% gas
 func enable3529(jt *JumpTable) {
-	// jt[SSTORE].dynamicGas = gasSStoreEIP3529
+	jt[SSTORE].dynamicGas = gasSStoreEIP3529
 	// jt[SELFDESTRUCT].dynamicGas = gasSelfdestructEIP3529
 }
 

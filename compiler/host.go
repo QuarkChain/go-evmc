@@ -14,7 +14,7 @@ import (
 	"tinygo.org/x/go-llvm"
 )
 
-type HostFunc func(gas *uint64, e *EVMExecutor, stack *Stack) int64
+type HostFunc func(e *EVMExecutor, stack *Stack) int64
 
 type EVMHost interface {
 	GetHostFunc(opcode OpCode) HostFunc
@@ -92,7 +92,7 @@ func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, gas *C.uint64_t, stackPtr
 
 	e.callContext.Memory.Resize(memorySize)
 
-	ret := C.int64_t(f(&e.callContext.Contract.Gas, e, stack))
+	ret := C.int64_t(f(e, stack))
 	*gas = C.uint64_t(e.callContext.Contract.Gas)
 	return ret
 }
@@ -136,7 +136,7 @@ func (e *EVMExecutor) addGlobalMappingForHostFunctions() {
 	e.engine.AddGlobalMapping(e.hostFunc, unsafe.Pointer(C.callHostFunc))
 }
 
-func hostOpAddMod(gas *uint64, e *EVMExecutor, stack *Stack) int64 {
+func hostOpAddMod(e *EVMExecutor, stack *Stack) int64 {
 	x := stack.Back(0)
 	y := stack.Back(1)
 	m := stack.Back(2)
@@ -147,7 +147,7 @@ func hostOpAddMod(gas *uint64, e *EVMExecutor, stack *Stack) int64 {
 	return int64(ExecutionSuccess)
 }
 
-func hostOpMulMod(gas *uint64, e *EVMExecutor, stack *Stack) int64 {
+func hostOpMulMod(e *EVMExecutor, stack *Stack) int64 {
 	x := stack.Back(0)
 	y := stack.Back(1)
 	m := stack.Back(2)
@@ -158,7 +158,7 @@ func hostOpMulMod(gas *uint64, e *EVMExecutor, stack *Stack) int64 {
 	return int64(ExecutionSuccess)
 }
 
-func hostOpSstore(gas *uint64, e *EVMExecutor, stack *Stack) int64 {
+func hostOpSstore(e *EVMExecutor, stack *Stack) int64 {
 	slot := stack.Back(0).Bytes32()
 	value := stack.Back(1).Bytes32()
 	contract := e.callContext.Contract
@@ -166,7 +166,7 @@ func hostOpSstore(gas *uint64, e *EVMExecutor, stack *Stack) int64 {
 	return int64(ExecutionSuccess)
 }
 
-func hostOpSload(gas *uint64, e *EVMExecutor, stack *Stack) int64 {
+func hostOpSload(e *EVMExecutor, stack *Stack) int64 {
 	slot := stack.Back(0).Bytes32()
 	address := e.callContext.Contract.address
 	valueBytes := e.evm.StateDB.GetState(address, slot)
@@ -174,14 +174,14 @@ func hostOpSload(gas *uint64, e *EVMExecutor, stack *Stack) int64 {
 	return int64(ExecutionSuccess)
 }
 
-func hostOpMload(gas *uint64, e *EVMExecutor, stack *Stack) int64 {
+func hostOpMload(e *EVMExecutor, stack *Stack) int64 {
 	stack0 := getStackElement(stack.stackPtr, 0)
 	offset := stack.Back(0)
 	CopyFromBigToMachine(e.callContext.Memory.GetPtr(offset.Uint64(), 32), stack0)
 	return int64(ExecutionSuccess)
 }
 
-func hostOpMstore(gas *uint64, e *EVMExecutor, stack *Stack) int64 {
+func hostOpMstore(e *EVMExecutor, stack *Stack) int64 {
 	offset := stack.Back(0)
 	value := stack.Back(1)
 	copy(e.callContext.Memory.GetPtr(offset.Uint64(), 32), value.PaddedBytes(32))
@@ -189,7 +189,7 @@ func hostOpMstore(gas *uint64, e *EVMExecutor, stack *Stack) int64 {
 	return int64(ExecutionSuccess)
 }
 
-func hostOpMstore8(gas *uint64, e *EVMExecutor, stack *Stack) int64 {
+func hostOpMstore8(e *EVMExecutor, stack *Stack) int64 {
 	offset := stack.Back(0)
 	value := stack.Back(1)
 
@@ -205,7 +205,7 @@ func hostOpMstore8(gas *uint64, e *EVMExecutor, stack *Stack) int64 {
 }
 
 // Address returns address of the current executing account.
-func hostOpAddress(gas *uint64, e *EVMExecutor, stack *Stack) int64 {
+func hostOpAddress(e *EVMExecutor, stack *Stack) int64 {
 	stack0 := getStackElement(stack.stackPtr, -1) // push stack
 	CopyFromBigToMachine(common.LeftPadBytes(e.callContext.Contract.address[:], 32), stack0)
 
@@ -213,7 +213,7 @@ func hostOpAddress(gas *uint64, e *EVMExecutor, stack *Stack) int64 {
 }
 
 // Origin returns address of the execution origination address.
-func hostOpOrigin(gas *uint64, e *EVMExecutor, stack *Stack) int64 {
+func hostOpOrigin(e *EVMExecutor, stack *Stack) int64 {
 	stack0 := getStackElement(stack.stackPtr, -1) // push stack
 	CopyFromBigToMachine(common.LeftPadBytes(e.evm.TxContext.Origin[:], 32), stack0)
 
@@ -221,14 +221,14 @@ func hostOpOrigin(gas *uint64, e *EVMExecutor, stack *Stack) int64 {
 }
 
 // Caller returns caller address.
-func hostOpCaller(gas *uint64, e *EVMExecutor, stack *Stack) int64 {
+func hostOpCaller(e *EVMExecutor, stack *Stack) int64 {
 	stack0 := getStackElement(stack.stackPtr, -1) // push stack
 	CopyFromBigToMachine(common.LeftPadBytes(e.callContext.Contract.caller[:], 32), stack0)
 	return int64(ExecutionSuccess)
 }
 
 // Coinbase returns the coinbase address of the block.
-func hostOpCoinbase(gas *uint64, e *EVMExecutor, stack *Stack) int64 {
+func hostOpCoinbase(e *EVMExecutor, stack *Stack) int64 {
 	stack0 := getStackElement(stack.stackPtr, -1) // push stack
 
 	CopyFromBigToMachine(common.LeftPadBytes(e.evm.Context.Coinbase[:], 32), stack0)

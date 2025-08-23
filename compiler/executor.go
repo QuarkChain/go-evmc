@@ -119,7 +119,8 @@ func (e *EVMExecutor) Run(contract Contract, input []byte, readOnly bool) (ret *
 	// Execute using function pointer
 	inst := createExecutionInstance(e)
 	defer removeExecutionInstance(inst)
-	errorCode, gasRemainingResult, stackDepth := e.callNativeFunction(funcPtr, inst, unsafe.Pointer(&stack[0]), contract.Gas)
+	gas := contract.Gas
+	errorCode, gasRemainingResult, stackDepth := e.callNativeFunction(funcPtr, inst, unsafe.Pointer(&stack[0]), gas)
 
 	gasRemaining := uint64(gasRemainingResult)
 
@@ -128,18 +129,21 @@ func (e *EVMExecutor) Run(contract Contract, input []byte, readOnly bool) (ret *
 			Stack:        nil,
 			Memory:       nil,
 			Status:       ExecutionStatus(errorCode),
-			GasUsed:      contract.Gas - gasRemaining,
-			GasLimit:     contract.Gas,
+			GasUsed:      gas - gasRemaining,
+			GasLimit:     gas,
 			GasRemaining: gasRemaining,
 		}, nil
 	}
+
+	// Update remaining gas of the contract call
+	contract.Gas = gasRemaining
 
 	return &EVMExecutionResult{
 		Stack:        stack[:stackDepth],
 		Memory:       memory,
 		Status:       ExecutionStatus(errorCode),
-		GasUsed:      contract.Gas - gasRemaining,
-		GasLimit:     contract.Gas,
+		GasUsed:      gas - gasRemaining,
+		GasLimit:     gas,
 		GasRemaining: gasRemaining,
 	}, nil
 }
