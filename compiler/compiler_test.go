@@ -524,7 +524,7 @@ func BenchmarkEVMExecuteMemoryOperations(b *testing.B) {
 	}
 
 	// Create executor
-	err = comp.CreateExecutor()
+	err = comp.CreateExecutor(&EVMExecutionOpts{})
 	if err != nil {
 		b.Fatalf("Executor failed: %v", err)
 	}
@@ -548,7 +548,7 @@ func BenchmarkEVMExecuteFibWithSectionGasOptimization(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Compilation failed: %v", err)
 	}
-	err = comp.CreateExecutor()
+	err = comp.CreateExecutor(&EVMExecutionOpts{})
 	if err != nil {
 		b.Fatalf("Engine failed: %v", err)
 	}
@@ -574,7 +574,7 @@ func BenchmarkEVMExecuteFibWithGas(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Compilation failed: %v", err)
 	}
-	err = comp.CreateExecutor()
+	err = comp.CreateExecutor(&EVMExecutionOpts{})
 	if err != nil {
 		b.Fatalf("Engine failed: %v", err)
 	}
@@ -598,7 +598,7 @@ func BenchmarkEVMExecuteFibWithoutGas(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Compilation failed: %v", err)
 	}
-	err = comp.CreateExecutor()
+	err = comp.CreateExecutor(&EVMExecutionOpts{})
 	if err != nil {
 		b.Fatalf("Engine failed: %v", err)
 	}

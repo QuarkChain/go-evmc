@@ -51,12 +51,14 @@ type EVMExecutionResult struct {
 }
 
 type EVMExecutionOpts struct {
-	GasLimit uint64
+	GasLimit  uint64
+	TxContext vm.TxContext
 }
 
 var defaultCompilationAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccc")
-var defaultCallerAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccd")
-var defaultCoinbaseAddress = common.HexToAddress("ccccccccccccccccccccccccccccccccccccccce")
+var defaultOriginAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccd")
+var defaultCallerAddress = common.HexToAddress("ccccccccccccccccccccccccccccccccccccccce")
+var defaultCoinbaseAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccf")
 
 type EVMCompilationOpts struct {
 	DisableGas                    bool
@@ -340,10 +342,11 @@ func (c *EVMCompiler) GetCompiledCode() []byte {
 	return mem.Bytes()
 }
 
-func (c *EVMCompiler) CreateExecutor() error {
+func (c *EVMCompiler) CreateExecutor(opts *EVMExecutionOpts) error {
 	// Create an in-memory state db
 	sdb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
 	evm := NewEVM(vm.BlockContext{Coinbase: defaultCoinbaseAddress}, sdb, params.TestChainConfig, vm.Config{})
+	evm.SetTxContext(opts.TxContext)
 	c.executor = evm.executor
 	c.executor.AddCompiledContract(c.codeHash, c.GetCompiledCode())
 	return nil
@@ -372,7 +375,7 @@ func (c *EVMCompiler) ExecuteCompiledWithOpts(bytecode []byte, copts *EVMCompila
 	}
 
 	// Create executor
-	err = c.CreateExecutor()
+	err = c.CreateExecutor(opts)
 	if err != nil {
 		return nil, err
 	}
