@@ -330,11 +330,11 @@ func opCallDataCopy(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) (
 // 	return nil, nil
 // }
 
-// func opExtCodeSize(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	slot := scope.Stack.peek()
-// 	slot.SetUint64(uint64(interpreter.evm.StateDB.GetCodeSize(slot.Bytes20())))
-// 	return nil, nil
-// }
+func opExtCodeSize(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	slot := scope.Stack.peek()
+	slot.SetUint64(uint64(interpreter.evm.StateDB.GetCodeSize(slot.Bytes20())))
+	return nil, nil
+}
 
 // func opCodeSize(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.push(new(uint256.Int).SetUint64(uint64(len(scope.Contract.Code))))
@@ -403,22 +403,22 @@ func opCallDataCopy(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) (
 //
 //  6. Caller tries to get the code hash for an account which is marked as deleted, this
 //     account should be regarded as a non-existent account and zero should be returned.
-// func opExtCodeHash(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	slot := scope.Stack.peek()
-// 	address := common.Address(slot.Bytes20())
-// 	if interpreter.evm.StateDB.Empty(address) {
-// 		slot.Clear()
-// 	} else {
-// 		slot.SetBytes(interpreter.evm.StateDB.GetCodeHash(address).Bytes())
-// 	}
-// 	return nil, nil
-// }
+func opExtCodeHash(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	slot := scope.Stack.peek()
+	address := common.Address(slot.Bytes20())
+	if interpreter.evm.StateDB.Empty(address) {
+		slot.Clear()
+	} else {
+		slot.SetBytes(interpreter.evm.StateDB.GetCodeHash(address).Bytes())
+	}
+	return nil, nil
+}
 
-// func opGasprice(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	v, _ := uint256.FromBig(interpreter.evm.GasPrice)
-// 	scope.Stack.push(v)
-// 	return nil, nil
-// }
+func opGasprice(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	v, _ := uint256.FromBig(interpreter.evm.GasPrice)
+	scope.Stack.push(v)
+	return nil, nil
+}
 
 // func opBlockhash(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	num := scope.Stack.peek()
@@ -455,16 +455,16 @@ func opCoinbase(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]by
 	return nil, nil
 }
 
-// func opTimestamp(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	scope.Stack.push(new(uint256.Int).SetUint64(interpreter.evm.Context.Time))
-// 	return nil, nil
-// }
+func opTimestamp(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	scope.Stack.push(new(uint256.Int).SetUint64(interpreter.evm.Context.Time))
+	return nil, nil
+}
 
-// func opNumber(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	v, _ := uint256.FromBig(interpreter.evm.Context.BlockNumber)
-// 	scope.Stack.push(v)
-// 	return nil, nil
-// }
+func opNumber(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	v, _ := uint256.FromBig(interpreter.evm.Context.BlockNumber)
+	scope.Stack.push(v)
+	return nil, nil
+}
 
 // func opDifficulty(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	v, _ := uint256.FromBig(interpreter.evm.Context.Difficulty)
@@ -472,16 +472,16 @@ func opCoinbase(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]by
 // 	return nil, nil
 // }
 
-// func opRandom(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	v := new(uint256.Int).SetBytes(interpreter.evm.Context.Random.Bytes())
-// 	scope.Stack.push(v)
-// 	return nil, nil
-// }
+func opRandom(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	v := new(uint256.Int).SetBytes(interpreter.evm.Context.Random.Bytes())
+	scope.Stack.push(v)
+	return nil, nil
+}
 
-// func opGasLimit(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	scope.Stack.push(new(uint256.Int).SetUint64(interpreter.evm.Context.GasLimit))
-// 	return nil, nil
-// }
+func opGasLimit(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	scope.Stack.push(new(uint256.Int).SetUint64(interpreter.evm.Context.GasLimit))
+	return nil, nil
+}
 
 // func opPop(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.pop()

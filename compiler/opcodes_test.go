@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm/runtime"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
@@ -102,11 +103,17 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 		Config: &runtime.Config{
 			ChainConfig: params.MergedTestChainConfig,
 			GasLimit:    testCase.gasLimit,
+			GasPrice:    defaultGasPrice,
 			State:       stateDB,
 			Origin:      defaultOriginAddress,
 			Coinbase:    defaultCoinbaseAddress,
-			BlockNumber: common.Big0,
+			BlockNumber: defaultBlockNumber,
+			Time:        defaultTime,
 			Value:       defaultCallValue,
+			Random:      &defaultRANDAO,
+			BaseFee:     defaultBaseFee,
+			BlobBaseFee: defaultBlobBaseFee,
+			BlobHashes:  defaultBlobHashes,
 		},
 		Input: defaultInput[:],
 	}
@@ -1766,6 +1773,70 @@ func TestOpcodeBlockContext(t *testing.T) {
 			},
 			expectedGas: 3*3 + 9,
 		},
+		// {
+		// 	name:       "CODESIZE",
+		// 	bytecode: []byte{
+		// 		0x38, // CODESIZE
+		// 		0x00, // STOP
+		// 	},
+		// 	expectedStack: [][32]byte{uint64ToBytes32(3)},
+		// 	expectedGas:   2,
+		// },
+		{
+			name: "GASPRICE",
+			bytecode: []byte{
+				0x3A, // GASPRICE
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(defaultGasPrice.Uint64())},
+			expectedGas:   2,
+		},
+		{
+			name: "EXTCODESIZE_EMPTY",
+			bytecode: []byte{
+				0x30, // ADDRESS
+				0x3B, // EXTCODESIZE
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0)},
+			expectedGas:   2 + 100,
+		},
+		{
+			name:       "EXTCODESIZE",
+			originCode: []byte{0x60, 0x01, 0x00},
+			bytecode: []byte{
+				0x30, // ADDRESS
+				0x3B, // EXTCODESIZE
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(3)},
+			expectedGas:   2 + 100,
+		},
+		{
+			name: "EXTCODEHASH_EMPTY",
+			bytecode: []byte{
+				0x30, // ADDRESS
+				0x3F, // EXTCODEHASH
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0)},
+			expectedGas:   2 + 100,
+		},
+		{
+			name:       "EXTCODEHASH",
+			originCode: []byte{0x60, 0x01, 0x00},
+			bytecode: []byte{
+				0x30, // ADDRESS
+				0x3F, // EXTCODEHASH
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{func() [32]byte {
+				var buf [32]byte
+				CopyFromBigToMachine(crypto.Keccak256([]byte{0x60, 0x01, 0x00})[:], buf[:])
+				return buf
+			}()},
+			expectedGas: 2 + 100,
+		},
 		{
 			name: "COINBASE",
 			bytecode: []byte{
@@ -1777,6 +1848,131 @@ func TestOpcodeBlockContext(t *testing.T) {
 				CopyFromBigToMachine(defaultCoinbaseAddress.Bytes(), buf[:])
 				return buf
 			}()},
+			expectedGas: 2,
+		},
+		{
+			name: "TIMESTAMP",
+			bytecode: []byte{
+				0x42, // TIMESTAMP
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{func() [32]byte {
+				var buf [32]byte
+				blockTime := uint64ToBytes32(defaultTime)
+				copy(buf[:], blockTime[:])
+				return buf
+			}()},
+			expectedGas: 2,
+		},
+		{
+			name: "NUMBER",
+			bytecode: []byte{
+				0x43, // NUMBER
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{func() [32]byte {
+				var buf [32]byte
+				CopyFromBigToMachine(defaultBlockNumber.Bytes(), buf[:])
+				return buf
+			}()},
+			expectedGas: 2,
+		},
+		{
+			name: "PREVRANDAO",
+			bytecode: []byte{
+				0x44, // PREVRANDAO
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{func() [32]byte {
+				var buf [32]byte
+				CopyFromBigToMachine(defaultRANDAO.Bytes(), buf[:])
+				return buf
+			}()},
+			expectedGas: 2,
+		},
+		{
+			name:     "GASLIMIT",
+			gasLimit: 200000,
+			bytecode: []byte{
+				0x45, // GASLIMIT
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(200000)},
+			expectedGas:   2,
+		},
+		{
+			name: "CHAINID",
+			bytecode: []byte{
+				0x46, // CHAINID
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(params.MergedTestChainConfig.ChainID.Uint64())},
+			expectedGas:   2,
+		},
+		{
+			name: "SELFBALANCE_EMPTY",
+			bytecode: []byte{
+				0x47, // SELFBALANCE
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0)},
+			expectedGas:   5,
+		},
+		{
+			name: "SELFBALANCE",
+			originAccount: &types.StateAccount{
+				Balance: uint256.NewInt(10001),
+			},
+			bytecode: []byte{
+				0x47, // SELFBALANCE
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{func() [32]byte {
+				var buf [32]byte
+				CopyFromBigToMachine(uint256.NewInt(10001).Bytes(), buf[:])
+				return buf
+			}()},
+			expectedGas: 5,
+		},
+		{
+			name: "BASEFEE",
+			bytecode: []byte{
+				0x48, // BASEFEE
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{func() [32]byte {
+				var buf [32]byte
+				CopyFromBigToMachine(uint256.MustFromBig(defaultBaseFee).Bytes(), buf[:])
+				return buf
+			}()},
+			expectedGas: 2,
+		},
+		{
+			name: "BLOBHASH",
+			bytecode: []byte{
+				0x60, 0x00, // PUSH1 0
+				0x49, // BLOBHASH
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{func() [32]byte {
+				var buf [32]byte
+				CopyFromBigToMachine(defaultBlobHashes[0].Bytes(), buf[:])
+				return buf
+			}()},
+			expectedGas: 3 + 3,
+		},
+		{
+			name: "BLOBBASEFEE",
+			bytecode: []byte{
+				0x4A, // BLOBBASEFEE
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{func() [32]byte {
+				var buf [32]byte
+				CopyFromBigToMachine(uint256.MustFromBig(defaultBlobBaseFee).Bytes(), buf[:])
+				return buf
+			}()},
+			expectedGas: 2,
 		},
 	}
 

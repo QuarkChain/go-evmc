@@ -127,7 +127,7 @@ func newShanghaiInstructionSet() JumpTable {
 func newMergeInstructionSet() JumpTable {
 	instructionSet := newLondonInstructionSet()
 	instructionSet[PREVRANDAO] = &operation{
-		// execute:     opRandom,
+		execute:     opRandom,
 		constantGas: GasQuickStep,
 		minStack:    minStack(0, 1),
 		diffDiff:    diffStack(0, 1),
@@ -187,7 +187,7 @@ func newConstantinopleInstructionSet() JumpTable {
 		diffDiff:    diffStack(2, 1),
 	}
 	instructionSet[EXTCODEHASH] = &operation{
-		// execute:     opExtCodeHash,
+		execute:     opExtCodeHash,
 		constantGas: params.ExtcodeHashGasConstantinople,
 		minStack:    minStack(1, 1),
 		diffDiff:    diffStack(1, 1),
@@ -489,13 +489,13 @@ func newFrontierInstructionSet() JumpTable {
 			// // memorySize:  memoryCodeCopy,
 		},
 		GASPRICE: {
-			// execute:     opGasprice,
+			execute:     opGasprice,
 			constantGas: GasQuickStep,
 			minStack:    minStack(0, 1),
 			diffDiff:    diffStack(0, 1),
 		},
 		EXTCODESIZE: {
-			// execute:     opExtCodeSize,
+			execute:     opExtCodeSize,
 			constantGas: params.ExtcodeSizeGasFrontier,
 			minStack:    minStack(1, 1),
 			diffDiff:    diffStack(1, 1),
@@ -521,13 +521,13 @@ func newFrontierInstructionSet() JumpTable {
 			diffDiff:    diffStack(0, 1),
 		},
 		TIMESTAMP: {
-			// execute:     opTimestamp,
+			execute:     opTimestamp,
 			constantGas: GasQuickStep,
 			minStack:    minStack(0, 1),
 			diffDiff:    diffStack(0, 1),
 		},
 		NUMBER: {
-			// execute:     opNumber,
+			execute:     opNumber,
 			constantGas: GasQuickStep,
 			minStack:    minStack(0, 1),
 			diffDiff:    diffStack(0, 1),
@@ -539,7 +539,7 @@ func newFrontierInstructionSet() JumpTable {
 			diffDiff:    diffStack(0, 1),
 		},
 		GASLIMIT: {
-			// execute:     opGasLimit,
+			execute:     opGasLimit,
 			constantGas: GasQuickStep,
 			minStack:    minStack(0, 1),
 			diffDiff:    diffStack(0, 1),

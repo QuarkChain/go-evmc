@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm/runtime"
@@ -59,8 +60,15 @@ var defaultCompilationAddress = common.HexToAddress("ccccccccccccccccccccccccccc
 var defaultOriginAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccd")
 var defaultCallerAddress = common.HexToAddress("ccccccccccccccccccccccccccccccccccccccce")
 var defaultCoinbaseAddress = common.HexToAddress("cccccccccccccccccccccccccccccccccccccccf")
+var defaultRANDAO = common.HexToHash("cccccccccccccccccccccccccccccccccccccccg")
+var defaultBlobHashes = []common.Hash{{0x11}}
+var defaultTime = uint64(time.Now().Unix())
+var defaultInput = uint256.NewInt(200).Bytes32()
 var defaultCallValue = big.NewInt(100)
-var defaultInput = uint256.NewInt(101).Bytes32()
+var defaultGasPrice = big.NewInt(101)
+var defaultBlockNumber = big.NewInt(102)
+var defaultBaseFee = big.NewInt(103)
+var defaultBlobBaseFee = big.NewInt(104)
 
 type EVMCompilationOpts struct {
 	DisableGas                    bool
