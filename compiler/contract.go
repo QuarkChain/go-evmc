@@ -11,7 +11,13 @@ type Contract struct {
 	address      common.Address
 	CompiledCode []byte
 
+	Code     []byte
 	CodeHash common.Hash
+	Input    []byte
+
+	// is the execution frame represented by this object a contract deployment
+	IsDeployment bool
+	IsSystemCall bool
 
 	Gas   uint64
 	value *uint256.Int
@@ -54,4 +60,15 @@ func (c *Contract) UseGas(gas uint64, logger *tracing.Hooks, reason tracing.GasC
 	}
 	c.Gas -= gas
 	return true
+}
+
+// RefundGas refunds gas to the contract
+func (c *Contract) RefundGas(gas uint64, logger *tracing.Hooks, reason tracing.GasChangeReason) {
+	if gas == 0 {
+		return
+	}
+	if logger != nil && logger.OnGasChange != nil && reason != tracing.GasChangeIgnored {
+		logger.OnGasChange(c.Gas, c.Gas+gas, reason)
+	}
+	c.Gas += gas
 }

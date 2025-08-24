@@ -21,6 +21,7 @@ import (
 	"sort"
 
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/holiman/uint256"
 )
 
 var activators = map[int]func(*JumpTable){
@@ -78,37 +79,37 @@ func enable1884(jt *JumpTable) {
 
 	// New opcode
 	jt[SELFBALANCE] = &operation{
-		// execute:     opSelfBalance,
+		execute:     opSelfBalance,
 		constantGas: GasFastStep,
 		minStack:    minStack(0, 1),
 		diffDiff:    diffStack(0, 1),
 	}
 }
 
-// func opSelfBalance(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
-// 	balance := interpreter.evm.StateDB.GetBalance(scope.Contract.Address())
-// 	scope.Stack.push(balance)
-// 	return nil, nil
-// }
+func opSelfBalance(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	balance := interpreter.evm.StateDB.GetBalance(scope.Contract.Address())
+	scope.Stack.push(balance)
+	return nil, nil
+}
 
 // enable1344 applies EIP-1344 (ChainID Opcode)
 // - Adds an opcode that returns the current chain’s EIP-155 unique identifier
 func enable1344(jt *JumpTable) {
 	// New opcode
 	jt[CHAINID] = &operation{
-		// execute:     opChainID,
+		execute:     opChainID,
 		constantGas: GasQuickStep,
 		minStack:    minStack(0, 1),
 		diffDiff:    diffStack(0, 1),
 	}
 }
 
-// // opChainID implements CHAINID opcode
-// func opChainID(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
-// 	chainId, _ := uint256.FromBig(interpreter.evm.chainConfig.ChainID)
-// 	scope.Stack.push(chainId)
-// 	return nil, nil
-// }
+// opChainID implements CHAINID opcode
+func opChainID(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	chainId, _ := uint256.FromBig(interpreter.evm.chainConfig.ChainID)
+	scope.Stack.push(chainId)
+	return nil, nil
+}
 
 // enable2200 applies EIP-2200 (Rebalance net-metered SSTORE)
 func enable2200(jt *JumpTable) {
@@ -168,7 +169,7 @@ func enable3529(jt *JumpTable) {
 func enable3198(jt *JumpTable) {
 	// New opcode
 	jt[BASEFEE] = &operation{
-		// execute:     opBaseFee,
+		execute:     opBaseFee,
 		constantGas: GasQuickStep,
 		minStack:    minStack(0, 1),
 		diffDiff:    diffStack(0, 1),
@@ -195,7 +196,7 @@ func enable1153(jt *JumpTable) {
 }
 
 // // opTload implements TLOAD opcode
-// func opTload(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+// func opTload(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	loc := scope.Stack.peek()
 // 	hash := common.Hash(loc.Bytes32())
 // 	val := interpreter.evm.StateDB.GetTransientState(scope.Contract.Address(), hash)
@@ -204,7 +205,7 @@ func enable1153(jt *JumpTable) {
 // }
 
 // // opTstore implements TSTORE opcode
-// func opTstore(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+// func opTstore(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	if interpreter.readOnly {
 // 		return nil, ErrWriteProtection
 // 	}
@@ -214,12 +215,12 @@ func enable1153(jt *JumpTable) {
 // 	return nil, nil
 // }
 
-// // opBaseFee implements BASEFEE opcode
-// func opBaseFee(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
-// 	baseFee, _ := uint256.FromBig(interpreter.evm.Context.BaseFee)
-// 	scope.Stack.push(baseFee)
-// 	return nil, nil
-// }
+// opBaseFee implements BASEFEE opcode
+func opBaseFee(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	baseFee, _ := uint256.FromBig(interpreter.evm.Context.BaseFee)
+	scope.Stack.push(baseFee)
+	return nil, nil
+}
 
 // enable3855 applies EIP-3855 (PUSH0 opcode)
 func enable3855(jt *JumpTable) {
@@ -233,7 +234,7 @@ func enable3855(jt *JumpTable) {
 }
 
 // // opPush0 implements the PUSH0 opcode
-// func opPush0(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+// func opPush0(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.push(new(uint256.Int))
 // 	return nil, nil
 // }
@@ -259,7 +260,7 @@ func enable5656(jt *JumpTable) {
 }
 
 // // opMcopy implements the MCOPY opcode (https://eips.ethereum.org/EIPS/eip-5656)
-// func opMcopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+// func opMcopy(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	var (
 // 		dst    = scope.Stack.pop()
 // 		src    = scope.Stack.pop()
@@ -271,27 +272,27 @@ func enable5656(jt *JumpTable) {
 // 	return nil, nil
 // }
 
-// // opBlobHash implements the BLOBHASH opcode
-// func opBlobHash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
-// 	index := scope.Stack.peek()
-// 	if index.LtUint64(uint64(len(interpreter.evm.TxContext.BlobHashes))) {
-// 		blobHash := interpreter.evm.TxContext.BlobHashes[index.Uint64()]
-// 		index.SetBytes32(blobHash[:])
-// 	} else {
-// 		index.Clear()
-// 	}
-// 	return nil, nil
-// }
+// opBlobHash implements the BLOBHASH opcode
+func opBlobHash(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	index := scope.Stack.peek()
+	if index.LtUint64(uint64(len(interpreter.evm.TxContext.BlobHashes))) {
+		blobHash := interpreter.evm.TxContext.BlobHashes[index.Uint64()]
+		index.SetBytes32(blobHash[:])
+	} else {
+		index.Clear()
+	}
+	return nil, nil
+}
 
-// // opBlobBaseFee implements BLOBBASEFEE opcode
-// func opBlobBaseFee(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
-// 	blobBaseFee, _ := uint256.FromBig(interpreter.evm.Context.BlobBaseFee)
-// 	scope.Stack.push(blobBaseFee)
-// 	return nil, nil
-// }
+// opBlobBaseFee implements BLOBBASEFEE opcode
+func opBlobBaseFee(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	blobBaseFee, _ := uint256.FromBig(interpreter.evm.Context.BlobBaseFee)
+	scope.Stack.push(blobBaseFee)
+	return nil, nil
+}
 
 // // opCLZ implements the CLZ opcode (count leading zero bytes)
-// func opCLZ(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+// func opCLZ(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	x := scope.Stack.peek()
 // 	x.SetUint64(256 - uint64(x.BitLen()))
 // 	return nil, nil
@@ -300,7 +301,7 @@ func enable5656(jt *JumpTable) {
 // enable4844 applies EIP-4844 (BLOBHASH opcode)
 func enable4844(jt *JumpTable) {
 	jt[BLOBHASH] = &operation{
-		// execute:     opBlobHash,
+		execute:     opBlobHash,
 		constantGas: GasFastestStep,
 		minStack:    minStack(1, 1),
 		diffDiff:    diffStack(1, 1),
@@ -320,7 +321,7 @@ func enable7939(jt *JumpTable) {
 // enable7516 applies EIP-7516 (BLOBBASEFEE opcode)
 func enable7516(jt *JumpTable) {
 	jt[BLOBBASEFEE] = &operation{
-		// execute:     opBlobBaseFee,
+		execute:     opBlobBaseFee,
 		constantGas: GasQuickStep,
 		minStack:    minStack(0, 1),
 		diffDiff:    diffStack(0, 1),
@@ -338,7 +339,7 @@ func enable6780(jt *JumpTable) {
 	}
 }
 
-// func opExtCodeCopyEIP4762(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+// func opExtCodeCopyEIP4762(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	var (
 // 		stack      = scope.Stack
 // 		a          = stack.pop()
@@ -366,7 +367,7 @@ func enable6780(jt *JumpTable) {
 // // opPush1EIP4762 handles the special case of PUSH1 opcode for EIP-4762, which
 // // need not worry about the adjusted bound logic when adding the PUSHDATA to
 // // the list of access events.
-// func opPush1EIP4762(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+// func opPush1EIP4762(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	var (
 // 		codeLen = uint64(len(scope.Contract.Code))
 // 		integer = new(uint256.Int)
@@ -392,7 +393,7 @@ func enable6780(jt *JumpTable) {
 // }
 
 // func makePushEIP4762(size uint64, pushByteSize int) executionFunc {
-// 	return func(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+// 	return func(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 		var (
 // 			codeLen = len(scope.Contract.Code)
 // 			start   = min(codeLen, int(*pc+1))

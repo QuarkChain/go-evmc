@@ -23,7 +23,7 @@ import (
 )
 
 type (
-	HostFunc func(pc *uint64, e *EVM, scope *ScopeContext) ([]byte, error)
+	HostFunc func(pc *uint64, e *EVMExecutor, scope *ScopeContext) ([]byte, error)
 
 	// executionFunc func(pc *uint64, interpreter *EVMInterpreter, callContext *ScopeContext) ([]byte, error)
 	gasFunc func(*EVM, *Contract, *Stack, *Memory, uint64) (uint64, error) // last parameter is the requested memory size as a uint64
@@ -127,7 +127,7 @@ func newShanghaiInstructionSet() JumpTable {
 func newMergeInstructionSet() JumpTable {
 	instructionSet := newLondonInstructionSet()
 	instructionSet[PREVRANDAO] = &operation{
-		// execute:     opRandom,
+		execute:     opRandom,
 		constantGas: GasQuickStep,
 		minStack:    minStack(0, 1),
 		diffDiff:    diffStack(0, 1),
@@ -187,7 +187,7 @@ func newConstantinopleInstructionSet() JumpTable {
 		diffDiff:    diffStack(2, 1),
 	}
 	instructionSet[EXTCODEHASH] = &operation{
-		// execute:     opExtCodeHash,
+		execute:     opExtCodeHash,
 		constantGas: params.ExtcodeHashGasConstantinople,
 		minStack:    minStack(1, 1),
 		diffDiff:    diffStack(1, 1),
@@ -242,7 +242,7 @@ func newByzantiumInstructionSet() JumpTable {
 // EIP 158 a.k.a Spurious Dragon
 func newSpuriousDragonInstructionSet() JumpTable {
 	instructionSet := newTangerineWhistleInstructionSet()
-	// instructionSet[EXP].dynamicGas = gasExpEIP158
+	instructionSet[EXP].dynamicGas = gasExpEIP158
 	return validate(instructionSet)
 }
 
@@ -339,10 +339,10 @@ func newFrontierInstructionSet() JumpTable {
 			diffDiff:    diffStack(3, 1),
 		},
 		EXP: {
-			// execute:    opExp,
-			// // dynamicGas: gasExpFrontier,
-			minStack: minStack(2, 1),
-			diffDiff: diffStack(2, 1),
+			execute:    opExp,
+			dynamicGas: gasExpFrontier,
+			minStack:   minStack(2, 1),
+			diffDiff:   diffStack(2, 1),
 		},
 		SIGNEXTEND: {
 			// execute:     opSignExtend,
@@ -417,12 +417,12 @@ func newFrontierInstructionSet() JumpTable {
 			diffDiff:    diffStack(2, 1),
 		},
 		KECCAK256: {
-			// execute:     opKeccak256,
+			execute:     opKeccak256,
 			constantGas: params.Keccak256Gas,
-			// // dynamicGas:  gasKeccak256,
-			minStack: minStack(2, 1),
-			diffDiff: diffStack(2, 1),
-			// // memorySize:  memoryKeccak256,
+			dynamicGas:  gasKeccak256,
+			minStack:    minStack(2, 1),
+			diffDiff:    diffStack(2, 1),
+			memorySize:  memoryKeccak256,
 		},
 		ADDRESS: {
 			execute:     opAddress,
@@ -431,7 +431,7 @@ func newFrontierInstructionSet() JumpTable {
 			diffDiff:    diffStack(0, 1),
 		},
 		BALANCE: {
-			// execute:     opBalance,
+			execute:     opBalance,
 			constantGas: params.BalanceGasFrontier,
 			minStack:    minStack(1, 1),
 			diffDiff:    diffStack(1, 1),
@@ -449,30 +449,30 @@ func newFrontierInstructionSet() JumpTable {
 			diffDiff:    diffStack(0, 1),
 		},
 		CALLVALUE: {
-			// execute:     opCallValue,
+			execute:     opCallValue,
 			constantGas: GasQuickStep,
 			minStack:    minStack(0, 1),
 			diffDiff:    diffStack(0, 1),
 		},
 		CALLDATALOAD: {
-			// execute:     opCallDataLoad,
+			execute:     opCallDataLoad,
 			constantGas: GasFastestStep,
 			minStack:    minStack(1, 1),
 			diffDiff:    diffStack(1, 1),
 		},
 		CALLDATASIZE: {
-			// execute:     opCallDataSize,
+			execute:     opCallDataSize,
 			constantGas: GasQuickStep,
 			minStack:    minStack(0, 1),
 			diffDiff:    diffStack(0, 1),
 		},
 		CALLDATACOPY: {
-			// execute:     opCallDataCopy,
+			execute:     opCallDataCopy,
 			constantGas: GasFastestStep,
-			// // dynamicGas:  gasCallDataCopy,
-			minStack: minStack(3, 0),
-			diffDiff: diffStack(3, 0),
-			// // memorySize:  memoryCallDataCopy,
+			dynamicGas:  gasCallDataCopy,
+			minStack:    minStack(3, 0),
+			diffDiff:    diffStack(3, 0),
+			memorySize:  memoryCallDataCopy,
 		},
 		CODESIZE: {
 			// execute:     opCodeSize,
@@ -489,13 +489,13 @@ func newFrontierInstructionSet() JumpTable {
 			// // memorySize:  memoryCodeCopy,
 		},
 		GASPRICE: {
-			// execute:     opGasprice,
+			execute:     opGasprice,
 			constantGas: GasQuickStep,
 			minStack:    minStack(0, 1),
 			diffDiff:    diffStack(0, 1),
 		},
 		EXTCODESIZE: {
-			// execute:     opExtCodeSize,
+			execute:     opExtCodeSize,
 			constantGas: params.ExtcodeSizeGasFrontier,
 			minStack:    minStack(1, 1),
 			diffDiff:    diffStack(1, 1),
@@ -521,13 +521,13 @@ func newFrontierInstructionSet() JumpTable {
 			diffDiff:    diffStack(0, 1),
 		},
 		TIMESTAMP: {
-			// execute:     opTimestamp,
+			execute:     opTimestamp,
 			constantGas: GasQuickStep,
 			minStack:    minStack(0, 1),
 			diffDiff:    diffStack(0, 1),
 		},
 		NUMBER: {
-			// execute:     opNumber,
+			execute:     opNumber,
 			constantGas: GasQuickStep,
 			minStack:    minStack(0, 1),
 			diffDiff:    diffStack(0, 1),
@@ -539,7 +539,7 @@ func newFrontierInstructionSet() JumpTable {
 			diffDiff:    diffStack(0, 1),
 		},
 		GASLIMIT: {
-			// execute:     opGasLimit,
+			execute:     opGasLimit,
 			constantGas: GasQuickStep,
 			minStack:    minStack(0, 1),
 			diffDiff:    diffStack(0, 1),
@@ -1049,14 +1049,14 @@ func newFrontierInstructionSet() JumpTable {
 			diffDiff: diffStack(3, 1),
 			// memorySize:  memoryCreate,
 		},
-		CALL: {
-			// execute:     opCall,
-			constantGas: params.CallGasFrontier,
-			// dynamicGas:  gasCall,
-			minStack: minStack(7, 1),
-			diffDiff: diffStack(7, 1),
-			// memorySize:  memoryCall,
-		},
+		// CALL: {
+		// 	execute:     opCall,
+		// 	constantGas: params.CallGasFrontier,
+		// 	dynamicGas:  gasCall,
+		// 	minStack:    minStack(7, 1),
+		// 	diffDiff:    diffStack(7, 1),
+		// 	memorySize:  memoryCall,
+		// },
 		CALLCODE: {
 			// execute:     opCallCode,
 			constantGas: params.CallGasFrontier,

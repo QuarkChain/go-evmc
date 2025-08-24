@@ -11,6 +11,7 @@ import (
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"tinygo.org/x/go-llvm"
 )
 
@@ -27,13 +28,19 @@ type EVMExecutor struct {
 	module llvm.Module
 	engine *llvm.ExecutionEngine
 
-	evm *EVM
-
 	hostFuncType llvm.Type
 	hostFunc     llvm.Value
 
 	loadedContracts map[common.Hash]bool
-	table           *JumpTable
+
+	evm   *EVM
+	table *JumpTable
+
+	hasher    crypto.KeccakState // Keccak256 hasher instance shared across opcodes
+	hasherBuf common.Hash        // Keccak256 hasher result array shared across opcodes
+
+	readOnly   bool   // Whether to throw on stateful modifications
+	returnData []byte // Last CALL's return data for subsequent reuse
 }
 
 // ScopeContext is the current context of the call.
@@ -74,6 +81,7 @@ func NewEVMExecutor(evm *EVM) *EVMExecutor {
 		hostFunc:        hostFunc,
 		loadedContracts: make(map[common.Hash]bool),
 		table:           table,
+		hasher:          crypto.NewKeccakState(),
 	}
 	e.addGlobalMappingForHostFunctions()
 	return e
@@ -117,6 +125,7 @@ func (e *EVMExecutor) Run(contract Contract, input []byte, readOnly bool) (ret *
 	}
 
 	defer returnStack(stack)
+	contract.Input = input
 
 	// Execute using function pointer
 	inst := createExecutionInstance(e)
