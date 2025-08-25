@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -13,7 +14,7 @@ import (
 
 var defaultExecutionOpts = EVMExecutionOpts{
 	Config: &runtime.Config{
-		ChainConfig: params.TestChainConfig,
+		ChainConfig: params.AllDevChainProtocolChanges,
 	},
 }
 
@@ -545,105 +546,122 @@ func BenchmarkEVMExecuteMemoryOperations(b *testing.B) {
 	}
 }
 
-func BenchmarkEVMExecuteFibWithSectionGasOptimization(b *testing.B) {
-	comp := NewEVMCompiler()
-	defer comp.Dispose()
-
-	// Pre-compile
-	n := uint32(1000000)
-	err := comp.CompileAndOptimize(GetFibCode(n))
-	if err != nil {
-		b.Fatalf("Compilation failed: %v", err)
-	}
-	err = comp.CreateExecutor(&defaultExecutionOpts)
-	if err != nil {
-		b.Fatalf("Engine failed: %v", err)
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, err := comp.Execute(&EVMExecutionOpts{Config: &runtime.Config{GasLimit: uint64(n) * 100}})
-		if err != nil {
-			b.Fatalf("Execution failed: %v", err)
-		}
-	}
-}
-
-func BenchmarkEVMExecuteFibWithGas(b *testing.B) {
-	comp := NewEVMCompiler()
-	defer comp.Dispose()
-
-	// Pre-compile
-	n := uint32(1000000)
-	copts := DefaultEVMCompilationOpts()
-	copts.DisableSectionGasOptimization = true
-	err := comp.CompileAndOptimizeWithOpts(GetFibCode(n), copts)
-	if err != nil {
-		b.Fatalf("Compilation failed: %v", err)
-	}
-	err = comp.CreateExecutor(&defaultExecutionOpts)
-	if err != nil {
-		b.Fatalf("Engine failed: %v", err)
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, err := comp.Execute(&EVMExecutionOpts{Config: &runtime.Config{GasLimit: uint64(n) * 100}})
-		if err != nil {
-			b.Fatalf("Execution failed: %v", err)
-		}
-	}
-}
-
-func BenchmarkEVMExecuteFibWithoutGas(b *testing.B) {
-	comp := NewEVMCompiler()
-	defer comp.Dispose()
-
-	// Pre-compile
-	n := uint32(1000000)
-	err := comp.CompileAndOptimizeWithOpts(GetFibCode(n), &EVMCompilationOpts{DisableGas: true})
-	if err != nil {
-		b.Fatalf("Compilation failed: %v", err)
-	}
-	err = comp.CreateExecutor(&defaultExecutionOpts)
-	if err != nil {
-		b.Fatalf("Engine failed: %v", err)
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, err := comp.Execute(&EVMExecutionOpts{Config: &runtime.Config{GasLimit: uint64(n) * 100}})
-		if err != nil {
-			b.Fatalf("Execution failed: %v", err)
-		}
-	}
-}
-
-func BenchmarkNativeExecuteFib(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		a := Fib(1000000)
-		if a.CmpUint64(0) == 0 {
-			b.Fatal()
-		}
-	}
-}
-
 type dummyStatedb struct {
 	state.StateDB
 }
 
-func BenchmarkEVMExecuteFibInterp(b *testing.B) {
+func benchmarkNoGas(b *testing.B, code, input []byte, gas uint64) {
+	comp := NewEVMCompiler()
+	defer comp.Dispose()
+
+	// Pre-compile
+	err := comp.CompileAndOptimizeWithOpts(code, &EVMCompilationOpts{DisableGas: true})
+	if err != nil {
+		b.Fatalf("Compilation failed: %v", err)
+	}
+	err = comp.CreateExecutor(&defaultExecutionOpts)
+	if err != nil {
+		b.Fatalf("Engine failed: %v", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := comp.Execute(&EVMExecutionOpts{Config: &runtime.Config{GasLimit: gas}, Input: input})
+		if err != nil {
+			b.Fatalf("Execution failed: %v", err)
+		}
+	}
+}
+
+func benchmarkGas(b *testing.B, code, input []byte, gas uint64) {
+	comp := NewEVMCompiler()
+	defer comp.Dispose()
+
+	// Pre-compile
+	err := comp.CompileAndOptimizeWithOpts(code, &EVMCompilationOpts{DisableSectionGasOptimization: true})
+	if err != nil {
+		b.Fatalf("Compilation failed: %v", err)
+	}
+	err = comp.CreateExecutor(&defaultExecutionOpts)
+	if err != nil {
+		b.Fatalf("Engine failed: %v", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := comp.Execute(&EVMExecutionOpts{Config: &runtime.Config{GasLimit: gas}, Input: input})
+		if err != nil {
+			b.Fatalf("Execution failed: %v", err)
+		}
+	}
+}
+
+func benchmarkSectionGas(b *testing.B, code, input []byte, gas uint64) {
+	comp := NewEVMCompiler()
+	defer comp.Dispose()
+
+	// Pre-compile
+	err := comp.CompileAndOptimizeWithOpts(code, &EVMCompilationOpts{})
+	if err != nil {
+		b.Fatalf("Compilation failed: %v", err)
+	}
+	err = comp.CreateExecutor(&defaultExecutionOpts)
+	if err != nil {
+		b.Fatalf("Engine failed: %v", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := comp.Execute(&EVMExecutionOpts{Config: &runtime.Config{GasLimit: gas}, Input: input})
+		if err != nil {
+			b.Fatalf("Execution failed: %v", err)
+		}
+	}
+}
+
+func benchmarkInterpertor(b *testing.B, code, input []byte, gas uint64) {
 	var (
-		n   = uint64(1000000)
-		evm = vm.NewEVM(vm.BlockContext{}, &dummyStatedb{}, params.TestChainConfig, vm.Config{})
+		bctx = vm.BlockContext{BlockNumber: big.NewInt(0), Random: &common.Hash{}}
+		evm  = vm.NewEVM(bctx, &dummyStatedb{}, params.AllDevChainProtocolChanges, vm.Config{})
 	)
 
 	for i := 0; i < b.N; i++ {
-		contract := vm.NewContract(common.Address{}, common.Address{}, new(uint256.Int), n*100, nil)
-		contract.Code = GetFibCode(uint32(n))
-		_, err := evm.Interpreter().Run(contract, []byte{}, false)
+		contract := vm.NewContract(common.Address{}, common.Address{}, new(uint256.Int), gas, nil)
+		contract.Code = code
+		_, err := evm.Interpreter().Run(contract, input, false)
 		if err != nil {
 			b.Fatal(err)
 		}
 	}
+}
+
+func benchmarkEVM(b *testing.B, code, input []byte, gas uint64) {
+	b.Run("NoGas", func(b *testing.B) { benchmarkNoGas(b, code, input, gas) })
+	b.Run("Gas", func(b *testing.B) { benchmarkGas(b, code, input, gas) })
+	b.Run("Section", func(b *testing.B) { benchmarkSectionGas(b, code, input, gas) })
+	b.Run("Interp", func(b *testing.B) { benchmarkInterpertor(b, code, input, gas) })
+}
+
+func BenchmarkEVMExecuteFibCode(b *testing.B) {
+	n := uint64(1000000)
+	code := GetFibCode(uint32(n))
+	input := []byte{}
+	gas := n * 100
+	benchmarkEVM(b, code, input, gas)
+}
+
+func BenchmarkEVMExecuteFibCalldata(b *testing.B) {
+	n := uint64(100000)
+	code := common.Hex2Bytes("5f355f60015b8215601a578181019150909160019003916005565b9150505f5260205ff3")
+	input := uint256.NewInt(n).PaddedBytes(32)
+	gas := n * 100
+	benchmarkEVM(b, code, input, gas)
+}
+
+func BenchmarkEVMExecuteFactorial(b *testing.B) {
+	n := uint64(100000)
+	code := common.Hex2Bytes("5f355f60015b8215601b57906001018091029160019003916005565b9150505f5260205ff3")
+	input := uint256.NewInt(n).PaddedBytes(32)
+	gas := n * 100
+	benchmarkEVM(b, code, input, gas)
 }

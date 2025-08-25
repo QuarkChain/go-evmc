@@ -74,11 +74,8 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 	c.builder.CreateStore(llvm.ConstInt(c.ctx.Int64Type(), 0, false), stackPtr)
 
 	// Initialize gasPtr tracking
-	var gasPtr llvm.Value
-	if !opts.DisableGas {
-		gasPtr = c.builder.CreateAlloca(c.ctx.Int64Type(), "gas_used")
-		c.builder.CreateStore(gasLimitParam, gasPtr)
-	}
+	gasPtr := c.builder.CreateAlloca(c.ctx.Int64Type(), "gas_used")
+	c.builder.CreateStore(gasLimitParam, gasPtr)
 
 	// Create out-of-gas block
 	errorBlock := llvm.AddBasicBlock(execFunc, "error")
@@ -528,7 +525,7 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 		c.builder.CreateBr(exitBlock)
 
 	default:
-		if instr.Opcode >= PUSH1 && instr.Opcode <= PUSH32 {
+		if instr.Opcode >= PUSH0 && instr.Opcode <= PUSH32 {
 			c.compilePushStatic(instr, stack, stackPtr, nextBlock)
 		} else if instr.Opcode >= DUP1 && instr.Opcode <= DUP16 {
 			c.compileDupStatic(instr, stack, stackPtr, nextBlock)
