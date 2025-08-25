@@ -2,10 +2,13 @@ package compiler
 
 import (
 	"bytes"
+	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -13,6 +16,10 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
+)
+
+var (
+	defaultHashFn = core.GetHashFn(fakeHeader(100, common.Hash{}), &dummyChain{})
 )
 
 // Helper function to create a 32-byte value (machine format) from a uint64
@@ -53,6 +60,45 @@ func hexToLittleEndianBytes32(val string) [32]byte {
 
 func getExpectedStatus(status ExecutionStatus) *ExecutionStatus {
 	return &status
+}
+
+func fakeHeader(n uint64, parentHash common.Hash) *types.Header {
+	header := types.Header{
+		Coinbase:   common.HexToAddress("0x00000000000000000000000000000000deadbeef"),
+		Number:     big.NewInt(int64(n)),
+		ParentHash: parentHash,
+		Time:       1000,
+		Nonce:      types.BlockNonce{0x1},
+		Extra:      []byte{},
+		Difficulty: big.NewInt(0),
+		GasLimit:   100000,
+	}
+	return &header
+}
+
+type dummyChain struct {
+	counter int
+}
+
+// Engine retrieves the chain's consensus engine.
+func (d *dummyChain) Engine() consensus.Engine {
+	return nil
+}
+
+// GetHeader returns the hash corresponding to their hash.
+func (d *dummyChain) GetHeader(h common.Hash, n uint64) *types.Header {
+	d.counter++
+	parentHash := common.Hash{}
+	s := common.LeftPadBytes(big.NewInt(int64(n-1)).Bytes(), 32)
+	copy(parentHash[:], s)
+
+	//parentHash := common.Hash{byte(n - 1)}
+	//fmt.Printf("GetHeader(%x, %d) => header with parent %x\n", h, n, parentHash)
+	return fakeHeader(n, parentHash)
+}
+
+func (d *dummyChain) Config() *params.ChainConfig {
+	return nil
 }
 
 // Test case structure for opcode tests
@@ -114,6 +160,7 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 			BaseFee:     defaultBaseFee,
 			BlobBaseFee: defaultBlobBaseFee,
 			BlobHashes:  defaultBlobHashes,
+			GetHashFn:   defaultHashFn,
 		},
 		Input: defaultInput[:],
 	}
@@ -1836,6 +1883,30 @@ func TestOpcodeBlockContext(t *testing.T) {
 				return buf
 			}()},
 			expectedGas: 2 + 100,
+		},
+		{
+			name: "BLOCKHASH",
+			bytecode: []byte{
+				0x60, 0x01, // PUSH 1 (blockNumber, default max:100)
+				0x40, // BLOCKHASH
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{func() [32]byte {
+				var buf [32]byte
+				CopyFromBigToMachine(defaultHashFn(0x01).Bytes(), buf[:])
+				return buf
+			}()},
+			expectedGas: 3 + 20,
+		},
+		{
+			name: "BLOCKHASH_OOB",
+			bytecode: []byte{
+				0x60, 0xff, // PUSH 1 (blockNumber, default max:100)
+				0x40, // BLOCKHASH
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0)},
+			expectedGas:   3 + 20,
 		},
 		{
 			name: "COINBASE",
