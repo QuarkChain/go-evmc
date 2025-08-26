@@ -159,9 +159,13 @@ func (c *EVMCompiler) analyzeProgram(instructions []EVMInstruction) *PCAnalysis 
 	// Build PC to instruction mapping and identify jump targets
 	sectionGas := uint64(0)
 	sectionStartPC := -1
+	minStack := 0
 	for i := range instructions {
 		instr := &instructions[i]
 		analysis.pcToInstruction[instr.PC] = instr
+		instr.MinStack = minStack
+		// minStack = max(0, pop, minStack+pop-push)
+		minStack = max(max(0, minStack+c.table[instr.Opcode].diffStack), c.table[instr.Opcode].diffStack+c.table[instr.Opcode].minStack)
 
 		sectionGas += c.table[instr.Opcode].constantGas
 
@@ -189,6 +193,8 @@ func (c *EVMCompiler) analyzeProgram(instructions []EVMInstruction) *PCAnalysis 
 				if instr.Opcode == JUMPDEST {
 					sectionStartPC = int(instr.PC)
 					sectionGas = c.table[instr.Opcode].constantGas
+					// reset minStack - always assume the stack is empty (worst case) when a section begins
+					minStack = 0
 				} else {
 					// JUMPI
 					sectionStartPC = int(instr.PC) + 1
@@ -225,6 +231,14 @@ func (c *EVMCompiler) checkHostReturn(ret, errorCodePtr llvm.Value, nextBlock, e
 func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, stack, stackPtr, gasPtr, errorCodePtr llvm.Value, analysis *PCAnalysis, nextBlock, exitBlock, errorBlock llvm.BasicBlock, opts *EVMCompilationOpts) {
 	uint256Type := c.ctx.IntType(256)
 
+	// If the code is unsupported, return error
+	if c.table[instr.Opcode].undefined {
+		// Store error code and exit
+		c.builder.CreateStore(llvm.ConstInt(c.ctx.Int64Type(), uint64(ExecutionUnsupportedOpcode), false), errorCodePtr)
+		c.builder.CreateBr(errorBlock)
+		return
+	}
+
 	// Add gas consumption for this instruction
 	if !opts.DisableGas {
 		if opts.DisableSectionGasOptimization {
@@ -237,18 +251,20 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 
 	// Check stack overflow/underflow
 	stackPtrVal := c.builder.CreateLoad(c.ctx.Int32Type(), stackPtr, "")
-	c.checkStackUnderflow(stackPtrVal, uint64(c.table[instr.Opcode].minStack), errorCodePtr, errorBlock)
-	c.checkStackOverflow(stackPtrVal, c.table[instr.Opcode].diffDiff, errorCodePtr, errorBlock)
+	if opts.DisableStackUnderflowOptimization || instr.MinStack < c.table[instr.Opcode].minStack {
+		c.checkStackUnderflow(stackPtrVal, uint64(c.table[instr.Opcode].minStack), errorCodePtr, errorBlock)
+	}
+	c.checkStackOverflow(stackPtrVal, c.table[instr.Opcode].diffStack, errorCodePtr, errorBlock)
 
 	// Check if it is host function
 	if c.table[instr.Opcode].execute != nil {
 		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, stackPtr}, "")
-		if c.table[instr.Opcode].diffDiff < 0 {
-			for i := 0; i < -c.table[instr.Opcode].diffDiff; i++ {
+		if c.table[instr.Opcode].diffStack < 0 {
+			for i := 0; i < -c.table[instr.Opcode].diffStack; i++ {
 				c.popStack(stack, stackPtr)
 			}
 		} else {
-			for i := 0; i < c.table[instr.Opcode].diffDiff; i++ {
+			for i := 0; i < c.table[instr.Opcode].diffStack; i++ {
 				c.pushStackEmpty(stackPtr)
 			}
 		}

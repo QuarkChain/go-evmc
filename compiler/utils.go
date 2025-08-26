@@ -135,6 +135,43 @@ func Fib(n int) *uint256.Int {
 	return b
 }
 
+// A fibonacci program to simulate EVM execution
+func FibEVM(n uint64) (*uint256.Int, uint64) {
+	a := uint256.NewInt(0)
+	b := uint256.NewInt(1)
+	l := uint256.NewInt(n)
+	gas := uint64(0) // simulate gas calculation
+	for {
+		gas += 1
+		if l.IsZero() {
+			break
+		}
+		gas += 1
+		a = a.Add(a, b)
+		a, b = b, a
+		l = l.SubUint64(l, 1)
+	}
+	return b, gas
+}
+
+// A fibonacci program to simulate EVM execution
+func FibEVMLoop64(n uint64) (*uint256.Int, uint64) {
+	a := uint256.NewInt(0)
+	b := uint256.NewInt(1)
+	gas := uint64(0) // simulate gas calculation
+	for {
+		gas += 1
+		if n == 0 {
+			break
+		}
+		gas += 1
+		a = a.Add(a, b)
+		a, b = b, a
+		n = n - 1
+	}
+	return b, gas
+}
+
 func GetFibCode(n uint32) []byte {
 	nbs := make([]byte, 4)
 	binary.BigEndian.PutUint32(nbs, n)
