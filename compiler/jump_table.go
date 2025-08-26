@@ -509,7 +509,7 @@ func newFrontierInstructionSet() JumpTable {
 			// // memorySize:  memoryExtCodeCopy,
 		},
 		BLOCKHASH: {
-			// execute:     opBlockhash,
+			execute:     opBlockhash,
 			constantGas: GasExtStep,
 			minStack:    minStack(1, 1),
 			diffDiff:    diffStack(1, 1),

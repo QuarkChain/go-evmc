@@ -420,35 +420,35 @@ func opGasprice(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]by
 	return nil, nil
 }
 
-// func opBlockhash(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	num := scope.Stack.peek()
-// 	num64, overflow := num.Uint64WithOverflow()
-// 	if overflow {
-// 		num.Clear()
-// 		return nil, nil
-// 	}
+func opBlockhash(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	num := scope.Stack.peek()
+	num64, overflow := num.Uint64WithOverflow()
+	if overflow {
+		num.Clear()
+		return nil, nil
+	}
 
-// 	var upper, lower uint64
-// 	upper = interpreter.evm.Context.BlockNumber.Uint64()
-// 	if upper < 257 {
-// 		lower = 0
-// 	} else {
-// 		lower = upper - 256
-// 	}
-// 	if num64 >= lower && num64 < upper {
-// 		res := interpreter.evm.Context.GetHash(num64)
-// 		if witness := interpreter.evm.StateDB.Witness(); witness != nil {
-// 			witness.AddBlockHash(num64)
-// 		}
-// 		if tracer := interpreter.evm.Config.Tracer; tracer != nil && tracer.OnBlockHashRead != nil {
-// 			tracer.OnBlockHashRead(num64, res)
-// 		}
-// 		num.SetBytes(res[:])
-// 	} else {
-// 		num.Clear()
-// 	}
-// 	return nil, nil
-// }
+	var upper, lower uint64
+	upper = interpreter.evm.Context.BlockNumber.Uint64()
+	if upper < 257 {
+		lower = 0
+	} else {
+		lower = upper - 256
+	}
+	if num64 >= lower && num64 < upper {
+		res := interpreter.evm.Context.GetHash(num64)
+		if witness := interpreter.evm.StateDB.Witness(); witness != nil {
+			witness.AddBlockHash(num64)
+		}
+		if tracer := interpreter.evm.Config.Tracer; tracer != nil && tracer.OnBlockHashRead != nil {
+			tracer.OnBlockHashRead(num64, res)
+		}
+		num.SetBytes(res[:])
+	} else {
+		num.Clear()
+	}
+	return nil, nil
+}
 
 func opCoinbase(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 	scope.Stack.push(new(uint256.Int).SetBytes(interpreter.evm.Context.Coinbase.Bytes()))
