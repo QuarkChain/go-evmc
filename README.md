@@ -2,17 +2,16 @@
 
 A high-performance EVM (Ethereum Virtual Machine) bytecode compiler that translates EVM bytecode to LLVM IR and native machine code using Go and LLVM.
 
-Note: The code is in experimental stage!
+Note: The code is in an experimental stage!
 
 ## Features
 
 - **Complete EVM Bytecode Parser**: Supports all standard EVM opcodes including arithmetic, bitwise, comparison, stack, memory, storage, and control flow operations
 - **LLVM IR Generation**: Translates EVM bytecode to optimized LLVM intermediate representation
-- **Stack Management**: Efficient EVM stack simulation using LLVM values
+- **Stack Management**: Efficient EVM stack simulation using LLVM uint256 and Go uint256 exchangeably 
 - **Memory Operations**: Full support for EVM memory operations (MLOAD, MSTORE, MSTORE8)
 - **Control Flow**: Proper handling of jumps, conditional jumps, and jump destinations
 - **Optimization Passes**: Built-in LLVM optimization pipeline
-- **EVMC Integration**: Compatible with EVMC (Ethereum Client-VM Connector API)
 - **Multiple Output Formats**: Generate LLVM IR (.ll), object files (.o), and assembly (.asm)
 
 ## Architecture
