@@ -555,7 +555,7 @@ func benchmarkNoGas(b *testing.B, code, input []byte, gas uint64) {
 	defer comp.Dispose()
 
 	// Pre-compile
-	err := comp.CompileAndOptimizeWithOpts(code, &EVMCompilationOpts{DisableGas: true})
+	err := comp.CompileAndOptimizeWithOpts(code, &EVMCompilationOpts{DisableGas: true, ChainRules: params.Rules{IsOsaka: true}})
 	if err != nil {
 		b.Fatalf("Compilation failed: %v", err)
 	}
@@ -566,9 +566,9 @@ func benchmarkNoGas(b *testing.B, code, input []byte, gas uint64) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := comp.Execute(&EVMExecutionOpts{Config: &runtime.Config{GasLimit: gas}, Input: input})
-		if err != nil {
-			b.Fatalf("Execution failed: %v", err)
+		res, err := comp.Execute(&EVMExecutionOpts{Config: &runtime.Config{GasLimit: gas}, Input: input})
+		if err != nil || res.Status != ExecutionSuccess {
+			b.Fatalf("Execution failed: %v, %v", err, res.Status)
 		}
 	}
 }
@@ -578,7 +578,7 @@ func benchmarkGas(b *testing.B, code, input []byte, gas uint64) {
 	defer comp.Dispose()
 
 	// Pre-compile
-	err := comp.CompileAndOptimizeWithOpts(code, &EVMCompilationOpts{DisableSectionGasOptimization: true})
+	err := comp.CompileAndOptimizeWithOpts(code, &EVMCompilationOpts{DisableSectionGasOptimization: true, ChainRules: params.Rules{IsOsaka: true}})
 	if err != nil {
 		b.Fatalf("Compilation failed: %v", err)
 	}
@@ -589,9 +589,9 @@ func benchmarkGas(b *testing.B, code, input []byte, gas uint64) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := comp.Execute(&EVMExecutionOpts{Config: &runtime.Config{GasLimit: gas}, Input: input})
-		if err != nil {
-			b.Fatalf("Execution failed: %v", err)
+		res, err := comp.Execute(&EVMExecutionOpts{Config: &runtime.Config{GasLimit: gas}, Input: input})
+		if err != nil || res.Status != ExecutionSuccess {
+			b.Fatalf("Execution failed: %v, %v", err, res.Status)
 		}
 	}
 }
@@ -601,7 +601,7 @@ func benchmarkSectionGas(b *testing.B, code, input []byte, gas uint64) {
 	defer comp.Dispose()
 
 	// Pre-compile
-	err := comp.CompileAndOptimizeWithOpts(code, &EVMCompilationOpts{})
+	err := comp.CompileAndOptimizeWithOpts(code, &EVMCompilationOpts{ChainRules: params.Rules{IsOsaka: true}})
 	if err != nil {
 		b.Fatalf("Compilation failed: %v", err)
 	}
@@ -612,9 +612,9 @@ func benchmarkSectionGas(b *testing.B, code, input []byte, gas uint64) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := comp.Execute(&EVMExecutionOpts{Config: &runtime.Config{GasLimit: gas}, Input: input})
-		if err != nil {
-			b.Fatalf("Execution failed: %v", err)
+		res, err := comp.Execute(&EVMExecutionOpts{Config: &runtime.Config{GasLimit: gas}, Input: input})
+		if err != nil || res.Status != ExecutionSuccess {
+			b.Fatalf("Execution failed: %v, %v", err, res.Status)
 		}
 	}
 }
@@ -632,6 +632,11 @@ func benchmarkInterpertor(b *testing.B, code, input []byte, gas uint64) {
 		if err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+func benchmarkFunc(b *testing.B, f func()) {
+	for i := 0; i < b.N; i++ {
+		f()
 	}
 }
 
@@ -656,6 +661,16 @@ func BenchmarkEVMExecuteFibCalldata(b *testing.B) {
 	input := uint256.NewInt(n).PaddedBytes(32)
 	gas := n * 100
 	benchmarkEVM(b, code, input, gas)
+	b.Run("NativeGas", func(b *testing.B) {
+		benchmarkFunc(b, func() {
+			_, _ = FibEVM(n)
+		})
+	})
+	b.Run("NativeGasLoop64", func(b *testing.B) {
+		benchmarkFunc(b, func() {
+			_, _ = FibEVMLoop64(n)
+		})
+	})
 }
 
 func BenchmarkEVMExecuteFactorial(b *testing.B) {

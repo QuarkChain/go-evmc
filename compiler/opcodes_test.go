@@ -1649,6 +1649,13 @@ func TestOpcodeErrorConditions(t *testing.T) {
 			},
 			expectedStatus: getExpectedStatus(ExecutionInvalidJumpDest),
 		},
+		{
+			name: "UNSUPPORTED_OPCODE",
+			bytecode: []byte{
+				0xBB,
+			},
+			expectedStatus: getExpectedStatus(ExecutionUnsupportedOpcode),
+		},
 	}
 
 	for _, tc := range testCases {

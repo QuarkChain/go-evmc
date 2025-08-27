@@ -36,9 +36,10 @@ type EVMCompiler struct {
 }
 
 type EVMInstruction struct {
-	Opcode OpCode
-	Data   []byte
-	PC     uint64
+	Opcode   OpCode
+	Data     []byte
+	PC       uint64
+	MinStack int // Minimum stack after static analysis
 }
 
 type EVMExecutionResult struct {
@@ -71,11 +72,12 @@ var defaultBaseFee = big.NewInt(103)
 var defaultBlobBaseFee = big.NewInt(104)
 
 type EVMCompilationOpts struct {
-	DisableGas                    bool
-	DisableSectionGasOptimization bool
-	ContractAddress               common.Address // The address of the contract to be compiled
-	ChainRules                    params.Rules
-	ExtraEips                     []int
+	DisableGas                        bool
+	DisableSectionGasOptimization     bool
+	DisableStackUnderflowOptimization bool
+	ContractAddress                   common.Address // The address of the contract to be compiled
+	ChainRules                        params.Rules
+	ExtraEips                         []int
 }
 
 func DefaultEVMCompilationOpts() *EVMCompilationOpts {
@@ -101,6 +103,7 @@ const (
 	ExecutionStackOverflow
 	ExecutionStackUnderflow
 	ExecutionInvalidJumpDest
+	ExecutionUnsupportedOpcode
 	ExecutionUnknown
 )
 
