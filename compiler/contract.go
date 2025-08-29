@@ -24,13 +24,12 @@ type Contract struct {
 }
 
 // NewContract returns a new contract environment for the execution of EVM.
-func NewContract(caller common.Address, address common.Address, value *uint256.Int, gas uint64, codeHash common.Hash) *Contract {
+func NewContract(caller common.Address, address common.Address, value *uint256.Int, gas uint64) *Contract {
 	return &Contract{
-		caller:   caller,
-		address:  address,
-		CodeHash: codeHash,
-		Gas:      gas,
-		value:    value,
+		caller:  caller,
+		address: address,
+		Gas:     gas,
+		value:   value,
 	}
 }
 
@@ -71,4 +70,10 @@ func (c *Contract) RefundGas(gas uint64, logger *tracing.Hooks, reason tracing.G
 		logger.OnGasChange(c.Gas, c.Gas+gas, reason)
 	}
 	c.Gas += gas
+}
+
+// SetCallCode sets the code of the contract
+func (c *Contract) SetCallCode(hash common.Hash, code []byte) {
+	c.Code = code
+	c.CodeHash = hash
 }

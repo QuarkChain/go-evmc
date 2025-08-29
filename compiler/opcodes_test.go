@@ -101,17 +101,41 @@ func (d *dummyChain) Config() *params.ChainConfig {
 	return nil
 }
 
+func NewTestExecutor(copts *EVMCompilationOpts, loaderFn MakeLoader) *EVMExecutor {
+	eopts := &EVMExecutionOpts{
+		Config: &runtime.Config{
+			ChainConfig: params.AllDevChainProtocolChanges,
+		},
+	}
+	evm := NewEnv(eopts.Config)
+	if copts == nil {
+		copts = DefaultEVMCompilationOpts()
+	}
+	if loaderFn == nil {
+		loaderFn = MakeCompilerLoader
+	}
+	return evm.SetExecutor(copts, loaderFn)
+}
+
+func (e *EVMExecutor) RunBytecode(bytecode, input []byte, gasLimit uint64) (*EVMExecutionResult, error) {
+	contract := NewContract(defaultCallerAddress, defaultCompilationAddress, common.U2560, gasLimit)
+	codeHash := crypto.Keccak256Hash(bytecode)
+	contract.SetCallCode(codeHash, bytecode)
+	return e.Run(contract, input, false)
+}
+
 // Test case structure for opcode tests
 type OpcodeTestCase struct {
 	name            string
 	bytecode        []byte
 	gasLimit        uint64
 	expectedStack   [][32]byte       // skip if nil, check machine-endian encoded
-	expectedStatus  *ExecutionStatus // ExecutionSuccess if nil
+	expectedStatus  *ExecutionStatus // VMExecutionSuccess if nil
 	expectedGas     uint64           // skip if 0
 	expectedRefund  uint64
 	expectedMemory  *Memory       // skip if nil, check big-endian encoded
 	expectedStorage state.Storage // skip if nil, check big-endian encoded
+	input           []byte        // contract input for byteCode
 	originStorage   state.Storage
 	originAccount   *types.StateAccount
 	originCode      []byte
@@ -121,11 +145,9 @@ type OpcodeTestCase struct {
 func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 	t.Helper()
 
-	comp := NewEVMCompiler()
-	defer comp.Dispose()
-
-	if testCase.gasLimit == 0 {
-		testCase.gasLimit = 1000000
+	gasLimit := testCase.gasLimit
+	if gasLimit == 0 {
+		gasLimit = 1000000
 	}
 
 	// create a new stateDB for each testCase to avoid state pollution.
@@ -145,10 +167,10 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 	// Finalise stateDB to clear dirty storage and set the above state as original storage
 	stateDB.Finalise(false)
 
-	opts := &EVMExecutionOpts{
+	eopts := &EVMExecutionOpts{
 		Config: &runtime.Config{
-			ChainConfig: params.MergedTestChainConfig,
-			GasLimit:    testCase.gasLimit,
+			ChainConfig: params.AllDevChainProtocolChanges,
+			GasLimit:    gasLimit,
 			GasPrice:    defaultGasPrice,
 			State:       stateDB,
 			Origin:      defaultOriginAddress,
@@ -162,17 +184,24 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 			BlobHashes:  defaultBlobHashes,
 			GetHashFn:   defaultHashFn,
 		},
-		Input: defaultInput[:],
 	}
 
-	result, err := comp.ExecuteCompiledWithOpts(testCase.bytecode, DefaultEVMCompilationOpts(), opts)
+	evm := NewEnv(eopts.Config)
+	copts := DefaultEVMCompilationOpts()
+	evm.SetExecutor(copts, MakeCompilerLoader)
+	defer evm.executor.Dispose()
+
+	contract := NewContract(defaultCallerAddress, defaultCompilationAddress, uint256.MustFromBig(eopts.Config.Value), gasLimit)
+	codeHash := crypto.Keccak256Hash(testCase.bytecode)
+	contract.SetCallCode(codeHash, testCase.bytecode)
+	result, err := evm.executor.Run(contract, testCase.input, false)
 
 	if testCase.expectedStatus != nil {
 		if *testCase.expectedStatus != result.Status {
 			t.Errorf("Expected error %v but got %v", *testCase.expectedStatus, result.Status)
 		}
 		return
-	} else if result.Status != ExecutionSuccess {
+	} else if result.Status != VMExecutionSuccess {
 		t.Errorf("Expected success but got error %v", result.Status)
 	}
 
@@ -1088,7 +1117,7 @@ func TestPushOpcodes(t *testing.T) {
 				}
 				return buf
 			}(),
-			expectedStatus: getExpectedStatus(ExecutionStackOverflow),
+			expectedStatus: getExpectedStatus(VMErrorCodeStackOverflow),
 		},
 	}
 
@@ -1290,7 +1319,7 @@ func TestStorageOpcodes(t *testing.T) {
 			},
 			expectedStack:  [][32]byte{uint64ToBigEndianBytes32(0x00)},
 			gasLimit:       2000,
-			expectedStatus: getExpectedStatus(ExecutionOutOfGas),
+			expectedStatus: getExpectedStatus(VMErrorCodeOutOfGas),
 		},
 		{
 			name: "SSTORE_ORIGIN_0_EQ_CURRENT_EQ_NEW",
@@ -1455,7 +1484,7 @@ func TestStorageOpcodes(t *testing.T) {
 				common.Hash(uint64ToBigEndianBytes32(0x01)): common.Hash(uint64ToBigEndianBytes32(0x00)),
 			},
 			gasLimit:       15000,
-			expectedStatus: getExpectedStatus(ExecutionOutOfGas),
+			expectedStatus: getExpectedStatus(VMErrorCodeOutOfGas),
 		},
 		{
 			name: "SSTORE_SLOAD_ENCODING",
@@ -1610,7 +1639,7 @@ func TestOpcodeErrorConditions(t *testing.T) {
 				0x50, // POP
 				0x00, // STOP
 			},
-			expectedStatus: getExpectedStatus(ExecutionStackUnderflow),
+			expectedStatus: getExpectedStatus(VMErrorCodeStackUnderflow),
 		},
 		{
 			name: "STACK_UNDERFLOW_ADD",
@@ -1619,7 +1648,7 @@ func TestOpcodeErrorConditions(t *testing.T) {
 				0x01, // ADD (needs two operands)
 				0x00, // STOP
 			},
-			expectedStatus: getExpectedStatus(ExecutionStackUnderflow),
+			expectedStatus: getExpectedStatus(VMErrorCodeStackUnderflow),
 		},
 		{
 			name: "STACK_UNDERFLOW_MSTORE",
@@ -1628,7 +1657,7 @@ func TestOpcodeErrorConditions(t *testing.T) {
 				0x52, // MSTORE
 				0x00, // STOP
 			},
-			expectedStatus: getExpectedStatus(ExecutionStackUnderflow),
+			expectedStatus: getExpectedStatus(VMErrorCodeStackUnderflow),
 		},
 		{
 			name: "STACK_UNDERFLOW_ADDMOD",
@@ -1638,7 +1667,7 @@ func TestOpcodeErrorConditions(t *testing.T) {
 				0x08, // ADDMOD
 				0x00, // STOP
 			},
-			expectedStatus: getExpectedStatus(ExecutionStackUnderflow),
+			expectedStatus: getExpectedStatus(VMErrorCodeStackUnderflow),
 		},
 		{
 			name: "INVALID_JUMP_TARGET",
@@ -1647,7 +1676,7 @@ func TestOpcodeErrorConditions(t *testing.T) {
 				0x56, // JUMP
 				0x00, // STOP
 			},
-			expectedStatus: getExpectedStatus(ExecutionInvalidJumpDest),
+			expectedStatus: getExpectedStatus(VMErrorCodeInvalidJump),
 		},
 		{
 			name: "UNSUPPORTED_OPCODE",
@@ -1796,7 +1825,8 @@ func TestOpcodeBlockContext(t *testing.T) {
 			expectedGas: 2,
 		},
 		{
-			name: "CALLDATALOAD",
+			name:  "CALLDATALOAD",
+			input: defaultInput[:],
 			bytecode: []byte{
 				0x60, 0x00, // PUSH1 0x00
 				0x35, // CALLDATALOAD
@@ -1810,7 +1840,8 @@ func TestOpcodeBlockContext(t *testing.T) {
 			expectedGas: 3 + 3,
 		},
 		{
-			name: "CALLDATASIZE",
+			name:  "CALLDATASIZE",
+			input: defaultInput[:],
 			bytecode: []byte{
 				0x36, // CALLDATASIZE
 				0x00, // STOP
@@ -1835,7 +1866,8 @@ func TestOpcodeBlockContext(t *testing.T) {
 			expectedGas: 3*3 + 3,
 		},
 		{
-			name: "CALLDATACOPY_SIZE_N0",
+			name:  "CALLDATACOPY_SIZE_N0",
+			input: defaultInput[:],
 			bytecode: []byte{
 				0x60, 0x20, // PUSH1 0x20 (size to copy)
 				0x60, 0x00, // PUSH1 0 (offset in the calldata)
@@ -2007,7 +2039,7 @@ func TestOpcodeBlockContext(t *testing.T) {
 				0x46, // CHAINID
 				0x00, // STOP
 			},
-			expectedStack: [][32]byte{uint64ToBytes32(params.MergedTestChainConfig.ChainID.Uint64())},
+			expectedStack: [][32]byte{uint64ToBytes32(params.AllDevChainProtocolChanges.ChainID.Uint64())},
 			expectedGas:   2,
 		},
 		{
@@ -2084,10 +2116,73 @@ func TestOpcodeBlockContext(t *testing.T) {
 	}
 }
 
+func TestContractOpcodes(t *testing.T) {
+	testCases := []OpcodeTestCase{
+		{
+			name:       "CALL_SUCCESS",
+			originCode: []byte{0x60, 0x01, 0x00}, // PUSH1 0x00 STOP
+			bytecode: append(
+				[]byte{
+					0x60, 0x00, // PUSH1 0 (retSize)
+					0x60, 0x00, // PUSH1 0 (retOffset)
+					0x60, 0x00, // PUSH1 0 (argsSize)
+					0x60, 0x00, // PUSH1 0 (argsOffset)
+					0x60, 0x00, // PUSH1 0 (value)
+					0x73, // PUSH20
+				},
+				append(
+					defaultCompilationAddress.Bytes(), // ADDRESS
+					0x61, 0xFF, 0xFF,                  // PUSH2 0xFFFF (gas)
+					0xF1, // CALL
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(1)}, // success:1, failure:0
+			expectedMemory: &Memory{
+				store:       []byte{},
+				lastGasCost: 0,
+			},
+			expectedGas: 3*7 + 2500 + 100 + 3,
+		},
+		{
+			name:       "CALL_REVERT",
+			originCode: []byte{0x60, 0x00, 0xFD, 0x00}, // PUSH1 0x00 REVERT STOP
+			bytecode: append(
+				[]byte{
+					0x60, 0x00, // PUSH1 0 (retSize)
+					0x60, 0x00, // PUSH1 0 (retOffset)
+					0x60, 0x00, // PUSH1 0 (argsSize)
+					0x60, 0x00, // PUSH1 0 (argsOffset)
+					0x60, 0x00, // PUSH1 0 (value)
+					0x73, // PUSH20
+				},
+				append(
+					defaultCompilationAddress.Bytes(), // ADDRESS
+					0x61, 0xFF, 0xFF,                  // PUSH2 0xFFFF (gas)
+					0xF1, // CALL
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(0)}, // success:1, failure:0
+			expectedMemory: &Memory{
+				store:       []byte{},
+				lastGasCost: 0,
+			},
+			expectedGas: 3*7 + 2500 + 100 + 3 + 65532,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			runOpcodeTest(t, tc)
+		})
+	}
+}
+
 // Benchmark tests for performance measurement
 func BenchmarkArithmeticOpcodes(b *testing.B) {
-	comp := NewEVMCompiler()
-	defer comp.Dispose()
+	e := NewTestExecutor(nil, nil)
+	defer e.Dispose()
 
 	bytecode := []byte{
 		0x60, 0x05, // PUSH1 5
@@ -2098,7 +2193,7 @@ func BenchmarkArithmeticOpcodes(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := comp.ExecuteCompiled(bytecode)
+		_, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
 		if err != nil {
 			b.Fatalf("Execution failed: %v", err)
 		}
@@ -2106,8 +2201,8 @@ func BenchmarkArithmeticOpcodes(b *testing.B) {
 }
 
 func BenchmarkComplexProgram(b *testing.B) {
-	comp := NewEVMCompiler()
-	defer comp.Dispose()
+	e := NewTestExecutor(nil, nil)
+	defer e.Dispose()
 
 	bytecode := []byte{
 		0x60, 0x05, // PUSH1 5
@@ -2122,7 +2217,7 @@ func BenchmarkComplexProgram(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := comp.ExecuteCompiled(bytecode)
+		_, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
 		if err != nil {
 			b.Fatalf("Execution failed: %v", err)
 		}

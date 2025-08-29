@@ -230,11 +230,11 @@ func newByzantiumInstructionSet() JumpTable {
 		// // memorySize:  memoryReturnDataCopy,
 	}
 	instructionSet[REVERT] = &operation{
-		// execute:    opRevert,
-		// // dynamicGas: gasRevert,
-		minStack:  minStack(2, 0),
-		diffStack: diffStack(2, 0),
-		// // memorySize: memoryRevert,
+		execute:    opRevert,
+		dynamicGas: gasRevert,
+		minStack:   minStack(2, 0),
+		diffStack:  diffStack(2, 0),
+		memorySize: memoryRevert,
 	}
 	return validate(instructionSet)
 }
@@ -1049,14 +1049,14 @@ func newFrontierInstructionSet() JumpTable {
 			diffStack: diffStack(3, 1),
 			// memorySize:  memoryCreate,
 		},
-		// CALL: {
-		// 	execute:     opCall,
-		// 	constantGas: params.CallGasFrontier,
-		// 	dynamicGas:  gasCall,
-		// 	minStack:    minStack(7, 1),
-		// 	diffDiff:    diffStack(7, 1),
-		// 	memorySize:  memoryCall,
-		// },
+		CALL: {
+			execute:     opCall,
+			constantGas: params.CallGasFrontier,
+			dynamicGas:  gasCall,
+			minStack:    minStack(7, 1),
+			diffStack:   diffStack(7, 1),
+			memorySize:  memoryCall,
+		},
 		CALLCODE: {
 			// execute:     opCallCode,
 			constantGas: params.CallGasFrontier,
