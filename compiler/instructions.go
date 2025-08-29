@@ -305,32 +305,32 @@ func opCallDataCopy(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) (
 	return nil, nil
 }
 
-// func opReturnDataSize(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	scope.Stack.push(new(uint256.Int).SetUint64(uint64(len(interpreter.returnData))))
-// 	return nil, nil
-// }
+func opReturnDataSize(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	scope.Stack.push(new(uint256.Int).SetUint64(uint64(len(interpreter.returnData))))
+	return nil, nil
+}
 
-// func opReturnDataCopy(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	var (
-// 		memOffset  = scope.Stack.pop()
-// 		dataOffset = scope.Stack.pop()
-// 		length     = scope.Stack.pop()
-// 	)
+func opReturnDataCopy(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	var (
+		memOffset  = scope.Stack.pop()
+		dataOffset = scope.Stack.pop()
+		length     = scope.Stack.pop()
+	)
 
-// 	offset64, overflow := dataOffset.Uint64WithOverflow()
-// 	if overflow {
-// 		return nil, ErrReturnDataOutOfBounds
-// 	}
-// 	// we can reuse dataOffset now (aliasing it for clarity)
-// 	var end = dataOffset
-// 	end.Add(&dataOffset, &length)
-// 	end64, overflow := end.Uint64WithOverflow()
-// 	if overflow || uint64(len(interpreter.returnData)) < end64 {
-// 		return nil, ErrReturnDataOutOfBounds
-// 	}
-// 	scope.Memory.Set(memOffset.Uint64(), length.Uint64(), interpreter.returnData[offset64:end64])
-// 	return nil, nil
-// }
+	offset64, overflow := dataOffset.Uint64WithOverflow()
+	if overflow {
+		return nil, ErrReturnDataOutOfBounds
+	}
+	// we can reuse dataOffset now (aliasing it for clarity)
+	var end = dataOffset
+	end.Add(&dataOffset, &length)
+	end64, overflow := end.Uint64WithOverflow()
+	if overflow || uint64(len(interpreter.returnData)) < end64 {
+		return nil, ErrReturnDataOutOfBounds
+	}
+	scope.Memory.Set(memOffset.Uint64(), length.Uint64(), interpreter.returnData[offset64:end64])
+	return nil, nil
+}
 
 func opExtCodeSize(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 	slot := scope.Stack.peek()
@@ -338,46 +338,46 @@ func opExtCodeSize(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([
 	return nil, nil
 }
 
-// func opCodeSize(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	scope.Stack.push(new(uint256.Int).SetUint64(uint64(len(scope.Contract.Code))))
-// 	return nil, nil
-// }
+func opCodeSize(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	scope.Stack.push(new(uint256.Int).SetUint64(uint64(len(scope.Contract.Code))))
+	return nil, nil
+}
 
-// func opCodeCopy(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	var (
-// 		memOffset  = scope.Stack.pop()
-// 		codeOffset = scope.Stack.pop()
-// 		length     = scope.Stack.pop()
-// 	)
-// 	uint64CodeOffset, overflow := codeOffset.Uint64WithOverflow()
-// 	if overflow {
-// 		uint64CodeOffset = math.MaxUint64
-// 	}
+func opCodeCopy(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	var (
+		memOffset  = scope.Stack.pop()
+		codeOffset = scope.Stack.pop()
+		length     = scope.Stack.pop()
+	)
+	uint64CodeOffset, overflow := codeOffset.Uint64WithOverflow()
+	if overflow {
+		uint64CodeOffset = math.MaxUint64
+	}
 
-// 	codeCopy := getData(scope.Contract.Code, uint64CodeOffset, length.Uint64())
-// 	scope.Memory.Set(memOffset.Uint64(), length.Uint64(), codeCopy)
-// 	return nil, nil
-// }
+	codeCopy := getData(scope.Contract.Code, uint64CodeOffset, length.Uint64())
+	scope.Memory.Set(memOffset.Uint64(), length.Uint64(), codeCopy)
+	return nil, nil
+}
 
-// func opExtCodeCopy(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	var (
-// 		stack      = scope.Stack
-// 		a          = stack.pop()
-// 		memOffset  = stack.pop()
-// 		codeOffset = stack.pop()
-// 		length     = stack.pop()
-// 	)
-// 	uint64CodeOffset, overflow := codeOffset.Uint64WithOverflow()
-// 	if overflow {
-// 		uint64CodeOffset = math.MaxUint64
-// 	}
-// 	addr := common.Address(a.Bytes20())
-// 	code := interpreter.evm.StateDB.GetCode(addr)
-// 	codeCopy := getData(code, uint64CodeOffset, length.Uint64())
-// 	scope.Memory.Set(memOffset.Uint64(), length.Uint64(), codeCopy)
+func opExtCodeCopy(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	var (
+		stack      = scope.Stack
+		a          = stack.pop()
+		memOffset  = stack.pop()
+		codeOffset = stack.pop()
+		length     = stack.pop()
+	)
+	uint64CodeOffset, overflow := codeOffset.Uint64WithOverflow()
+	if overflow {
+		uint64CodeOffset = math.MaxUint64
+	}
+	addr := common.Address(a.Bytes20())
+	code := interpreter.evm.StateDB.GetCode(addr)
+	codeCopy := getData(code, uint64CodeOffset, length.Uint64())
+	scope.Memory.Set(memOffset.Uint64(), length.Uint64(), codeCopy)
 
-// 	return nil, nil
-// }
+	return nil, nil
+}
 
 // opExtCodeHash returns the code hash of a specified account.
 // There are several cases when the function is called, while we can relay everything

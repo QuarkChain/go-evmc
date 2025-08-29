@@ -1876,15 +1876,29 @@ func TestOpcodeBlockContext(t *testing.T) {
 			},
 			expectedGas: 3*3 + 9,
 		},
-		// {
-		// 	name:       "CODESIZE",
-		// 	bytecode: []byte{
-		// 		0x38, // CODESIZE
-		// 		0x00, // STOP
-		// 	},
-		// 	expectedStack: [][32]byte{uint64ToBytes32(3)},
-		// 	expectedGas:   2,
-		// },
+		{
+			name: "CODESIZE",
+			bytecode: []byte{
+				0x38, 0x00, // CODESIZE STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(2)},
+			expectedGas:   2,
+		},
+		{
+			name: "CODECOPY",
+			bytecode: []byte{
+				0x60, 0x20, // PUSH1 32 (size)
+				0x60, 0x00, // PUSH1 0 (offset)
+				0x60, 0x00, // PUSH1 0 (destOffset)
+				0x39, 0x00, // CODECOPY STOP
+			},
+			expectedStack: [][32]byte{},
+			expectedMemory: &Memory{
+				store:       hexutil.MustDecode("0x6020600060003900000000000000000000000000000000000000000000000000"),
+				lastGasCost: 3,
+			},
+			expectedGas: 3*3 + 3 + 6,
+		},
 		{
 			name: "GASPRICE",
 			bytecode: []byte{
@@ -1915,6 +1929,86 @@ func TestOpcodeBlockContext(t *testing.T) {
 			},
 			expectedStack: [][32]byte{uint64ToBytes32(3)},
 			expectedGas:   2 + 100,
+		},
+		{
+			name:           "EXTCODECOPY",
+			calledCode:     []byte{0x60, 0xFF, 0x00},
+			calledCodeAddr: defaultOriginAddress,
+			bytecode: append(
+				[]byte{
+					0x60, 0x20, // PUSH1 32 (size)
+					0x60, 0x00, // PUSH1 0 (offset)
+					0x60, 0x00, // PUSH1 0 (destOffset)
+					0x73, // PUSH20
+				},
+				append(
+					defaultOriginAddress.Bytes(), // ADDRESS
+					0x3C, 0x00,                   // EXTCODECOPY STOP
+				)...,
+			),
+			expectedStack: [][32]byte{},
+			expectedMemory: &Memory{
+				store:       hexutil.MustDecode("0x60FF000000000000000000000000000000000000000000000000000000000000"),
+				lastGasCost: 3,
+			},
+			expectedGas: 3*4 + 100 + 6,
+		},
+		{
+			name: "RETURNDATASIZE",
+			// a contract that returns 0xFF01
+			calledCode:     hexutil.MustDecode("0x61FF016000526002601EF300"),
+			calledCodeAddr: defaultOriginAddress,
+			bytecode: append(
+				[]byte{
+					0x60, 0x00, // PUSH1 0 (retSize)
+					0x60, 0x00, // PUSH1 0 (retOffset)
+					0x60, 0x00, // PUSH1 0 (argsSize)
+					0x60, 0x00, // PUSH1 0 (argsOffset)
+					0x73, // PUSH20
+				},
+				append(
+					defaultOriginAddress.Bytes(), // ADDRESS
+					0x61, 0xFF, 0xFF,             // PUSH2 0xFFFF (gas)
+					0xFA, // STATICCALL
+					0x50, // POP STATICCALL's return status
+					0x3D, // RETURNDATASIZE
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(2)},
+			expectedGas:   2640,
+		},
+		{
+			name: "RETURNDATACOPY",
+			// a contract that returns 0xFF01
+			calledCode:     hexutil.MustDecode("0x61FF016000526002601EF300"),
+			calledCodeAddr: defaultOriginAddress,
+			bytecode: append(
+				[]byte{
+					0x60, 0x00, // PUSH1 0 (retSize)
+					0x60, 0x00, // PUSH1 0 (retOffset)
+					0x60, 0x00, // PUSH1 0 (argsSize)
+					0x60, 0x00, // PUSH1 0 (argsOffset)
+					0x73, // PUSH20
+				},
+				append(
+					defaultOriginAddress.Bytes(), // ADDRESS
+					0x61, 0xFF, 0xFF,             // PUSH2 0xFFFF (gas)
+					0xFA,       // STATICCALL
+					0x50,       // POP STATICCALL's return status
+					0x60, 0x02, // PUSH1 2 (size)
+					0x60, 0x00, // PUSH1 30 (offset)
+					0x60, 0x00, // PUSH1 0 (destOffset)
+					0x3E, // RETURNDATACOPY
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{},
+			expectedMemory: &Memory{
+				store:       hexutil.MustDecode("0xff01000000000000000000000000000000000000000000000000000000000000"),
+				lastGasCost: 3,
+			},
+			expectedGas: 2656,
 		},
 		{
 			name: "EXTCODEHASH_EMPTY",

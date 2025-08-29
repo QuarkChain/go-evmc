@@ -216,18 +216,18 @@ func newByzantiumInstructionSet() JumpTable {
 		memorySize:  memoryStaticCall,
 	}
 	instructionSet[RETURNDATASIZE] = &operation{
-		// execute:     opReturnDataSize,
+		execute:     opReturnDataSize,
 		constantGas: GasQuickStep,
 		minStack:    minStack(0, 1),
 		diffStack:   diffStack(0, 1),
 	}
 	instructionSet[RETURNDATACOPY] = &operation{
-		// execute:     opReturnDataCopy,
+		execute:     opReturnDataCopy,
 		constantGas: GasFastestStep,
-		// // dynamicGas:  gasReturnDataCopy,
-		minStack:  minStack(3, 0),
-		diffStack: diffStack(3, 0),
-		// // memorySize:  memoryReturnDataCopy,
+		dynamicGas:  gasReturnDataCopy,
+		minStack:    minStack(3, 0),
+		diffStack:   diffStack(3, 0),
+		memorySize:  memoryReturnDataCopy,
 	}
 	instructionSet[REVERT] = &operation{
 		execute:    opRevert,
@@ -475,18 +475,18 @@ func newFrontierInstructionSet() JumpTable {
 			memorySize:  memoryCallDataCopy,
 		},
 		CODESIZE: {
-			// execute:     opCodeSize,
+			execute:     opCodeSize,
 			constantGas: GasQuickStep,
 			minStack:    minStack(0, 1),
 			diffStack:   diffStack(0, 1),
 		},
 		CODECOPY: {
-			// execute:     opCodeCopy,
+			execute:     opCodeCopy,
 			constantGas: GasFastestStep,
-			// // dynamicGas:  gasCodeCopy,
-			minStack:  minStack(3, 0),
-			diffStack: diffStack(3, 0),
-			// // memorySize:  memoryCodeCopy,
+			dynamicGas:  gasCodeCopy,
+			minStack:    minStack(3, 0),
+			diffStack:   diffStack(3, 0),
+			memorySize:  memoryCodeCopy,
 		},
 		GASPRICE: {
 			execute:     opGasprice,
@@ -501,12 +501,12 @@ func newFrontierInstructionSet() JumpTable {
 			diffStack:   diffStack(1, 1),
 		},
 		EXTCODECOPY: {
-			// execute:     opExtCodeCopy,
+			execute:     opExtCodeCopy,
 			constantGas: params.ExtcodeCopyBaseFrontier,
-			// // dynamicGas:  gasExtCodeCopy,
-			minStack:  minStack(4, 0),
-			diffStack: diffStack(4, 0),
-			// // memorySize:  memoryExtCodeCopy,
+			dynamicGas:  gasExtCodeCopy,
+			minStack:    minStack(4, 0),
+			diffStack:   diffStack(4, 0),
+			memorySize:  memoryExtCodeCopy,
 		},
 		BLOCKHASH: {
 			execute:     opBlockhash,
