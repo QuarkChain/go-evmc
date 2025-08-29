@@ -652,84 +652,84 @@ func opSstore(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte
 // 	return nil, nil
 // }
 
-// func opCreate(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	if interpreter.readOnly {
-// 		return nil, ErrWriteProtection
-// 	}
-// 	var (
-// 		value        = scope.Stack.pop()
-// 		offset, size = scope.Stack.pop(), scope.Stack.pop()
-// 		input        = scope.Memory.GetCopy(offset.Uint64(), size.Uint64())
-// 		gas          = scope.Contract.Gas
-// 	)
-// 	if interpreter.evm.chainRules.IsEIP150 {
-// 		gas -= gas / 64
-// 	}
+func opCreate(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	if interpreter.readOnly {
+		return nil, ErrWriteProtection
+	}
+	var (
+		value        = scope.Stack.pop()
+		offset, size = scope.Stack.pop(), scope.Stack.pop()
+		input        = scope.Memory.GetCopy(offset.Uint64(), size.Uint64())
+		gas          = scope.Contract.Gas
+	)
+	if interpreter.evm.chainRules.IsEIP150 {
+		gas -= gas / 64
+	}
 
-// 	// reuse size int for stackvalue
-// 	stackvalue := size
+	// reuse size int for stackvalue
+	stackvalue := size
 
-// 	scope.Contract.UseGas(gas, interpreter.evm.Config.Tracer, tracing.GasChangeCallContractCreation)
+	scope.Contract.UseGas(gas, interpreter.evm.Config.Tracer, tracing.GasChangeCallContractCreation)
 
-// 	res, addr, returnGas, suberr := interpreter.evm.Create(scope.Contract.Address(), input, gas, &value)
-// 	// Push item on the stack based on the returned error. If the ruleset is
-// 	// homestead we must check for CodeStoreOutOfGasError (homestead only
-// 	// rule) and treat as an error, if the ruleset is frontier we must
-// 	// ignore this error and pretend the operation was successful.
-// 	if interpreter.evm.chainRules.IsHomestead && suberr == ErrCodeStoreOutOfGas {
-// 		stackvalue.Clear()
-// 	} else if suberr != nil && suberr != ErrCodeStoreOutOfGas {
-// 		stackvalue.Clear()
-// 	} else {
-// 		stackvalue.SetBytes(addr.Bytes())
-// 	}
-// 	scope.Stack.push(&stackvalue)
+	res, addr, returnGas, suberr := interpreter.evm.Create(scope.Contract.Address(), input, gas, &value)
+	// Push item on the stack based on the returned error. If the ruleset is
+	// homestead we must check for CodeStoreOutOfGasError (homestead only
+	// rule) and treat as an error, if the ruleset is frontier we must
+	// ignore this error and pretend the operation was successful.
+	if interpreter.evm.chainRules.IsHomestead && suberr == ErrCodeStoreOutOfGas {
+		stackvalue.Clear()
+	} else if suberr != nil && suberr != ErrCodeStoreOutOfGas {
+		stackvalue.Clear()
+	} else {
+		stackvalue.SetBytes(addr.Bytes())
+	}
+	scope.Stack.push(&stackvalue)
 
-// 	scope.Contract.RefundGas(returnGas, interpreter.evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
+	scope.Contract.RefundGas(returnGas, interpreter.evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
 
-// 	if suberr == ErrExecutionReverted {
-// 		interpreter.returnData = res // set REVERT data to return data buffer
-// 		return res, nil
-// 	}
-// 	interpreter.returnData = nil // clear dirty return data buffer
-// 	return nil, nil
-// }
+	if suberr == ErrExecutionReverted {
+		interpreter.returnData = res // set REVERT data to return data buffer
+		return res, nil
+	}
+	interpreter.returnData = nil // clear dirty return data buffer
+	return nil, nil
+}
 
-// func opCreate2(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	if interpreter.readOnly {
-// 		return nil, ErrWriteProtection
-// 	}
-// 	var (
-// 		endowment    = scope.Stack.pop()
-// 		offset, size = scope.Stack.pop(), scope.Stack.pop()
-// 		salt         = scope.Stack.pop()
-// 		input        = scope.Memory.GetCopy(offset.Uint64(), size.Uint64())
-// 		gas          = scope.Contract.Gas
-// 	)
+func opCreate2(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	if interpreter.readOnly {
+		return nil, ErrWriteProtection
+	}
+	var (
+		endowment    = scope.Stack.pop()
+		offset, size = scope.Stack.pop(), scope.Stack.pop()
+		salt         = scope.Stack.pop()
+		input        = scope.Memory.GetCopy(offset.Uint64(), size.Uint64())
+		gas          = scope.Contract.Gas
+	)
 
-// 	// Apply EIP150
-// 	gas -= gas / 64
-// 	scope.Contract.UseGas(gas, interpreter.evm.Config.Tracer, tracing.GasChangeCallContractCreation2)
-// 	// reuse size int for stackvalue
-// 	stackvalue := size
-// 	res, addr, returnGas, suberr := interpreter.evm.Create2(scope.Contract.Address(), input, gas,
-// 		&endowment, &salt)
-// 	// Push item on the stack based on the returned error.
-// 	if suberr != nil {
-// 		stackvalue.Clear()
-// 	} else {
-// 		stackvalue.SetBytes(addr.Bytes())
-// 	}
-// 	scope.Stack.push(&stackvalue)
-// 	scope.Contract.RefundGas(returnGas, interpreter.evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
+	// Apply EIP150
+	gas -= gas / 64
+	scope.Contract.UseGas(gas, interpreter.evm.Config.Tracer, tracing.GasChangeCallContractCreation2)
+	// reuse size int for stackvalue
+	stackvalue := size
+	res, addr, returnGas, suberr := interpreter.evm.Create2(scope.Contract.Address(), input, gas,
+		&endowment, &salt)
+	// Push item on the stack based on the returned error.
+	if suberr != nil {
+		stackvalue.Clear()
+	} else {
+		stackvalue.SetBytes(addr.Bytes())
+	}
+	scope.Stack.push(&stackvalue)
+	scope.Contract.RefundGas(returnGas, interpreter.evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
 
-// 	if suberr == ErrExecutionReverted {
-// 		interpreter.returnData = res // set REVERT data to return data buffer
-// 		return res, nil
-// 	}
-// 	interpreter.returnData = nil // clear dirty return data buffer
-// 	return nil, nil
-// }
+	if suberr == ErrExecutionReverted {
+		interpreter.returnData = res // set REVERT data to return data buffer
+		return res, nil
+	}
+	interpreter.returnData = nil // clear dirty return data buffer
+	return nil, nil
+}
 
 func opCall(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 	stack := scope.Stack

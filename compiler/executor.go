@@ -110,6 +110,11 @@ func (e *EVMExecutor) AddInstructionTable(table *JumpTable) {
 
 // Run a contract.
 func (e *EVMExecutor) Run(contract *Contract, input []byte, readOnly bool) (ret *EVMExecutionResult, err error) {
+	// Don't bother with the execution if there's no code.
+	if len(contract.Code) == 0 {
+		return nil, nil
+	}
+
 	funcPtr, err := e.engine.LoadCompiledContract(contract)
 	if err != nil {
 		return nil, err
@@ -122,8 +127,9 @@ func (e *EVMExecutor) Run(contract *Contract, input []byte, readOnly bool) (ret 
 	// Make sure the readOnly is only set if we aren't in readOnly yet.
 	// This also makes sure that the readOnly flag isn't removed for child calls.
 	if readOnly && !e.readOnly {
+		prevReadonly := e.readOnly
 		e.readOnly = true
-		defer func() { e.readOnly = false }()
+		defer func() { e.readOnly = prevReadonly }()
 	}
 
 	// Reset the previous call's return data. It's unimportant to preserve the old buffer
