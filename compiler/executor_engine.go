@@ -8,6 +8,7 @@ import (
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"tinygo.org/x/go-llvm"
 )
 
@@ -59,16 +60,18 @@ func (n *NativeEngine) LoadCompiledContract(contract *Contract) (uint64, error) 
 		// no compiled code is found
 		return 0, fmt.Errorf("contract has no code")
 	}
-	if _, ok := n.loadedContracts[contract.CodeHash]; !ok {
+	// Recalculate the hash because SetCallCode may not set the contract's CodeHash to the actual value.
+	codeHash := crypto.Keccak256Hash(contract.Code)
+	if _, ok := n.loadedContracts[codeHash]; !ok {
 		compiledCode, err := n.compiledLoader.LoadCompiledContract(contract)
 		if err != nil {
 			return 0, err
 		}
 		n.engine.AddObjectFileFromBuffer(compiledCode)
-		n.loadedContracts[contract.CodeHash] = true
+		n.loadedContracts[codeHash] = true
 	}
 
-	funcPtr := n.engine.GetFunctionAddress(GetContractFunction(contract.CodeHash))
+	funcPtr := n.engine.GetFunctionAddress(GetContractFunction(codeHash))
 	if funcPtr == 0 {
 		return 0, fmt.Errorf("compiled contract code not found")
 	}

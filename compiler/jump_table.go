@@ -193,12 +193,12 @@ func newConstantinopleInstructionSet() JumpTable {
 		diffStack:   diffStack(1, 1),
 	}
 	instructionSet[CREATE2] = &operation{
-		// execute:     opCreate2,
+		execute:     opCreate2,
 		constantGas: params.Create2Gas,
-		// // dynamicGas:  gasCreate2,
-		minStack:  minStack(4, 1),
-		diffStack: diffStack(4, 1),
-		// // memorySize:  memoryCreate2,
+		dynamicGas:  gasCreate2,
+		minStack:    minStack(4, 1),
+		diffStack:   diffStack(4, 1),
+		memorySize:  memoryCreate2,
 	}
 	return validate(instructionSet)
 }
@@ -1042,12 +1042,12 @@ func newFrontierInstructionSet() JumpTable {
 			// memorySize: memoryLog,
 		},
 		CREATE: {
-			// execute:     opCreate,
+			execute:     opCreate,
 			constantGas: params.CreateGas,
-			// dynamicGas:  gasCreate,
-			minStack:  minStack(3, 1),
-			diffStack: diffStack(3, 1),
-			// memorySize:  memoryCreate,
+			dynamicGas:  gasCreate,
+			minStack:    minStack(3, 1),
+			diffStack:   diffStack(3, 1),
+			memorySize:  memoryCreate,
 		},
 		CALL: {
 			execute:     opCall,
