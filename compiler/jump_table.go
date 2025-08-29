@@ -208,12 +208,12 @@ func newConstantinopleInstructionSet() JumpTable {
 func newByzantiumInstructionSet() JumpTable {
 	instructionSet := newSpuriousDragonInstructionSet()
 	instructionSet[STATICCALL] = &operation{
-		// execute:     opStaticCall,
+		execute:     opStaticCall,
 		constantGas: params.CallGasEIP150,
-		// // dynamicGas:  gasStaticCall,
-		minStack:  minStack(6, 1),
-		diffStack: diffStack(6, 1),
-		// // memorySize:  memoryStaticCall,
+		dynamicGas:  gasStaticCall,
+		minStack:    minStack(6, 1),
+		diffStack:   diffStack(6, 1),
+		memorySize:  memoryStaticCall,
 	}
 	instructionSet[RETURNDATASIZE] = &operation{
 		// execute:     opReturnDataSize,
@@ -264,12 +264,12 @@ func newTangerineWhistleInstructionSet() JumpTable {
 func newHomesteadInstructionSet() JumpTable {
 	instructionSet := newFrontierInstructionSet()
 	instructionSet[DELEGATECALL] = &operation{
-		// execute:     opDelegateCall,
-		// // dynamicGas:  gasDelegateCall,
+		execute:     opDelegateCall,
+		dynamicGas:  gasDelegateCall,
 		constantGas: params.CallGasFrontier,
 		minStack:    minStack(6, 1),
 		diffStack:   diffStack(6, 1),
-		// // memorySize:  memoryDelegateCall,
+		memorySize:  memoryDelegateCall,
 	}
 	return validate(instructionSet)
 }
@@ -1058,19 +1058,19 @@ func newFrontierInstructionSet() JumpTable {
 			memorySize:  memoryCall,
 		},
 		CALLCODE: {
-			// execute:     opCallCode,
+			execute:     opCallCode,
 			constantGas: params.CallGasFrontier,
-			// dynamicGas:  gasCallCode,
-			minStack:  minStack(7, 1),
-			diffStack: diffStack(7, 1),
-			// memorySize:  memoryCall,
+			dynamicGas:  gasCallCode,
+			minStack:    minStack(7, 1),
+			diffStack:   diffStack(7, 1),
+			memorySize:  memoryCall,
 		},
 		RETURN: {
-			// execute:    opReturn,
-			// dynamicGas: gasReturn,
-			minStack:  minStack(2, 0),
-			diffStack: diffStack(2, 0),
-			// memorySize: memoryReturn,
+			execute:    opReturn,
+			dynamicGas: gasReturn,
+			minStack:   minStack(2, 0),
+			diffStack:  diffStack(2, 0),
+			memorySize: memoryReturn,
 		},
 		SELFDESTRUCT: {
 			// execute:    opSelfdestruct,
@@ -1079,7 +1079,7 @@ func newFrontierInstructionSet() JumpTable {
 			diffStack: diffStack(1, 0),
 		},
 		INVALID: {
-			// execute:  opUndefined,
+			execute:   opUndefined,
 			minStack:  minStack(0, 0),
 			diffStack: diffStack(0, 0),
 		},
@@ -1089,7 +1089,7 @@ func newFrontierInstructionSet() JumpTable {
 	for i, entry := range tbl {
 		if entry == nil {
 			tbl[i] = &operation{
-				// execute: opUndefined,
+				execute:   opUndefined,
 				diffStack: diffStack(0, 0),
 				undefined: true,
 			}

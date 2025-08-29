@@ -544,10 +544,10 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 		// JUMPDEST is a no-op, charge the section gas before continue to next instruction
 		c.builder.CreateBr(nextBlock)
 
-	case RETURN:
-		_ = c.popStack(stack, stackPtr) // offset
-		_ = c.popStack(stack, stackPtr) // size
-		c.builder.CreateBr(exitBlock)
+	// case RETURN:
+	// 	_ = c.popStack(stack, stackPtr) // offset
+	// 	_ = c.popStack(stack, stackPtr) // size
+	// 	c.builder.CreateBr(exitBlock)
 
 	// case REVERT:
 	// 	_ = c.popStack(stack, stackPtr) // offset
