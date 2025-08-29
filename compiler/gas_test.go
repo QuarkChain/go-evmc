@@ -3,8 +3,6 @@ package compiler
 import (
 	"testing"
 
-	"github.com/ethereum/go-ethereum/core/vm/runtime"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
 
@@ -96,24 +94,19 @@ func TestGasConsumptionBasic(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			comp := NewEVMCompiler()
-			defer comp.Dispose()
-
-			opts := &EVMExecutionOpts{Config: &runtime.Config{GasLimit: tc.gasLimit, ChainConfig: params.TestChainConfig}}
-			result, err := comp.ExecuteCompiledWithOpts(tc.bytecode, DefaultEVMCompilationOpts(), opts)
-			if err != nil {
-				t.Fatalf("Execution failed: %v", err)
-			}
+			e := NewTestExecutor(nil, nil)
+			defer e.Dispose()
+			result, _ := e.RunBytecode(tc.bytecode, []byte{}, tc.gasLimit)
 
 			if tc.expectOutOfGas {
-				if result.Status != ExecutionOutOfGas {
+				if result.Status != VMErrorCodeOutOfGas {
 					t.Errorf("Expected out of gas, but got status %v", result.Status)
 				}
 			} else {
-				if result.Status == ExecutionOutOfGas {
+				if result.Status == VMErrorCodeOutOfGas {
 					t.Errorf("Unexpected out of gas error")
 				}
-				if result.Status != ExecutionSuccess {
+				if result.Status != VMExecutionSuccess {
 					t.Errorf("Expected success status, got %v", result.Status)
 				}
 			}
@@ -160,23 +153,15 @@ func TestGasMemoryOperations(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			comp := NewEVMCompiler()
-			defer comp.Dispose()
-
-			opts := &EVMExecutionOpts{Config: &runtime.Config{GasLimit: tc.gasLimit, ChainConfig: params.TestChainConfig}}
-			result, err := comp.ExecuteCompiledWithOpts(tc.bytecode, DefaultEVMCompilationOpts(), opts)
-			if err != nil {
-				if !tc.expectError {
-					t.Fatalf("Unexpected execution error: %v", err)
-				}
-				return
-			}
+			e := NewTestExecutor(nil, nil)
+			defer e.Dispose()
+			result, _ := e.RunBytecode(tc.bytecode, []byte{}, tc.gasLimit)
 
 			if tc.expectError {
 				t.Fatalf("Expected execution error but none occurred")
 			}
 
-			if result.Status == ExecutionOutOfGas {
+			if result.Status == VMErrorCodeOutOfGas {
 				t.Errorf("Unexpected out of gas error")
 			}
 
@@ -217,20 +202,15 @@ func TestGasStackOperations(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			comp := NewEVMCompiler()
-			defer comp.Dispose()
+			e := NewTestExecutor(nil, nil)
+			defer e.Dispose()
+			result, _ := e.RunBytecode(tc.bytecode, []byte{}, tc.gasLimit)
 
-			opts := &EVMExecutionOpts{Config: &runtime.Config{GasLimit: tc.gasLimit, ChainConfig: params.TestChainConfig}}
-			result, err := comp.ExecuteCompiledWithOpts(tc.bytecode, DefaultEVMCompilationOpts(), opts)
-			if err != nil {
-				t.Fatalf("Execution failed: %v", err)
-			}
-
-			if result.Status == ExecutionOutOfGas {
+			if result.Status == VMErrorCodeOutOfGas {
 				t.Errorf("Unexpected out of gas error")
 			}
 
-			if result.Status != ExecutionSuccess {
+			if result.Status != VMExecutionSuccess {
 				t.Errorf("Expected success status, got %v", result.Status)
 			}
 
@@ -267,20 +247,15 @@ func TestGasJumpOperations(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			comp := NewEVMCompiler()
-			defer comp.Dispose()
+			e := NewTestExecutor(nil, nil)
+			defer e.Dispose()
+			result, _ := e.RunBytecode(tc.bytecode, []byte{}, tc.gasLimit)
 
-			opts := &EVMExecutionOpts{Config: &runtime.Config{GasLimit: tc.gasLimit, ChainConfig: params.TestChainConfig}}
-			result, err := comp.ExecuteCompiledWithOpts(tc.bytecode, DefaultEVMCompilationOpts(), opts)
-			if err != nil {
-				t.Fatalf("Execution failed: %v", err)
-			}
-
-			if result.Status == ExecutionOutOfGas {
+			if result.Status == VMErrorCodeOutOfGas {
 				t.Errorf("Unexpected out of gas error")
 			}
 
-			if result.Status != ExecutionSuccess {
+			if result.Status != VMExecutionSuccess {
 				t.Errorf("Expected success status, got %v", result.Status)
 			}
 
@@ -293,8 +268,8 @@ func TestGasJumpOperations(t *testing.T) {
 
 // TestGasComplexContract tests gas consumption for more complex bytecode
 func TestGasComplexContract(t *testing.T) {
-	comp := NewEVMCompiler()
-	defer comp.Dispose()
+	e := NewTestExecutor(nil, nil)
+	defer e.Dispose()
 
 	// Complex arithmetic: (10 * 5 - 20) / 2 + 3
 	bytecode := []byte{
@@ -336,21 +311,17 @@ func TestGasComplexContract(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			opts := &EVMExecutionOpts{Config: &runtime.Config{GasLimit: tc.gasLimit, ChainConfig: params.TestChainConfig}}
-			result, err := comp.ExecuteCompiledWithOpts(bytecode, DefaultEVMCompilationOpts(), opts)
-			if err != nil {
-				t.Fatalf("Execution failed: %v", err)
-			}
+			result, _ := e.RunBytecode(bytecode, []byte{}, tc.gasLimit)
 
 			if tc.expectOutOfGas {
-				if result.Status != ExecutionOutOfGas {
+				if result.Status != VMErrorCodeOutOfGas {
 					t.Errorf("Expected out of gas, but got status %v", result.Status)
 				}
 			} else {
-				if result.Status == ExecutionOutOfGas {
+				if result.Status == VMErrorCodeOutOfGas {
 					t.Errorf("Unexpected out of gas error")
 				}
-				if result.Status != ExecutionSuccess {
+				if result.Status != VMExecutionSuccess {
 					t.Errorf("Expected success status, got %v", result.Status)
 				}
 
@@ -378,29 +349,21 @@ func TestGasComplexContract(t *testing.T) {
 
 // BenchmarkGasConsumption benchmarks gas consumption overhead
 func BenchmarkGasConsumption(b *testing.B) {
-	comp := NewEVMCompiler()
-	defer comp.Dispose()
-
 	// Simple ADD operation
 	bytecode := []byte{0x60, 0x05, 0x60, 0x03, 0x01, 0x00} // PUSH1 5, PUSH1 3, ADD, STOP
-	opts := &EVMExecutionOpts{Config: &runtime.Config{GasLimit: 1000000}}
-	// Pre-compile
-	err := comp.CompileAndOptimize(bytecode)
-	if err != nil {
-		b.Fatalf("Compilation failed: %v", err)
-	}
-	err = comp.CreateExecutor(&defaultExecutionOpts)
-	if err != nil {
-		b.Fatalf("Executor failed: %v", err)
-	}
+	loader := &DummyCompiledLoader{}
+	loader.compileCode(b, bytecode)
+
+	e := NewTestExecutor(nil, loader.MakeDummyCompiledLoader)
+	defer e.Dispose()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		result, err := comp.Execute(opts)
+		result, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
 		if err != nil {
 			b.Fatalf("Execution failed: %v", err)
 		}
-		if result.Status != ExecutionSuccess {
+		if result.Status != VMExecutionSuccess {
 			b.Fatalf("Expected success, got %v", result.Status)
 		}
 	}
@@ -408,9 +371,6 @@ func BenchmarkGasConsumption(b *testing.B) {
 
 // BenchmarkGasComplexContract benchmarks gas consumption for complex operations
 func BenchmarkGasComplexContract(b *testing.B) {
-	comp := NewEVMCompiler()
-	defer comp.Dispose()
-
 	// Complex arithmetic operations
 	bytecode := []byte{
 		0x60, 0x0A, // PUSH1 10
@@ -428,26 +388,18 @@ func BenchmarkGasComplexContract(b *testing.B) {
 		0x00, // STOP
 	}
 
-	opts := &EVMExecutionOpts{Config: &runtime.Config{GasLimit: 1000000}}
-
-	// Pre-compile
-	err := comp.CompileAndOptimize(bytecode)
-	if err != nil {
-		b.Fatalf("Compilation failed: %v", err)
-	}
-
-	err = comp.CreateExecutor(&defaultExecutionOpts)
-	if err != nil {
-		b.Fatalf("Executor failed: %v", err)
-	}
+	loader := &DummyCompiledLoader{}
+	loader.compileCode(b, bytecode)
+	e := NewTestExecutor(nil, loader.MakeDummyCompiledLoader)
+	defer e.Dispose()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		result, err := comp.Execute(opts)
+		result, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
 		if err != nil {
 			b.Fatalf("Execution failed: %v", err)
 		}
-		if result.Status != ExecutionSuccess {
+		if result.Status != VMExecutionSuccess {
 			b.Fatalf("Expected success, got %v", result.Status)
 		}
 	}

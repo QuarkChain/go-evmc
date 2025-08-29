@@ -234,7 +234,7 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 	// If the code is unsupported, return error
 	if c.table[instr.Opcode].undefined {
 		// Store error code and exit
-		c.builder.CreateStore(llvm.ConstInt(c.ctx.Int64Type(), uint64(ExecutionUnsupportedOpcode), false), errorCodePtr)
+		c.builder.CreateStore(llvm.ConstInt(c.ctx.Int64Type(), uint64(VMErrorCodeUnknown), false), errorCodePtr)
 		c.builder.CreateBr(errorBlock)
 		return
 	}
@@ -258,7 +258,13 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 
 	// Check if it is host function
 	if c.table[instr.Opcode].execute != nil {
-		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false), gasPtr, stackPtr}, "")
+		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc,
+			[]llvm.Value{
+				execInst,
+				llvm.ConstInt(c.ctx.Int64Type(), uint64(instr.Opcode), false),
+				llvm.ConstInt(c.ctx.Int64Type(), instr.PC, false),
+				gasPtr, stackPtr},
+			"")
 		if c.table[instr.Opcode].diffStack < 0 {
 			for i := 0; i < -c.table[instr.Opcode].diffStack; i++ {
 				c.popStack(stack, stackPtr)
@@ -535,10 +541,10 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 		_ = c.popStack(stack, stackPtr) // size
 		c.builder.CreateBr(exitBlock)
 
-	case REVERT:
-		_ = c.popStack(stack, stackPtr) // offset
-		_ = c.popStack(stack, stackPtr) // size
-		c.builder.CreateBr(exitBlock)
+	// case REVERT:
+	// 	_ = c.popStack(stack, stackPtr) // offset
+	// 	_ = c.popStack(stack, stackPtr) // size
+	// 	c.builder.CreateBr(exitBlock)
 
 	default:
 		if instr.Opcode >= PUSH0 && instr.Opcode <= PUSH32 {
@@ -576,7 +582,7 @@ func (c *EVMCompiler) createDynamicJump(target llvm.Value, analysis *PCAnalysis,
 
 	c.builder.SetInsertPointAtEnd(invalidJumpDestBlock)
 	// Store error code and exit
-	c.builder.CreateStore(llvm.ConstInt(c.ctx.Int64Type(), uint64(ExecutionInvalidJumpDest), false), errorCodePtr)
+	c.builder.CreateStore(llvm.ConstInt(c.ctx.Int64Type(), uint64(VMErrorCodeInvalidJump), false), errorCodePtr)
 	c.builder.CreateBr(errorBlock)
 }
 
@@ -640,7 +646,7 @@ func (c *EVMCompiler) consumeGas(gasCost uint64, gasPtr, errorCodePtr llvm.Value
 
 	c.builder.SetInsertPointAtEnd(outOfGasBlock)
 	// Store error code and exit
-	c.builder.CreateStore(llvm.ConstInt(c.ctx.Int64Type(), uint64(ExecutionOutOfGas), false), errorCodePtr)
+	c.builder.CreateStore(llvm.ConstInt(c.ctx.Int64Type(), uint64(VMErrorCodeOutOfGas), false), errorCodePtr)
 	c.builder.CreateBr(errorBlock)
 
 	c.builder.SetInsertPointAtEnd(continueBlock)
@@ -652,16 +658,8 @@ func (c *EVMCompiler) consumeGas(gasCost uint64, gasPtr, errorCodePtr llvm.Value
 // CompileAndOptimizeStatic compiles using static analysis
 func (c *EVMCompiler) CompileAndOptimizeStatic(bytecode []byte, opts *EVMCompilationOpts) error {
 	c.initailizeHostFunctions()
-	c.contractAddress = opts.ContractAddress
-	c.codeHash = crypto.Keccak256Hash(bytecode)
-	table, extraEips, err := getJumpTable(opts.ChainRules, opts.ExtraEips)
-	if err != nil {
-		return err
-	}
-	c.table = table
-	c.extraEips = extraEips
 
-	_, err = c.CompileBytecodeStatic(bytecode, opts)
+	_, err := c.CompileBytecodeStatic(bytecode, opts)
 	if err != nil {
 		return err
 	}

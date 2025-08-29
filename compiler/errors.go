@@ -126,12 +126,14 @@ func (e *VMError) ErrorCode() int {
 	return e.code
 }
 
+type ExecutionStatus int
+
 const (
 	// We start the error code at 1 so that we can use 0 later for some possible extension. There
 	// is no unspecified value for the code today because it should always be set to a valid value
 	// that could be VMErrorCodeUnknown if the error is not mapped to a known error code.
-
-	VMErrorCodeOutOfGas = 1 + iota
+	VMExecutionSuccess ExecutionStatus = iota
+	VMErrorCodeOutOfGas
 	VMErrorCodeCodeStoreOutOfGas
 	VMErrorCodeDepth
 	VMErrorCodeInsufficientBalance
@@ -155,47 +157,92 @@ const (
 
 func vmErrorCodeFromErr(err error) int {
 	switch {
+	case errors.Is(err, nil):
+		return int(VMExecutionSuccess)
 	case errors.Is(err, ErrOutOfGas):
-		return VMErrorCodeOutOfGas
+		return int(VMErrorCodeOutOfGas)
 	case errors.Is(err, ErrCodeStoreOutOfGas):
-		return VMErrorCodeCodeStoreOutOfGas
+		return int(VMErrorCodeCodeStoreOutOfGas)
 	case errors.Is(err, ErrDepth):
-		return VMErrorCodeDepth
+		return int(VMErrorCodeDepth)
 	case errors.Is(err, ErrInsufficientBalance):
-		return VMErrorCodeInsufficientBalance
+		return int(VMErrorCodeInsufficientBalance)
 	case errors.Is(err, ErrContractAddressCollision):
-		return VMErrorCodeContractAddressCollision
+		return int(VMErrorCodeContractAddressCollision)
 	case errors.Is(err, ErrExecutionReverted):
-		return VMErrorCodeExecutionReverted
+		return int(VMErrorCodeExecutionReverted)
 	case errors.Is(err, ErrMaxCodeSizeExceeded):
-		return VMErrorCodeMaxCodeSizeExceeded
+		return int(VMErrorCodeMaxCodeSizeExceeded)
 	case errors.Is(err, ErrInvalidJump):
-		return VMErrorCodeInvalidJump
+		return int(VMErrorCodeInvalidJump)
 	case errors.Is(err, ErrWriteProtection):
-		return VMErrorCodeWriteProtection
+		return int(VMErrorCodeWriteProtection)
 	case errors.Is(err, ErrReturnDataOutOfBounds):
-		return VMErrorCodeReturnDataOutOfBounds
+		return int(VMErrorCodeReturnDataOutOfBounds)
 	case errors.Is(err, ErrGasUintOverflow):
-		return VMErrorCodeGasUintOverflow
+		return int(VMErrorCodeGasUintOverflow)
 	case errors.Is(err, ErrInvalidCode):
-		return VMErrorCodeInvalidCode
+		return int(VMErrorCodeInvalidCode)
 	case errors.Is(err, ErrNonceUintOverflow):
-		return VMErrorCodeNonceUintOverflow
+		return int(VMErrorCodeNonceUintOverflow)
 
 	default:
 		// Dynamic errors
 		if v := (*ErrStackUnderflow)(nil); errors.As(err, &v) {
-			return VMErrorCodeStackUnderflow
+			return int(VMErrorCodeStackUnderflow)
 		}
 
 		if v := (*ErrStackOverflow)(nil); errors.As(err, &v) {
-			return VMErrorCodeStackOverflow
+			return int(VMErrorCodeStackOverflow)
 		}
 
 		if v := (*ErrInvalidOpCode)(nil); errors.As(err, &v) {
-			return VMErrorCodeInvalidOpCode
+			return int(VMErrorCodeInvalidOpCode)
 		}
 
-		return VMErrorCodeUnknown
+		return int(VMErrorCodeUnknown)
+	}
+}
+
+func vmErrorCodeToErr(errorCode int64) error {
+	status := ExecutionStatus(errorCode)
+	switch status {
+	case VMExecutionSuccess:
+		return nil
+	case VMErrorCodeOutOfGas:
+		return ErrOutOfGas
+	case VMErrorCodeCodeStoreOutOfGas:
+		return ErrCodeStoreOutOfGas
+	case VMErrorCodeDepth:
+		return ErrDepth
+	case VMErrorCodeInsufficientBalance:
+		return ErrInsufficientBalance
+	case VMErrorCodeContractAddressCollision:
+		return ErrContractAddressCollision
+	case VMErrorCodeExecutionReverted:
+		return ErrExecutionReverted
+	case VMErrorCodeMaxCodeSizeExceeded:
+		return ErrMaxCodeSizeExceeded
+	case VMErrorCodeInvalidJump:
+		return ErrInvalidJump
+	case VMErrorCodeWriteProtection:
+		return ErrWriteProtection
+	case VMErrorCodeReturnDataOutOfBounds:
+		return ErrReturnDataOutOfBounds
+	case VMErrorCodeGasUintOverflow:
+		return ErrGasUintOverflow
+	case VMErrorCodeInvalidCode:
+		return ErrInvalidCode
+	case VMErrorCodeNonceUintOverflow:
+		return ErrNonceUintOverflow
+	// TODO: use dynamic error
+	case VMErrorCodeStackUnderflow:
+		return errors.New("stack underflow")
+	case VMErrorCodeStackOverflow:
+		return errors.New("stack overflow")
+	case VMErrorCodeInvalidOpCode:
+		return errors.New("invalid opcode")
+	default:
+		return errors.New("unknown VM error code")
 	}
 }

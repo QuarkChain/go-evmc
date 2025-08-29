@@ -6,13 +6,12 @@ package compiler
 import "C"
 import (
 	"encoding/binary"
-	"fmt"
 	"runtime/cgo"
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"tinygo.org/x/go-llvm"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 // An executor to execute native compiled code within EVM.
@@ -22,16 +21,9 @@ import (
 // - Memory: always big-endian encoded as in execution spec
 // - Storage: always big-endian encoded as in execution spec
 type EVMExecutor struct {
-	callContext *ScopeContext // current call context
-
-	ctx    llvm.Context
-	module llvm.Module
-	engine *llvm.ExecutionEngine
-
-	hostFuncType llvm.Type
-	hostFunc     llvm.Value
-
-	loadedContracts map[common.Hash]bool
+	callContext  *ScopeContext // current call context
+	engine       *NativeEngine
+	nativeLoader NativeLoader
 
 	evm   *EVM
 	table *JumpTable
@@ -50,52 +42,62 @@ type ScopeContext struct {
 	Stack    *Stack
 }
 
-type EVMExecutorOptions struct {
-}
-
-func NewEVMExecutor(evm *EVM) *EVMExecutor {
-	ctx := llvm.NewContext()
-	module := ctx.NewModule("evm_module")
-
-	hostFuncType, hostFunc := initializeHostFunction(ctx, module)
-
-	engine, err := llvm.NewJITCompiler(module, 3)
-	if err != nil {
-		panic(fmt.Errorf("failed to create JIT compiler: %v", err))
+func NewEVMExecutor(evm *EVM, copts *EVMCompilationOpts, loaderFn MakeLoader) *EVMExecutor {
+	// If jump table was not initialised we set the default one.
+	var table *JumpTable
+	switch {
+	case evm.chainRules.IsVerkle:
+		// TODO replace with proper instruction set when fork is specified
+		table = &verkleInstructionSet
+	case evm.chainRules.IsPrague:
+		table = &pragueInstructionSet
+	case evm.chainRules.IsCancun:
+		table = &cancunInstructionSet
+	case evm.chainRules.IsShanghai:
+		table = &shanghaiInstructionSet
+	case evm.chainRules.IsMerge:
+		table = &mergeInstructionSet
+	case evm.chainRules.IsLondon:
+		table = &londonInstructionSet
+	case evm.chainRules.IsBerlin:
+		table = &berlinInstructionSet
+	case evm.chainRules.IsIstanbul:
+		table = &istanbulInstructionSet
+	case evm.chainRules.IsConstantinople:
+		table = &constantinopleInstructionSet
+	case evm.chainRules.IsByzantium:
+		table = &byzantiumInstructionSet
+	case evm.chainRules.IsEIP158:
+		table = &spuriousDragonInstructionSet
+	case evm.chainRules.IsEIP150:
+		table = &tangerineWhistleInstructionSet
+	case evm.chainRules.IsHomestead:
+		table = &homesteadInstructionSet
+	default:
+		table = &frontierInstructionSet
 	}
-
-	table, extraEips, err := getJumpTable(evm.chainRules, evm.Config.ExtraEips)
-	if err != nil {
-		// return
-		// TODO: log error
+	var extraEips []int
+	if len(evm.Config.ExtraEips) > 0 {
+		// Deep-copy jumptable to prevent modification of opcodes in other tables
+		table = copyJumpTable(table)
 	}
-
+	for _, eip := range evm.Config.ExtraEips {
+		if err := EnableEIP(eip, table); err != nil {
+			// Disable it, so caller can check if it's activated or not
+			log.Error("EIP activation failed", "eip", eip, "error", err)
+		} else {
+			extraEips = append(extraEips, eip)
+		}
+	}
 	evm.Config.ExtraEips = extraEips
-
+	engine := NewNativeEngine(copts, table, loaderFn)
 	e := &EVMExecutor{
-		ctx:             ctx,
-		module:          module,
-		engine:          &engine,
-		evm:             evm,
-		hostFuncType:    hostFuncType,
-		hostFunc:        hostFunc,
-		loadedContracts: make(map[common.Hash]bool),
-		table:           table,
-		hasher:          crypto.NewKeccakState(),
+		engine: engine,
+		evm:    evm,
+		table:  table,
+		hasher: crypto.NewKeccakState(),
 	}
-	e.addGlobalMappingForHostFunctions()
 	return e
-}
-
-func (e *EVMExecutor) AddCompiledContract(codeHash common.Hash, compiledCode []byte) {
-	if compiledCode == nil {
-		// no compiled code is found
-		return
-	}
-	if _, ok := e.loadedContracts[codeHash]; !ok {
-		e.engine.AddObjectFileFromBuffer(compiledCode)
-		e.loadedContracts[codeHash] = true
-	}
 }
 
 func (e *EVMExecutor) AddInstructionTable(table *JumpTable) {
@@ -107,24 +109,46 @@ func (e *EVMExecutor) AddInstructionTable(table *JumpTable) {
 }
 
 // Run a contract.
-func (e *EVMExecutor) Run(contract Contract, input []byte, readOnly bool) (ret *EVMExecutionResult, err error) {
-	e.AddCompiledContract(contract.CodeHash, contract.CompiledCode)
-	// Get function pointer for direct execution
-	funcPtr := e.engine.GetFunctionAddress(GetContractFunction(contract.CodeHash))
-	if funcPtr == 0 {
-		return nil, fmt.Errorf("compiled contract code not found")
+func (e *EVMExecutor) Run(contract *Contract, input []byte, readOnly bool) (ret *EVMExecutionResult, err error) {
+	funcPtr, err := e.engine.LoadCompiledContract(contract)
+	if err != nil {
+		return nil, err
 	}
 
+	// Increment the call depth which is restricted to 1024
+	e.evm.depth++
+	defer func() { e.evm.depth-- }()
+
+	// Make sure the readOnly is only set if we aren't in readOnly yet.
+	// This also makes sure that the readOnly flag isn't removed for child calls.
+	if readOnly && !e.readOnly {
+		e.readOnly = true
+		defer func() { e.readOnly = false }()
+	}
+
+	// Reset the previous call's return data. It's unimportant to preserve the old buffer
+	// as every returning call will return new data anyway.
+	e.returnData = nil
+
+	prevCallContext := e.callContext
 	// Prepare execution environment
 	memory := NewMemory()
 	stack := newstack()
-	e.callContext = &ScopeContext{
-		Contract: &contract,
+	callContext := &ScopeContext{
+		Contract: contract,
 		Memory:   memory,
 		Stack:    stack,
 	}
+	e.callContext = callContext
 
-	defer returnStack(stack)
+	defer func() {
+		returnStack(stack)
+		// here memory is not freed for checking testCase's memory
+		// memory.Free()
+		// Recover prev context cause e.callContext is used to store gas/memory/stack in the whole tx execution lifecycle.
+		e.callContext = prevCallContext
+		e.evm.internalRet = []byte{}
+	}()
 	contract.Input = input
 
 	// Execute using function pointer
@@ -136,7 +160,7 @@ func (e *EVMExecutor) Run(contract Contract, input []byte, readOnly bool) (ret *
 
 	gasRemaining := uint64(gasRemainingResult)
 
-	if errorCode != int64(ExecutionSuccess) {
+	if errorCode != int64(VMExecutionSuccess) {
 		return &EVMExecutionResult{
 			Stack:        nil,
 			Memory:       nil,
@@ -144,10 +168,12 @@ func (e *EVMExecutor) Run(contract Contract, input []byte, readOnly bool) (ret *
 			GasUsed:      gas - gasRemaining,
 			GasLimit:     gas,
 			GasRemaining: gasRemaining,
-		}, nil
+			Ret:          e.evm.internalRet,
+		}, vmErrorCodeToErr(errorCode)
 	}
 
 	// Update remaining gas of the contract call
+	// contract.Gas only include hostFunc's gas, while gasRemaining accounts for hostFunc+nativeCall gas
 	contract.Gas = gasRemaining
 
 	stackByte := make([][32]byte, stackDepth)
@@ -163,13 +189,12 @@ func (e *EVMExecutor) Run(contract Contract, input []byte, readOnly bool) (ret *
 		GasUsed:      gas - gasRemaining,
 		GasLimit:     gas,
 		GasRemaining: gasRemaining,
+		Ret:          e.evm.internalRet,
 	}, nil
 }
 
 func (e *EVMExecutor) Dispose() {
 	e.engine.Dispose()
-	// c.module.Dispose() TODO: segfault after execute() - does engine take the ownership of the module
-	e.ctx.Dispose()
 }
 
 // Helper function to call native function pointer (requires CGO)
