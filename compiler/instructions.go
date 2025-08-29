@@ -765,103 +765,102 @@ func opCall(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, 
 	return ret, nil
 }
 
-// func opCallCode(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
-// 	stack := scope.Stack
-// 	// We use it as a temporary value
-// 	temp := stack.pop()
-// 	gas := interpreter.evm.callGasTemp
-// 	// Pop other call parameters.
-// 	addr, value, inOffset, inSize, retOffset, retSize := stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop()
-// 	toAddr := common.Address(addr.Bytes20())
-// 	// Get arguments from the memory.
-// 	args := scope.Memory.GetPtr(inOffset.Uint64(), inSize.Uint64())
+func opCallCode(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
+	stack := scope.Stack
+	// We use it as a temporary value
+	temp := stack.pop()
+	gas := interpreter.evm.callGasTemp
+	// Pop other call parameters.
+	addr, value, inOffset, inSize, retOffset, retSize := stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop()
+	toAddr := common.Address(addr.Bytes20())
+	// Get arguments from the memory.
+	args := scope.Memory.GetPtr(inOffset.Uint64(), inSize.Uint64())
 
-// 	if !value.IsZero() {
-// 		gas += params.CallStipend
-// 	}
+	if !value.IsZero() {
+		gas += params.CallStipend
+	}
 
-// 	ret, returnGas, err := interpreter.evm.CallCode(scope.Contract.Address(), toAddr, args, gas, &value)
-// 	if err != nil {
-// 		temp.Clear()
-// 	} else {
-// 		temp.SetOne()
-// 	}
-// 	stack.push(&temp)
-// 	if err == nil || err == ErrExecutionReverted {
-// 		scope.Memory.Set(retOffset.Uint64(), retSize.Uint64(), ret)
-// 	}
+	ret, returnGas, err := interpreter.evm.CallCode(scope.Contract.Address(), toAddr, args, gas, &value)
+	if err != nil {
+		temp.Clear()
+	} else {
+		temp.SetOne()
+	}
+	stack.push(&temp)
+	if err == nil || err == ErrExecutionReverted {
+		scope.Memory.Set(retOffset.Uint64(), retSize.Uint64(), ret)
+	}
 
-// 	scope.Contract.RefundGas(returnGas, interpreter.evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
+	scope.Contract.RefundGas(returnGas, interpreter.evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
 
-// 	interpreter.returnData = ret
-// 	return ret, nil
-// }
+	interpreter.returnData = ret
+	return ret, nil
+}
 
-// func opDelegateCall(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	stack := scope.Stack
-// 	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
-// 	// We use it as a temporary value
-// 	temp := stack.pop()
-// 	gas := interpreter.evm.callGasTemp
-// 	// Pop other call parameters.
-// 	addr, inOffset, inSize, retOffset, retSize := stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop()
-// 	toAddr := common.Address(addr.Bytes20())
-// 	// Get arguments from the memory.
-// 	args := scope.Memory.GetPtr(inOffset.Uint64(), inSize.Uint64())
+func opDelegateCall(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	stack := scope.Stack
+	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
+	// We use it as a temporary value
+	temp := stack.pop()
+	gas := interpreter.evm.callGasTemp
+	// Pop other call parameters.
+	addr, inOffset, inSize, retOffset, retSize := stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop()
+	toAddr := common.Address(addr.Bytes20())
+	// Get arguments from the memory.
+	args := scope.Memory.GetPtr(inOffset.Uint64(), inSize.Uint64())
 
-// 	ret, returnGas, err := interpreter.evm.DelegateCall(scope.Contract.Caller(), scope.Contract.Address(), toAddr, args, gas, scope.Contract.value)
-// 	if err != nil {
-// 		temp.Clear()
-// 	} else {
-// 		temp.SetOne()
-// 	}
-// 	stack.push(&temp)
-// 	if err == nil || err == ErrExecutionReverted {
-// 		scope.Memory.Set(retOffset.Uint64(), retSize.Uint64(), ret)
-// 	}
+	ret, returnGas, err := interpreter.evm.DelegateCall(scope.Contract.Caller(), scope.Contract.Address(), toAddr, args, gas, scope.Contract.value)
+	if err != nil {
+		temp.Clear()
+	} else {
+		temp.SetOne()
+	}
+	stack.push(&temp)
+	if err == nil || err == ErrExecutionReverted {
+		scope.Memory.Set(retOffset.Uint64(), retSize.Uint64(), ret)
+	}
 
-// 	scope.Contract.RefundGas(returnGas, interpreter.evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
+	scope.Contract.RefundGas(returnGas, interpreter.evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
 
-// 	interpreter.returnData = ret
-// 	return ret, nil
-// }
+	interpreter.returnData = ret
+	return ret, nil
+}
 
-// func opStaticCall(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
-// 	stack := scope.Stack
-// 	// We use it as a temporary value
-// 	temp := stack.pop()
-// 	gas := interpreter.evm.callGasTemp
-// 	// Pop other call parameters.
-// 	addr, inOffset, inSize, retOffset, retSize := stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop()
-// 	toAddr := common.Address(addr.Bytes20())
-// 	// Get arguments from the memory.
-// 	args := scope.Memory.GetPtr(inOffset.Uint64(), inSize.Uint64())
+func opStaticCall(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
+	stack := scope.Stack
+	// We use it as a temporary value
+	temp := stack.pop()
+	gas := interpreter.evm.callGasTemp
+	// Pop other call parameters.
+	addr, inOffset, inSize, retOffset, retSize := stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop()
+	toAddr := common.Address(addr.Bytes20())
+	// Get arguments from the memory.
+	args := scope.Memory.GetPtr(inOffset.Uint64(), inSize.Uint64())
 
-// 	ret, returnGas, err := interpreter.evm.StaticCall(scope.Contract.Address(), toAddr, args, gas)
-// 	if err != nil {
-// 		temp.Clear()
-// 	} else {
-// 		temp.SetOne()
-// 	}
-// 	stack.push(&temp)
-// 	if err == nil || err == ErrExecutionReverted {
-// 		scope.Memory.Set(retOffset.Uint64(), retSize.Uint64(), ret)
-// 	}
+	ret, returnGas, err := interpreter.evm.StaticCall(scope.Contract.Address(), toAddr, args, gas)
+	if err != nil {
+		temp.Clear()
+	} else {
+		temp.SetOne()
+	}
+	stack.push(&temp)
+	if err == nil || err == ErrExecutionReverted {
+		scope.Memory.Set(retOffset.Uint64(), retSize.Uint64(), ret)
+	}
 
-// 	scope.Contract.RefundGas(returnGas, interpreter.evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
+	scope.Contract.RefundGas(returnGas, interpreter.evm.Config.Tracer, tracing.GasChangeCallLeftOverRefunded)
 
-// 	interpreter.returnData = ret
-// 	return ret, nil
-// }
+	interpreter.returnData = ret
+	return ret, nil
+}
 
-// func opReturn(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	offset, size := scope.Stack.pop(), scope.Stack.pop()
-// 	ret := scope.Memory.GetCopy(offset.Uint64(), size.Uint64())
-
-// 	return ret, errStopToken
-// }
+func opReturn(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	offset, size := scope.Stack.pop(), scope.Stack.pop()
+	ret := scope.Memory.GetCopy(offset.Uint64(), size.Uint64())
+	return ret, errStopToken
+}
 
 func opRevert(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 	offset, size := scope.Stack.pop(), scope.Stack.pop()
@@ -870,9 +869,9 @@ func opRevert(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte
 	return ret, ErrExecutionReverted
 }
 
-// func opUndefined(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	return nil, &ErrInvalidOpCode{opcode: OpCode(scope.Contract.Code[*pc])}
-// }
+func opUndefined(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	return nil, &ErrInvalidOpCode{opcode: OpCode(scope.Contract.Code[*pc])}
+}
 
 // func opStop(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	return nil, errStopToken

@@ -138,7 +138,9 @@ type OpcodeTestCase struct {
 	input           []byte        // contract input for byteCode
 	originStorage   state.Storage
 	originAccount   *types.StateAccount
-	originCode      []byte
+	calledCode      []byte
+	calledCodeAddr  common.Address
+	callCodeStorage state.Storage
 }
 
 // Helper function to run individual opcode test
@@ -156,12 +158,17 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 		stateDB.AddBalance(defaultCompilationAddress, acct.Balance, tracing.BalanceChangeUnspecified)
 		stateDB.SetNonce(defaultCompilationAddress, acct.Nonce, tracing.NonceChangeUnspecified)
 	}
-	if code := testCase.originCode; code != nil {
-		stateDB.SetCode(defaultCompilationAddress, code)
-	}
 	if len(testCase.originStorage) > 0 {
 		for key, value := range testCase.originStorage {
 			stateDB.SetState(defaultCompilationAddress, key, value)
+		}
+	}
+	if code := testCase.calledCode; code != nil {
+		stateDB.SetCode(testCase.calledCodeAddr, code)
+	}
+	if len(testCase.callCodeStorage) > 0 {
+		for key, value := range testCase.callCodeStorage {
+			stateDB.SetState(testCase.calledCodeAddr, key, value)
 		}
 	}
 	// Finalise stateDB to clear dirty storage and set the above state as original storage
@@ -1888,8 +1895,9 @@ func TestOpcodeBlockContext(t *testing.T) {
 			expectedGas:   2 + 100,
 		},
 		{
-			name:       "EXTCODESIZE",
-			originCode: []byte{0x60, 0x01, 0x00},
+			name:           "EXTCODESIZE",
+			calledCode:     []byte{0x60, 0x01, 0x00},
+			calledCodeAddr: defaultCompilationAddress,
 			bytecode: []byte{
 				0x30, // ADDRESS
 				0x3B, // EXTCODESIZE
@@ -1909,8 +1917,9 @@ func TestOpcodeBlockContext(t *testing.T) {
 			expectedGas:   2 + 100,
 		},
 		{
-			name:       "EXTCODEHASH",
-			originCode: []byte{0x60, 0x01, 0x00},
+			name:           "EXTCODEHASH",
+			calledCode:     []byte{0x60, 0x01, 0x00},
+			calledCodeAddr: defaultCompilationAddress,
 			bytecode: []byte{
 				0x30, // ADDRESS
 				0x3F, // EXTCODEHASH
@@ -2096,8 +2105,9 @@ func TestOpcodeBlockContext(t *testing.T) {
 func TestContractOpcodes(t *testing.T) {
 	testCases := []OpcodeTestCase{
 		{
-			name:       "CALL_SUCCESS",
-			originCode: []byte{0x60, 0x01, 0x00}, // PUSH1 0x00 STOP
+			name:           "CALL_SUCCESS",
+			calledCode:     []byte{0x60, 0x01, 0x00}, // PUSH1 0x00 STOP
+			calledCodeAddr: defaultCompilationAddress,
 			bytecode: append(
 				[]byte{
 					0x60, 0x00, // PUSH1 0 (retSize)
@@ -2122,8 +2132,9 @@ func TestContractOpcodes(t *testing.T) {
 			expectedGas: 3*7 + 2500 + 100 + 3,
 		},
 		{
-			name:       "CALL_REVERT",
-			originCode: []byte{0x60, 0x00, 0xFD, 0x00}, // PUSH1 0x00 REVERT STOP
+			name:           "CALL_REVERT",
+			calledCode:     []byte{0x60, 0x00, 0xFD, 0x00}, // PUSH1 0x00 REVERT STOP
+			calledCodeAddr: defaultCompilationAddress,
 			bytecode: append(
 				[]byte{
 					0x60, 0x00, // PUSH1 0 (retSize)
@@ -2146,6 +2157,204 @@ func TestContractOpcodes(t *testing.T) {
 				lastGasCost: 0,
 			},
 			expectedGas: 3*7 + 2500 + 100 + 3 + 65532,
+		},
+		{
+			name: "CALLCODE",
+			// a contract that creates an exception if first slot of storage is 0
+			calledCode:     hexutil.MustDecode("0x600054600757FE5B00")[:],
+			calledCodeAddr: defaultCallerAddress,
+			originStorage: state.Storage{ // storage for defaultCompilationAddress
+				common.Hash(uint64ToBigEndianBytes32(0x00)): common.Hash(uint64ToBigEndianBytes32(0x01)),
+			},
+			bytecode: append(
+				[]byte{
+					0x60, 0x00, // PUSH1 0 (retSize)
+					0x60, 0x00, // PUSH1 0 (retOffset)
+					0x60, 0x00, // PUSH1 0 (argsSize)
+					0x60, 0x00, // PUSH1 0 (argsOffset)
+					0x60, 0x00, // PUSH1 0 (value)
+					0x73, // PUSH20
+				},
+				append(
+					defaultCallerAddress.Bytes(), // ADDRESS
+					0x61, 0xFF, 0xFF,             // PUSH2 0xFFFF (gas)
+					0xF2, // CALLCODE
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(1)}, // success:1, failure:0
+			expectedMemory: &Memory{
+				store:       []byte{},
+				lastGasCost: 0,
+			},
+			expectedGas: 3*7 + 4500 + 217,
+		},
+		{
+			name: "CALLCODE_REVERT",
+			// a contract that creates an exception if first slot of storage is 0
+			calledCode:     hexutil.MustDecode("0x600054600757FE5B00")[:],
+			calledCodeAddr: defaultCallerAddress,
+			originStorage: state.Storage{ // storage for defaultCompilationAddress
+				common.Hash(uint64ToBigEndianBytes32(0x00)): common.Hash(uint64ToBigEndianBytes32(0x00)),
+			},
+			bytecode: append(
+				[]byte{
+					0x60, 0x00, // PUSH1 0 (retSize)
+					0x60, 0x00, // PUSH1 0 (retOffset)
+					0x60, 0x00, // PUSH1 0 (argsSize)
+					0x60, 0x00, // PUSH1 0 (argsOffset)
+					0x60, 0x00, // PUSH1 0 (value)
+					0x73, // PUSH20
+				},
+				append(
+					defaultCallerAddress.Bytes(), // ADDRESS
+					0x61, 0xFF, 0xFF,             // PUSH2 0xFFFF (gas)
+					0xF2, // CALLCODE
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(0)}, // success:1, failure:0
+			expectedMemory: &Memory{
+				store:       []byte{},
+				lastGasCost: 0,
+			},
+			expectedGas: 3*7 + 2500 + 100 + 3 + 65532,
+		},
+		{
+			name: "RETURN",
+			bytecode: append(
+				[]byte{0x7F}, // PUSH32
+				append(
+					hexutil.MustDecode("0xFF01000000000000000000000000000000000000000000000000000000000000")[:],
+					0x60, 0x00, // PUSH1 0
+					0x52,       // MSTORE
+					0x60, 0x02, // PUSH1 2 (size)
+					0x60, 0x00, // PUSH1 0 (offset)
+					0xF3, 0x00, // RETURN Stop
+				)...,
+			),
+			expectedStack: [][32]byte{},
+			expectedMemory: &Memory{
+				store:       hexutil.MustDecode("0xff01000000000000000000000000000000000000000000000000000000000000")[:],
+				lastGasCost: 3,
+			},
+		},
+		{
+			name: "DELEGATECALL",
+			// a contract that creates an exception if first slot of storage is 0
+			calledCode:     hexutil.MustDecode("0x600054600757FE5B00")[:],
+			calledCodeAddr: defaultCallerAddress,
+			originStorage: state.Storage{ // storage for defaultCompilationAddress
+				common.Hash(uint64ToBigEndianBytes32(0x00)): common.Hash(uint64ToBigEndianBytes32(0x01)),
+			},
+			bytecode: append(
+				[]byte{
+					0x60, 0x00, // PUSH1 0 (retSize)
+					0x60, 0x00, // PUSH1 0 (retOffset)
+					0x60, 0x00, // PUSH1 0 (argsSize)
+					0x60, 0x00, // PUSH1 0 (argsOffset)
+					0x73, // PUSH20
+				},
+				append(
+					defaultCallerAddress.Bytes(), // ADDRESS
+					0x61, 0xFF, 0xFF,             // PUSH2 0xFFFF (gas)
+					0xF4, // DELEGATECALL
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(1)}, // success:1, failure:0
+			expectedMemory: &Memory{
+				store:       []byte{},
+				lastGasCost: 0,
+			},
+			expectedGas: 3*6 + 4500 + 217,
+		},
+		{
+			name: "DELEGATECALL_REVERT",
+			// a contract that creates an exception if first slot of storage is 0
+			calledCode:     hexutil.MustDecode("0x600054600757FE5B00")[:],
+			calledCodeAddr: defaultCallerAddress,
+			bytecode: append(
+				[]byte{
+					0x60, 0x00, // PUSH1 0 (retSize)
+					0x60, 0x00, // PUSH1 0 (retOffset)
+					0x60, 0x00, // PUSH1 0 (argsSize)
+					0x60, 0x00, // PUSH1 0 (argsOffset)
+					0x73, // PUSH20
+				},
+				append(
+					defaultCallerAddress.Bytes(), // ADDRESS
+					0x61, 0xFF, 0xFF,             // PUSH2 0xFFFF (gas)
+					0xF4, // DELEGATECALL
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(0)}, // success:1, failure:0
+			expectedMemory: &Memory{
+				store:       []byte{},
+				lastGasCost: 0,
+			},
+			expectedGas: 3*6 + 2500 + 100 + 65535,
+		},
+		{
+			name: "STATICCALL",
+			// a contract that creates an exception if first slot of storage is 0
+			calledCode:     hexutil.MustDecode("0x600054600757FE5B00")[:],
+			calledCodeAddr: defaultCallerAddress,
+			callCodeStorage: state.Storage{ // storage for defaultCompilationAddress
+				common.Hash(uint64ToBigEndianBytes32(0x00)): common.Hash(uint64ToBigEndianBytes32(0x01)),
+			},
+			bytecode: append(
+				[]byte{
+					0x60, 0x00, // PUSH1 0 (retSize)
+					0x60, 0x00, // PUSH1 0 (retOffset)
+					0x60, 0x00, // PUSH1 0 (argsSize)
+					0x60, 0x00, // PUSH1 0 (argsOffset)
+					0x73, // PUSH20
+				},
+				append(
+					defaultCallerAddress.Bytes(), // ADDRESS
+					0x61, 0xFF, 0xFF,             // PUSH2 0xFFFF (gas)
+					0xFA, // STATICCALL
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(1)}, // success:1, failure:0
+			expectedMemory: &Memory{
+				store:       []byte{},
+				lastGasCost: 0,
+			},
+			expectedGas: 3*6 + 4500 + 217,
+		},
+		{
+			name: "STATICCALL_WRITE_REVERT",
+			// a contract that store 0x01 at slot:0x00
+			calledCode:     hexutil.MustDecode("0x600060015500")[:],
+			calledCodeAddr: defaultCallerAddress,
+			callCodeStorage: state.Storage{ // storage for defaultCompilationAddress
+				common.Hash(uint64ToBigEndianBytes32(0x00)): common.Hash(uint64ToBigEndianBytes32(0x00)),
+			},
+			bytecode: append(
+				[]byte{
+					0x60, 0x00, // PUSH1 0 (retSize)
+					0x60, 0x00, // PUSH1 0 (retOffset)
+					0x60, 0x00, // PUSH1 0 (argsSize)
+					0x60, 0x00, // PUSH1 0 (argsOffset)
+					0x73, // PUSH20
+				},
+				append(
+					defaultCallerAddress.Bytes(), // ADDRESS
+					0x61, 0xFF, 0xFF,             // PUSH2 0xFFFF (gas)
+					0xFA, // STATICCALL
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(0)}, // success:1, failure:0
+			expectedMemory: &Memory{
+				store:       []byte{},
+				lastGasCost: 0,
+			},
+			expectedGas: 3*6 + 2500 + 100 + 65535,
 		},
 	}
 

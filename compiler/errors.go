@@ -157,7 +157,7 @@ const (
 
 func vmErrorCodeFromErr(err error) int {
 	switch {
-	case errors.Is(err, nil):
+	case errors.Is(err, nil), errors.Is(err, errStopToken): // opReturn will throw the error, just ignore it
 		return int(VMExecutionSuccess)
 	case errors.Is(err, ErrOutOfGas):
 		return int(VMErrorCodeOutOfGas)
