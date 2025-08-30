@@ -1726,6 +1726,29 @@ func TestOpcodeErrorConditions(t *testing.T) {
 			},
 			expectedStatus: getExpectedStatus(VMErrorCodeInvalidOpCode),
 		},
+		{
+			name: "PUSH1_EOF",
+			bytecode: []byte{
+				0x60, // PUSH1
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0)},
+			expectedGas:   3,
+		},
+		{
+			name: "PUSH2_EOF",
+			bytecode: []byte{
+				0x61, 0x11, // PUSH2 0x1100
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0x1100)},
+			expectedGas:   3,
+		},
+		{
+			name: "INVALID",
+			bytecode: []byte{
+				0xFE, // INVALID
+			},
+			expectedStatus: getExpectedStatus(VMErrorCodeInvalidOpCode),
+		},
 	}
 
 	for _, tc := range testCases {
