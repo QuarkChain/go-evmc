@@ -1654,7 +1654,30 @@ func TestOpcodeErrorConditions(t *testing.T) {
 			bytecode: []byte{
 				0xBB,
 			},
-			expectedStatus: getExpectedStatus(ExecutionUnsupportedOpcode),
+			expectedStatus: getExpectedStatus(ExecutionInvalidOpcode),
+		},
+		{
+			name: "PUSH1_EOF",
+			bytecode: []byte{
+				0x60, // PUSH1
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0)},
+			expectedGas:   3,
+		},
+		{
+			name: "PUSH2_EOF",
+			bytecode: []byte{
+				0x61, 0x11, // PUSH2 0x1100
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(0x1100)},
+			expectedGas:   3,
+		},
+		{
+			name: "INVALID",
+			bytecode: []byte{
+				0xFE, // INVALID
+			},
+			expectedStatus: getExpectedStatus(ExecutionInvalidOpcode),
 		},
 	}
 

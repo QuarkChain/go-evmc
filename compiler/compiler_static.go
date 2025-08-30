@@ -206,8 +206,16 @@ func (c *EVMCompiler) analyzeProgram(instructions []EVMInstruction) *PCAnalysis 
 			}
 		}
 	}
-	// TODO: check if section gas is charged properly if the code does not end with STOP.
 
+	// Check if section gas is charged properly if the code does not end with STOP.
+	if sectionStartPC == -1 {
+		c.initSectionGas = sectionGas
+	} else if sectionStartPC >= 0 {
+		// end of section
+		analysis.sectionGas[uint64(sectionStartPC)] = sectionGas
+	} else if sectionStartPC != -2 {
+		panic("invalid sectionStartPC")
+	}
 	return analysis
 }
 
@@ -232,9 +240,9 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 	uint256Type := c.ctx.IntType(256)
 
 	// If the code is unsupported, return error
-	if c.table[instr.Opcode].undefined {
+	if instr.Opcode == INVALID || c.table[instr.Opcode].undefined {
 		// Store error code and exit
-		c.builder.CreateStore(llvm.ConstInt(c.ctx.Int64Type(), uint64(ExecutionUnsupportedOpcode), false), errorCodePtr)
+		c.builder.CreateStore(llvm.ConstInt(c.ctx.Int64Type(), uint64(ExecutionInvalidOpcode), false), errorCodePtr)
 		c.builder.CreateBr(errorBlock)
 		return
 	}

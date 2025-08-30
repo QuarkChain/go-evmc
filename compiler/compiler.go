@@ -103,7 +103,7 @@ const (
 	ExecutionStackOverflow
 	ExecutionStackUnderflow
 	ExecutionInvalidJumpDest
-	ExecutionUnsupportedOpcode
+	ExecutionInvalidOpcode
 	ExecutionUnknown
 )
 
@@ -159,11 +159,13 @@ func (c *EVMCompiler) ParseBytecode(bytecode []byte) ([]EVMInstruction, error) {
 
 		if opcode >= PUSH0 && opcode <= PUSH32 {
 			dataSize := int(opcode - PUSH0)
-			if pc+uint64(dataSize) >= uint64(len(bytecode)) {
-				return nil, fmt.Errorf("invalid PUSH instruction at PC %d", pc)
-			}
 			instr.Data = make([]byte, dataSize)
-			copy(instr.Data, bytecode[pc+1:pc+1+uint64(dataSize)])
+			if pc+uint64(dataSize) >= uint64(len(bytecode)) {
+				// pad zeros
+				copy(instr.Data, bytecode[pc+1:])
+			} else {
+				copy(instr.Data, bytecode[pc+1:pc+1+uint64(dataSize)])
+			}
 			pc += uint64(dataSize)
 		}
 		instructions = append(instructions, instr)
