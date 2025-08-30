@@ -151,7 +151,7 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 
 	gasLimit := testCase.gasLimit
 	if gasLimit == 0 {
-		gasLimit = 1000000
+		gasLimit = defaultGaslimit
 	}
 
 	// create a new stateDB for each testCase to avoid state pollution.
@@ -195,7 +195,8 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 		},
 	}
 
-	evm := NewEnv(eopts.Config, &EVMEngineConfig{CompilerOpts: DefaultEVMCompilationOpts(), CompiledLoader: MakeCompilerLoader})
+	copts := DefaultEVMCompilationOpts()
+	evm := NewEnv(eopts.Config, &EVMEngineConfig{CompilerOpts: copts, CompiledLoader: MakeCompilerLoader})
 	defer evm.executor.Dispose()
 
 	contract := NewContract(defaultCallerAddress, defaultCompilationAddress, uint256.MustFromBig(eopts.Config.Value), gasLimit)
@@ -2357,6 +2358,7 @@ func TestContractOpcodes(t *testing.T) {
 				store:       hexutil.MustDecode("0xff01000000000000000000000000000000000000000000000000000000000000")[:],
 				lastGasCost: 3,
 			},
+			expectedGas: 3*4 + 6,
 		},
 		{
 			name: "DELEGATECALL",
@@ -2457,7 +2459,7 @@ func TestContractOpcodes(t *testing.T) {
 				code = hexutil.MustDecode("0xFFFFFFFF")
 				return
 			},
-			expectedGas: 64854,
+			expectedGas: 32850,
 		},
 		{
 			name: "STATICCALL",
@@ -2518,6 +2520,16 @@ func TestContractOpcodes(t *testing.T) {
 				lastGasCost: 0,
 			},
 			expectedGas: 3*6 + 2500 + 100 + 65535,
+		},
+		{
+			name: "REVERT",
+			bytecode: []byte{
+				0x60, 0x00, // PUSH1 0 (size)
+				0x60, 0x00, // PUSH1 0 (offset)
+				0xFD, // REVERT
+			},
+			expectedStatus: getExpectedStatus(VMErrorCodeExecutionReverted),
+			expectedGas:    defaultGaslimit,
 		},
 	}
 

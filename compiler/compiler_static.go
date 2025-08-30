@@ -173,8 +173,8 @@ func (c *EVMCompiler) analyzeProgram(instructions []EVMInstruction) *PCAnalysis 
 			analysis.jumpTargets[instr.PC] = true
 		}
 
-		// TODO: Add CALL code
-		if instr.Opcode == JUMPDEST || instr.Opcode == JUMP || instr.Opcode == JUMPI || instr.Opcode == STOP {
+		// TODO: set sectionGas if program doesn't end with the following opCodes
+		if instr.Opcode == JUMPDEST || instr.Opcode == JUMP || instr.Opcode == JUMPI || instr.Opcode == STOP || instr.Opcode == RETURN || instr.Opcode == REVERT {
 			// end of section
 			if instr.Opcode == JUMPDEST {
 				// For JUMPDEST, the section ends at PC-1
