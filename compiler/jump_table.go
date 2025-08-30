@@ -605,13 +605,13 @@ func newFrontierInstructionSet() JumpTable {
 			diffStack:   diffStack(0, 1),
 		},
 		MSIZE: {
-			// execute:     opMsize,
+			execute:     opMsize,
 			constantGas: GasQuickStep,
 			minStack:    minStack(0, 1),
 			diffStack:   diffStack(0, 1),
 		},
 		GAS: {
-			// execute:     opGas,
+			execute:     opGas,
 			constantGas: GasQuickStep,
 			minStack:    minStack(0, 1),
 			diffStack:   diffStack(0, 1),

@@ -139,6 +139,8 @@ type OpcodeTestCase struct {
 	expectedStorage     state.Storage // skip if nil, check big-endian encoded
 	expectedLogsFn      func(cfg *runtime.Config) []*types.Log
 	expectedCAAndCodeFn func() (ca common.Address, code []byte)
+	expectedBalance     *uint256.Int
+	expectedTStorage    state.Storage
 	input               []byte // contract input for byteCode
 	originStorage       state.Storage
 	originAccount       *types.StateAccount
@@ -241,20 +243,30 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 		mem := result.Memory
 		if expectedMem.lastGasCost != mem.lastGasCost {
 			t.Errorf("Expected memory's lastGasCost: %v, actual lastGasCost: %v", expectedMem.lastGasCost, mem.lastGasCost)
-			return
 		}
 		if !bytes.Equal(expectedMem.store, mem.store) {
 			t.Errorf("Expected memory: %v, actual memory: %v", expectedMem.store, mem.store)
-			return
 		}
 	}
 
 	if expectedStorage := testCase.expectedStorage; expectedStorage != nil {
-		for key, expected := range testCase.expectedStorage {
+		for key, expected := range expectedStorage {
 			got := stateDB.GetState(defaultCompilationAddress, key)
 			if got != expected {
 				t.Errorf("Storage for [key:%v] mismatch: expected %v, got %v",
 					key, expected, got)
+				return
+			}
+		}
+	}
+
+	if expectedTStorage := testCase.expectedTStorage; expectedTStorage != nil {
+		for key, expected := range expectedTStorage {
+			got := stateDB.GetTransientState(defaultCompilationAddress, key)
+			if got != expected {
+				t.Errorf("Transient storage for [key:%v] mismatch: expected %v, got %v",
+					key, expected, got)
+				return
 			}
 		}
 	}
@@ -286,6 +298,15 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 		got := stateDB.GetCode(expectedCA)
 		if !bytes.Equal(expectedCode, got) {
 			t.Errorf("Expected code: %v, actual code: %v", expectedCode, got)
+			return
+		}
+	}
+
+	if expected := testCase.expectedBalance; expected != nil {
+		got := stateDB.GetBalance(defaultCompilationAddress)
+		if !got.Eq(expected) {
+			t.Errorf("Balance mismatch: expected %v (value: %d), got %v (value: %d)",
+				expected, expected.Uint64(), got, got.Uint64())
 			return
 		}
 	}
@@ -1313,6 +1334,67 @@ func TestMemoryOpcodes(t *testing.T) {
 			},
 			expectedGas: 3*5 + 6 + 3 + 6 + 3,
 		},
+		{
+			name: "MSIZE",
+			bytecode: []byte{
+				0x60, 0x42, // PUSH1 0x42
+				0x60, 0x00, // PUSH1 0x00
+				0x52, // MSTORE
+				0x59, // MSIZE
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(32)},
+			expectedGas:   12 + 2,
+		},
+		{
+			name: "TLOAD",
+			bytecode: []byte{
+				0x60, 0x02, // PUSH1 2 (value)
+				0x60, 0x00, // PUSH1 0x00 (key)
+				0x5D,       // TSTORE
+				0x60, 0x00, // PUSH1 0 (key)
+				0x5C, // TLOAD
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(2)},
+			expectedTStorage: state.Storage{
+				common.Hash(uint64ToBigEndianBytes32(0)): common.Hash(uint64ToBigEndianBytes32(2)),
+			},
+			expectedGas: 106 + 3 + 100,
+		},
+		{
+			name: "TSTORE",
+			bytecode: []byte{
+				0x60, 0x02, // PUSH1 2 (value)
+				0x60, 0x00, // PUSH1 0x00 (key)
+				0x5D, // TSTORE
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{},
+			expectedTStorage: state.Storage{
+				common.Hash(uint64ToBigEndianBytes32(0)): common.Hash(uint64ToBigEndianBytes32(2)),
+			},
+			expectedGas: 3*2 + 100,
+		},
+		{
+			name: "MCOPY",
+			bytecode: []byte{
+				0x60, 0x42, // PUSH1 0x42 (value)
+				0x60, 0x00, // PUSH1 0x00
+				0x52,       // MSTORE
+				0x60, 0x20, // PUSH1 32 (size)
+				0x60, 0x00, // PUSH1 0 (offset)
+				0x60, 0x20, // PUSH1 32 (destOffset)
+				0x5E, // MCOPY
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{},
+			expectedMemory: &Memory{
+				store:       common.Hex2Bytes("00000000000000000000000000000000000000000000000000000000000000420000000000000000000000000000000000000000000000000000000000000042"),
+				lastGasCost: 6,
+			},
+			expectedGas: 12 + 3*3 + 3 + 6,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -2244,6 +2326,15 @@ func TestOpcodeBlockContext(t *testing.T) {
 			}()},
 			expectedGas: 2,
 		},
+		{
+			name: "GAS",
+			bytecode: []byte{
+				0x5A, // GAS
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(defaultGaslimit - 2)},
+			expectedGas:   2,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -2648,6 +2739,18 @@ func TestContractOpcodes(t *testing.T) {
 			},
 			expectedStatus: getExpectedStatus(VMErrorCodeExecutionReverted),
 			expectedGas:    defaultGaslimit,
+		},
+		{
+			name: "SELFDESTRUCT",
+			originAccount: &types.StateAccount{
+				Balance: uint256.NewInt(100000),
+			},
+			bytecode: []byte{
+				0x60, 0x01, // PUSH1 01 (address)
+				0xFF, 0x00, // SELFDESTRUCT
+			},
+			expectedBalance: common.U2560,
+			expectedGas:     5000 + 27600 + 3,
 		},
 	}
 

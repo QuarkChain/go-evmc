@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
@@ -181,39 +182,39 @@ func enable3198(jt *JumpTable) {
 // - Adds TSTORE that writes to transient storage
 func enable1153(jt *JumpTable) {
 	jt[TLOAD] = &operation{
-		// execute:     opTload,
+		execute:     opTload,
 		constantGas: params.WarmStorageReadCostEIP2929,
 		minStack:    minStack(1, 1),
 		diffStack:   diffStack(1, 1),
 	}
 
 	jt[TSTORE] = &operation{
-		// execute:     opTstore,
+		execute:     opTstore,
 		constantGas: params.WarmStorageReadCostEIP2929,
 		minStack:    minStack(2, 0),
 		diffStack:   diffStack(2, 0),
 	}
 }
 
-// // opTload implements TLOAD opcode
-// func opTload(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	loc := scope.Stack.peek()
-// 	hash := common.Hash(loc.Bytes32())
-// 	val := interpreter.evm.StateDB.GetTransientState(scope.Contract.Address(), hash)
-// 	loc.SetBytes(val.Bytes())
-// 	return nil, nil
-// }
+// opTload implements TLOAD opcode
+func opTload(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	loc := scope.Stack.peek()
+	hash := common.Hash(loc.Bytes32())
+	val := interpreter.evm.StateDB.GetTransientState(scope.Contract.Address(), hash)
+	loc.SetBytes(val.Bytes())
+	return nil, nil
+}
 
-// // opTstore implements TSTORE opcode
-// func opTstore(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	if interpreter.readOnly {
-// 		return nil, ErrWriteProtection
-// 	}
-// 	loc := scope.Stack.pop()
-// 	val := scope.Stack.pop()
-// 	interpreter.evm.StateDB.SetTransientState(scope.Contract.Address(), loc.Bytes32(), val.Bytes32())
-// 	return nil, nil
-// }
+// opTstore implements TSTORE opcode
+func opTstore(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	if interpreter.readOnly {
+		return nil, ErrWriteProtection
+	}
+	loc := scope.Stack.pop()
+	val := scope.Stack.pop()
+	interpreter.evm.StateDB.SetTransientState(scope.Contract.Address(), loc.Bytes32(), val.Bytes32())
+	return nil, nil
+}
 
 // opBaseFee implements BASEFEE opcode
 func opBaseFee(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
@@ -250,27 +251,27 @@ func enable3860(jt *JumpTable) {
 // https://eips.ethereum.org/EIPS/eip-5656
 func enable5656(jt *JumpTable) {
 	jt[MCOPY] = &operation{
-		// execute:     opMcopy,
+		execute:     opMcopy,
 		constantGas: GasFastestStep,
-		// dynamicGas:  gasMcopy,
-		minStack:  minStack(3, 0),
-		diffStack: diffStack(3, 0),
-		// memorySize:  memoryMcopy,
+		dynamicGas:  gasMcopy,
+		minStack:    minStack(3, 0),
+		diffStack:   diffStack(3, 0),
+		memorySize:  memoryMcopy,
 	}
 }
 
-// // opMcopy implements the MCOPY opcode (https://eips.ethereum.org/EIPS/eip-5656)
-// func opMcopy(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	var (
-// 		dst    = scope.Stack.pop()
-// 		src    = scope.Stack.pop()
-// 		length = scope.Stack.pop()
-// 	)
-// 	// These values are checked for overflow during memory expansion calculation
-// 	// (the memorySize function on the opcode).
-// 	scope.Memory.Copy(dst.Uint64(), src.Uint64(), length.Uint64())
-// 	return nil, nil
-// }
+// opMcopy implements the MCOPY opcode (https://eips.ethereum.org/EIPS/eip-5656)
+func opMcopy(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	var (
+		dst    = scope.Stack.pop()
+		src    = scope.Stack.pop()
+		length = scope.Stack.pop()
+	)
+	// These values are checked for overflow during memory expansion calculation
+	// (the memorySize function on the opcode).
+	scope.Memory.Copy(dst.Uint64(), src.Uint64(), length.Uint64())
+	return nil, nil
+}
 
 // opBlobHash implements the BLOBHASH opcode
 func opBlobHash(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
@@ -331,8 +332,8 @@ func enable7516(jt *JumpTable) {
 // enable6780 applies EIP-6780 (deactivate SELFDESTRUCT)
 func enable6780(jt *JumpTable) {
 	jt[SELFDESTRUCT] = &operation{
-		// execute:     opSelfdestruct6780,
-		// dynamicGas:  gasSelfdestructEIP3529,
+		execute:     opSelfdestruct6780,
+		dynamicGas:  gasSelfdestructEIP3529,
 		constantGas: params.SelfdestructGasEIP150,
 		minStack:    minStack(1, 0),
 		diffStack:   diffStack(1, 0),

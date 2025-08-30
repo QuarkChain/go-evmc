@@ -563,15 +563,15 @@ func opSstore(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte
 // 	return nil, nil
 // }
 
-// func opMsize(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	scope.Stack.push(new(uint256.Int).SetUint64(uint64(scope.Memory.Len())))
-// 	return nil, nil
-// }
+func opMsize(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	scope.Stack.push(new(uint256.Int).SetUint64(uint64(scope.Memory.Len())))
+	return nil, nil
+}
 
-// func opGas(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	scope.Stack.push(new(uint256.Int).SetUint64(scope.Contract.Gas))
-// 	return nil, nil
-// }
+func opGas(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	scope.Stack.push(new(uint256.Int).SetUint64(scope.Contract.Gas))
+	return nil, nil
+}
 
 // func opSwap1(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 	scope.Stack.swap1()
@@ -878,44 +878,44 @@ func opUndefined(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]b
 // 	return nil, errStopToken
 // }
 
-// func opSelfdestruct(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	if interpreter.readOnly {
-// 		return nil, ErrWriteProtection
-// 	}
-// 	beneficiary := scope.Stack.pop()
-// 	balance := interpreter.evm.StateDB.GetBalance(scope.Contract.Address())
-// 	interpreter.evm.StateDB.AddBalance(beneficiary.Bytes20(), balance, tracing.BalanceIncreaseSelfdestruct)
-// 	interpreter.evm.StateDB.SelfDestruct(scope.Contract.Address())
-// 	if tracer := interpreter.evm.Config.Tracer; tracer != nil {
-// 		if tracer.OnEnter != nil {
-// 			tracer.OnEnter(interpreter.evm.depth, byte(SELFDESTRUCT), scope.Contract.Address(), beneficiary.Bytes20(), []byte{}, 0, balance.ToBig())
-// 		}
-// 		if tracer.OnExit != nil {
-// 			tracer.OnExit(interpreter.evm.depth, []byte{}, 0, nil, false)
-// 		}
-// 	}
-// 	return nil, errStopToken
-// }
+func opSelfdestruct(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	if interpreter.readOnly {
+		return nil, ErrWriteProtection
+	}
+	beneficiary := scope.Stack.pop()
+	balance := interpreter.evm.StateDB.GetBalance(scope.Contract.Address())
+	interpreter.evm.StateDB.AddBalance(beneficiary.Bytes20(), balance, tracing.BalanceIncreaseSelfdestruct)
+	interpreter.evm.StateDB.SelfDestruct(scope.Contract.Address())
+	if tracer := interpreter.evm.Config.Tracer; tracer != nil {
+		if tracer.OnEnter != nil {
+			tracer.OnEnter(interpreter.evm.depth, byte(SELFDESTRUCT), scope.Contract.Address(), beneficiary.Bytes20(), []byte{}, 0, balance.ToBig())
+		}
+		if tracer.OnExit != nil {
+			tracer.OnExit(interpreter.evm.depth, []byte{}, 0, nil, false)
+		}
+	}
+	return nil, errStopToken
+}
 
-// func opSelfdestruct6780(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 	if interpreter.readOnly {
-// 		return nil, ErrWriteProtection
-// 	}
-// 	beneficiary := scope.Stack.pop()
-// 	balance := interpreter.evm.StateDB.GetBalance(scope.Contract.Address())
-// 	interpreter.evm.StateDB.SubBalance(scope.Contract.Address(), balance, tracing.BalanceDecreaseSelfdestruct)
-// 	interpreter.evm.StateDB.AddBalance(beneficiary.Bytes20(), balance, tracing.BalanceIncreaseSelfdestruct)
-// 	interpreter.evm.StateDB.SelfDestruct6780(scope.Contract.Address())
-// 	if tracer := interpreter.evm.Config.Tracer; tracer != nil {
-// 		if tracer.OnEnter != nil {
-// 			tracer.OnEnter(interpreter.evm.depth, byte(SELFDESTRUCT), scope.Contract.Address(), beneficiary.Bytes20(), []byte{}, 0, balance.ToBig())
-// 		}
-// 		if tracer.OnExit != nil {
-// 			tracer.OnExit(interpreter.evm.depth, []byte{}, 0, nil, false)
-// 		}
-// 	}
-// 	return nil, errStopToken
-// }
+func opSelfdestruct6780(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+	if interpreter.readOnly {
+		return nil, ErrWriteProtection
+	}
+	beneficiary := scope.Stack.pop()
+	balance := interpreter.evm.StateDB.GetBalance(scope.Contract.Address())
+	interpreter.evm.StateDB.SubBalance(scope.Contract.Address(), balance, tracing.BalanceDecreaseSelfdestruct)
+	interpreter.evm.StateDB.AddBalance(beneficiary.Bytes20(), balance, tracing.BalanceIncreaseSelfdestruct)
+	interpreter.evm.StateDB.SelfDestruct6780(scope.Contract.Address())
+	if tracer := interpreter.evm.Config.Tracer; tracer != nil {
+		if tracer.OnEnter != nil {
+			tracer.OnEnter(interpreter.evm.depth, byte(SELFDESTRUCT), scope.Contract.Address(), beneficiary.Bytes20(), []byte{}, 0, balance.ToBig())
+		}
+		if tracer.OnExit != nil {
+			tracer.OnExit(interpreter.evm.depth, []byte{}, 0, nil, false)
+		}
+	}
+	return nil, errStopToken
+}
 
 // following functions are used by the instruction jump  table
 
