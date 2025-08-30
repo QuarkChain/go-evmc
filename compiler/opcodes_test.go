@@ -107,14 +107,15 @@ func NewTestExecutor(copts *EVMCompilationOpts, loaderFn MakeLoader) *EVMExecuto
 			ChainConfig: params.AllDevChainProtocolChanges,
 		},
 	}
-	evm := NewEnv(eopts.Config)
 	if copts == nil {
 		copts = DefaultEVMCompilationOpts()
 	}
 	if loaderFn == nil {
 		loaderFn = MakeCompilerLoader
 	}
-	return evm.SetExecutor(copts, loaderFn)
+	engineCfg := &EVMEngineConfig{CompilerOpts: copts, CompiledLoader: loaderFn}
+	evm := NewEnv(eopts.Config, engineCfg)
+	return evm.executor
 }
 
 func (e *EVMExecutor) RunBytecode(bytecode, input []byte, gasLimit uint64) (*EVMExecutionResult, error) {
@@ -126,22 +127,22 @@ func (e *EVMExecutor) RunBytecode(bytecode, input []byte, gasLimit uint64) (*EVM
 
 // Test case structure for opcode tests
 type OpcodeTestCase struct {
-	name              string
-	bytecode          []byte
-	gasLimit          uint64
-	expectedStack     [][32]byte       // skip if nil, check machine-endian encoded
-	expectedStatus    *ExecutionStatus // VMExecutionSuccess if nil
-	expectedGas       uint64           // skip if 0
-	expectedRefund    uint64
-	expectedMemory    *Memory       // skip if nil, check big-endian encoded
-	expectedStorage   state.Storage // skip if nil, check big-endian encoded
-	expectedCAAndCode func() (ca common.Address, code []byte)
-	input             []byte // contract input for byteCode
-	originStorage     state.Storage
-	originAccount     *types.StateAccount
-	calledCode        []byte
-	calledCodeAddr    common.Address
-	callCodeStorage   state.Storage
+	name                string
+	bytecode            []byte
+	gasLimit            uint64
+	expectedStack       [][32]byte       // skip if nil, check machine-endian encoded
+	expectedStatus      *ExecutionStatus // VMExecutionSuccess if nil
+	expectedGas         uint64           // skip if 0
+	expectedRefund      uint64
+	expectedMemory      *Memory       // skip if nil, check big-endian encoded
+	expectedStorage     state.Storage // skip if nil, check big-endian encoded
+	expectedCAAndCodeFn func() (ca common.Address, code []byte)
+	input               []byte // contract input for byteCode
+	originStorage       state.Storage
+	originAccount       *types.StateAccount
+	calledCode          []byte
+	calledCodeAddr      common.Address
+	callCodeStorage     state.Storage
 }
 
 // Helper function to run individual opcode test
@@ -194,9 +195,7 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 		},
 	}
 
-	evm := NewEnv(eopts.Config)
-	copts := DefaultEVMCompilationOpts()
-	evm.SetExecutor(copts, MakeCompilerLoader)
+	evm := NewEnv(eopts.Config, &EVMEngineConfig{CompilerOpts: DefaultEVMCompilationOpts(), CompiledLoader: MakeCompilerLoader})
 	defer evm.executor.Dispose()
 
 	contract := NewContract(defaultCallerAddress, defaultCompilationAddress, uint256.MustFromBig(eopts.Config.Value), gasLimit)
@@ -257,7 +256,7 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 		}
 	}
 
-	if fn := testCase.expectedCAAndCode; fn != nil {
+	if fn := testCase.expectedCAAndCodeFn; fn != nil {
 		expectedCA, expectedCode := fn()
 		got := stateDB.GetCode(expectedCA)
 		if !bytes.Equal(expectedCode, got) {
@@ -1700,7 +1699,7 @@ func TestOpcodeErrorConditions(t *testing.T) {
 			bytecode: []byte{
 				0xBB,
 			},
-			expectedStatus: getExpectedStatus(VMErrorCodeUnknown),
+			expectedStatus: getExpectedStatus(VMErrorCodeInvalidOpCode),
 		},
 	}
 
@@ -2450,7 +2449,7 @@ func TestContractOpcodes(t *testing.T) {
 					0xF5, 0x00, // CREATE2 STOP
 				)...,
 			),
-			expectedCAAndCode: func() (ca common.Address, code []byte) {
+			expectedCAAndCodeFn: func() (ca common.Address, code []byte) {
 				callCode := hexutil.MustDecode("0x63FFFFFFFF6000526004601CF3")
 				inithash := crypto.Keccak256Hash(callCode)
 				salt := uint64ToBigEndianBytes32(2)

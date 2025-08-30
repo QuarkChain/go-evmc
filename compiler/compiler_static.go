@@ -234,7 +234,7 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 	// If the code is unsupported, return error
 	if c.table[instr.Opcode].undefined {
 		// Store error code and exit
-		c.builder.CreateStore(llvm.ConstInt(c.ctx.Int64Type(), uint64(VMErrorCodeUnknown), false), errorCodePtr)
+		c.builder.CreateStore(llvm.ConstInt(c.ctx.Int64Type(), uint64(VMErrorCodeInvalidOpCode), false), errorCodePtr)
 		c.builder.CreateBr(errorBlock)
 		return
 	}
@@ -535,16 +535,6 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 	case JUMPDEST:
 		// JUMPDEST is a no-op, charge the section gas before continue to next instruction
 		c.builder.CreateBr(nextBlock)
-
-	// case RETURN:
-	// 	_ = c.popStack(stack, stackPtr) // offset
-	// 	_ = c.popStack(stack, stackPtr) // size
-	// 	c.builder.CreateBr(exitBlock)
-
-	// case REVERT:
-	// 	_ = c.popStack(stack, stackPtr) // offset
-	// 	_ = c.popStack(stack, stackPtr) // size
-	// 	c.builder.CreateBr(exitBlock)
 
 	default:
 		if instr.Opcode >= PUSH0 && instr.Opcode <= PUSH32 {

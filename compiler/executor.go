@@ -6,12 +6,12 @@ package compiler
 import "C"
 import (
 	"encoding/binary"
+	"fmt"
 	"runtime/cgo"
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/log"
 )
 
 // An executor to execute native compiled code within EVM.
@@ -43,51 +43,9 @@ type ScopeContext struct {
 }
 
 func NewEVMExecutor(evm *EVM, copts *EVMCompilationOpts, loaderFn MakeLoader) *EVMExecutor {
-	// If jump table was not initialised we set the default one.
-	var table *JumpTable
-	switch {
-	case evm.chainRules.IsVerkle:
-		// TODO replace with proper instruction set when fork is specified
-		table = &verkleInstructionSet
-	case evm.chainRules.IsPrague:
-		table = &pragueInstructionSet
-	case evm.chainRules.IsCancun:
-		table = &cancunInstructionSet
-	case evm.chainRules.IsShanghai:
-		table = &shanghaiInstructionSet
-	case evm.chainRules.IsMerge:
-		table = &mergeInstructionSet
-	case evm.chainRules.IsLondon:
-		table = &londonInstructionSet
-	case evm.chainRules.IsBerlin:
-		table = &berlinInstructionSet
-	case evm.chainRules.IsIstanbul:
-		table = &istanbulInstructionSet
-	case evm.chainRules.IsConstantinople:
-		table = &constantinopleInstructionSet
-	case evm.chainRules.IsByzantium:
-		table = &byzantiumInstructionSet
-	case evm.chainRules.IsEIP158:
-		table = &spuriousDragonInstructionSet
-	case evm.chainRules.IsEIP150:
-		table = &tangerineWhistleInstructionSet
-	case evm.chainRules.IsHomestead:
-		table = &homesteadInstructionSet
-	default:
-		table = &frontierInstructionSet
-	}
-	var extraEips []int
-	if len(evm.Config.ExtraEips) > 0 {
-		// Deep-copy jumptable to prevent modification of opcodes in other tables
-		table = copyJumpTable(table)
-	}
-	for _, eip := range evm.Config.ExtraEips {
-		if err := EnableEIP(eip, table); err != nil {
-			// Disable it, so caller can check if it's activated or not
-			log.Error("EIP activation failed", "eip", eip, "error", err)
-		} else {
-			extraEips = append(extraEips, eip)
-		}
+	table, extraEips, err := getJumpTable(evm.chainRules, evm.Config.ExtraEips)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to get jumpTable: %s", err))
 	}
 	evm.Config.ExtraEips = extraEips
 	engine := NewNativeEngine(copts, table, loaderFn)

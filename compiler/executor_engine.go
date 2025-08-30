@@ -12,6 +12,11 @@ import (
 	"tinygo.org/x/go-llvm"
 )
 
+type EVMEngineConfig struct {
+	CompilerOpts   *EVMCompilationOpts
+	CompiledLoader MakeLoader
+}
+
 type NativeEngine struct {
 	ctx             llvm.Context
 	module          llvm.Module
