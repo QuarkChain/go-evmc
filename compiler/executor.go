@@ -85,9 +85,8 @@ func (e *EVMExecutor) Run(contract *Contract, input []byte, readOnly bool) (ret 
 	// Make sure the readOnly is only set if we aren't in readOnly yet.
 	// This also makes sure that the readOnly flag isn't removed for child calls.
 	if readOnly && !e.readOnly {
-		prevReadonly := e.readOnly
 		e.readOnly = true
-		defer func() { e.readOnly = prevReadonly }()
+		defer func() { e.readOnly = false }()
 	}
 
 	// Reset the previous call's return data. It's unimportant to preserve the old buffer

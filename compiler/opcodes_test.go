@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"bytes"
+	"encoding/json"
 	"math/big"
 	"testing"
 
@@ -136,6 +137,7 @@ type OpcodeTestCase struct {
 	expectedRefund      uint64
 	expectedMemory      *Memory       // skip if nil, check big-endian encoded
 	expectedStorage     state.Storage // skip if nil, check big-endian encoded
+	expectedLogsFn      func(cfg *runtime.Config) []*types.Log
 	expectedCAAndCodeFn func() (ca common.Address, code []byte)
 	input               []byte // contract input for byteCode
 	originStorage       state.Storage
@@ -253,6 +255,28 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 			if got != expected {
 				t.Errorf("Storage for [key:%v] mismatch: expected %v, got %v",
 					key, expected, got)
+			}
+		}
+	}
+
+	if testCase.expectedLogsFn != nil {
+		bn := eopts.Config.BlockNumber.Uint64()
+		blockHash := eopts.Config.GetHashFn(bn)
+		logs := stateDB.GetLogs(common.Hash{}, bn, blockHash, eopts.Config.Time)
+		expectedLogs := testCase.expectedLogsFn(eopts.Config)
+		if len(logs) != len(expectedLogs) {
+			t.Errorf("Logs length mismatch: expected %d, got %d",
+				len(expectedLogs), len(logs))
+			t.Errorf("Expected logs: %v", expectedLogs)
+			t.Errorf("Actual logs: %v", logs)
+			return
+		}
+
+		for i, expected := range expectedLogs {
+			logBytes, _ := json.Marshal(logs[i])
+			expectedBytes, _ := json.Marshal(expected)
+			if !bytes.Equal(logBytes, expectedBytes) {
+				t.Errorf("Log[%d] mismatch: expected %v, got %v", i, expected, logs[i])
 			}
 		}
 	}
@@ -2199,6 +2223,77 @@ func TestOpcodeBlockContext(t *testing.T) {
 		},
 	}
 
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			runOpcodeTest(t, tc)
+		})
+	}
+}
+
+func TestLogOpcodes(t *testing.T) {
+	testCases := []OpcodeTestCase{
+		{
+			name: "LOG0",
+			bytecode: []byte{
+				0x60, 0xFF, // PUSH1 0xFF (value)
+				0x60, 0x00, // PUSH1 0 (offset)
+				0x52,       // MSTORE
+				0x60, 0x01, // PUSH1 1 (size)
+				0x60, 0x1F, // PUSH1 31 (offset)
+				0xA0, 0x00, // LOG0 STOP
+			},
+			expectedLogsFn: func(cfg *runtime.Config) []*types.Log {
+				bn := cfg.BlockNumber.Uint64()
+				return []*types.Log{
+					{
+						Address:        defaultCompilationAddress,
+						Topics:         []common.Hash{},
+						Data:           hexutil.MustDecode("0xFF"),
+						BlockNumber:    bn,
+						TxHash:         common.Hash{},
+						TxIndex:        0,
+						BlockHash:      cfg.GetHashFn(bn),
+						BlockTimestamp: cfg.Time,
+						Index:          0,
+					},
+				}
+			},
+			expectedGas: 12 + 3*2 + 8 + 375,
+		},
+		{
+			name: "LOG2",
+			bytecode: []byte{
+				0x60, 0xFF, // PUSH1 0xFF (value)
+				0x60, 0x00, // PUSH1 0 (offset)
+				0x52,       // MSTORE
+				0x60, 0x12, // PUSH1 0x12 (topic 2)
+				0x60, 0x11, // PUSH1 0x11 (topic 1)
+				0x60, 0x01, // PUSH1 1 (size)
+				0x60, 0x1F, // PUSH1 31 (offset)
+				0xA2, 0x00, // LOG2 STOP
+			},
+			expectedLogsFn: func(cfg *runtime.Config) []*types.Log {
+				bn := cfg.BlockNumber.Uint64()
+				return []*types.Log{
+					{
+						Address: defaultCompilationAddress,
+						Topics: []common.Hash{
+							common.Hash(uint64ToBigEndianBytes32(0x11)),
+							common.Hash(uint64ToBigEndianBytes32(0x12)),
+						},
+						Data:           hexutil.MustDecode("0xFF"),
+						BlockNumber:    bn,
+						TxHash:         common.Hash{},
+						TxIndex:        0,
+						BlockHash:      cfg.GetHashFn(bn),
+						BlockTimestamp: cfg.Time,
+						Index:          0,
+					},
+				}
+			},
+			expectedGas: 12 + 3*4 + 8 + 1125,
+		},
+	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			runOpcodeTest(t, tc)

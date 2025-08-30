@@ -21,6 +21,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
@@ -919,32 +920,32 @@ func opUndefined(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]b
 // following functions are used by the instruction jump  table
 
 // make log instruction function
-// func makeLog(size int) executionFunc {
-// 	return func(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-// 		if interpreter.readOnly {
-// 			return nil, ErrWriteProtection
-// 		}
-// 		topics := make([]common.Hash, size)
-// 		stack := scope.Stack
-// 		mStart, mSize := stack.pop(), stack.pop()
-// 		for i := 0; i < size; i++ {
-// 			addr := stack.pop()
-// 			topics[i] = addr.Bytes32()
-// 		}
+func makeLog(size int) HostFunc {
+	return func(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+		if interpreter.readOnly {
+			return nil, ErrWriteProtection
+		}
+		topics := make([]common.Hash, size)
+		stack := scope.Stack
+		mStart, mSize := stack.pop(), stack.pop()
+		for i := 0; i < size; i++ {
+			addr := stack.pop()
+			topics[i] = addr.Bytes32()
+		}
 
-// 		d := scope.Memory.GetCopy(mStart.Uint64(), mSize.Uint64())
-// 		interpreter.evm.StateDB.AddLog(&types.Log{
-// 			Address: scope.Contract.Address(),
-// 			Topics:  topics,
-// 			Data:    d,
-// 			// This is a non-consensus field, but assigned here because
-// 			// core/state doesn't know the current block number.
-// 			BlockNumber: interpreter.evm.Context.BlockNumber.Uint64(),
-// 		})
+		d := scope.Memory.GetCopy(mStart.Uint64(), mSize.Uint64())
+		interpreter.evm.StateDB.AddLog(&types.Log{
+			Address: scope.Contract.Address(),
+			Topics:  topics,
+			Data:    d,
+			// This is a non-consensus field, but assigned here because
+			// core/state doesn't know the current block number.
+			BlockNumber: interpreter.evm.Context.BlockNumber.Uint64(),
+		})
 
-// 		return nil, nil
-// 	}
-// }
+		return nil, nil
+	}
+}
 
 // opPush1 is a specialized version of pushN
 // func opPush1(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
