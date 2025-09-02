@@ -76,7 +76,7 @@ type EVMCompilationOpts struct {
 type MakeLoader func(engine *NativeEngine) NativeLoader
 type NativeLoader interface {
 	// TODO: support forks
-	LoadCompiledContract(contract *Contract) ([]byte, error)
+	LoadCompiledContract(contract *Contract) ([]byte, llvm.Value, error)
 	Dispose()
 }
 
@@ -165,10 +165,9 @@ func (c *EVMCompiler) Dispose() {
 	c.builder.Dispose()
 }
 
-func (c *EVMCompiler) LoadCompiledContract(contract *Contract) ([]byte, error) {
+func (c *EVMCompiler) LoadCompiledContract(contract *Contract) ([]byte, llvm.Value, error) {
 	c.CompileAndOptimizeWithOpts(contract.Code, c.copts)
-	c.addGlobalMappingForHostFunctions()
-	return c.GetCompiledCode(), nil
+	return c.GetCompiledCode(), c.hostFunc, nil
 }
 
 func (c *EVMCompiler) ParseBytecode(bytecode []byte) ([]EVMInstruction, error) {

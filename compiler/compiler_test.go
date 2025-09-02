@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
+	"tinygo.org/x/go-llvm"
 )
 
 type dummyStatedb struct {
@@ -450,15 +451,17 @@ func BenchmarkEVMCompilerMediumContract(b *testing.B) {
 
 type DummyCompiledLoader struct {
 	compiledCode []byte
+	hostFunc     llvm.Value
 }
 
-func (d *DummyCompiledLoader) LoadCompiledContract(contract *Contract) ([]byte, error) {
-	return d.compiledCode, nil
+func (d *DummyCompiledLoader) LoadCompiledContract(contract *Contract) ([]byte, llvm.Value, error) {
+	return d.compiledCode, d.hostFunc, nil
 }
 
 func (d *DummyCompiledLoader) Dispose() {}
 
 func (d *DummyCompiledLoader) MakeDummyCompiledLoader(engine *NativeEngine) NativeLoader {
+	_, d.hostFunc = initializeHostFunction(engine.ctx, engine.module)
 	return d
 }
 

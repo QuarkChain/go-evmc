@@ -124,7 +124,3 @@ func initializeHostFunction(ctx llvm.Context, module llvm.Module) (hostFuncType 
 func (c *EVMCompiler) initailizeHostFunctions() {
 	c.hostFuncType, c.hostFunc = initializeHostFunction(c.ctx, c.module)
 }
-
-func (c *EVMCompiler) addGlobalMappingForHostFunctions() {
-	c.llvmEngine.AddGlobalMapping(c.hostFunc, unsafe.Pointer(C.callHostFunc))
-}

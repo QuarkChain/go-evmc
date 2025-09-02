@@ -102,9 +102,23 @@ func (d *dummyChain) Config() *params.ChainConfig {
 }
 
 func NewTestExecutor(copts *EVMCompilationOpts, loaderFn MakeLoader) *EVMExecutor {
+	stateDB, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
 	eopts := &EVMExecutionOpts{
 		Config: &runtime.Config{
 			ChainConfig: params.AllDevChainProtocolChanges,
+			GasLimit:    defaultGaslimit,
+			GasPrice:    defaultGasPrice,
+			State:       stateDB,
+			Origin:      defaultOriginAddress,
+			Coinbase:    defaultCoinbaseAddress,
+			BlockNumber: defaultBlockNumber,
+			Time:        defaultTime,
+			Value:       defaultCallValue,
+			Random:      &defaultRANDAO,
+			BaseFee:     defaultBaseFee,
+			BlobBaseFee: defaultBlobBaseFee,
+			BlobHashes:  defaultBlobHashes,
+			GetHashFn:   defaultHashFn,
 		},
 	}
 	if copts == nil {
