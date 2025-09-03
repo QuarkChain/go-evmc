@@ -2559,6 +2559,31 @@ func TestContractOpcodes(t *testing.T) {
 			expectedGas: 3*6 + 2500 + 100 + 65535,
 		},
 		{
+			name: "STATICCALL_PRECOMPILE",
+			bytecode: []byte{
+				0x60, 0xFF, // PUSH1 0xFF (data)
+				0x60, 0x00, // PUSH1 0 (retOffset)
+				0x52, // MSTORE
+				// Do the call
+				0x60, 0x20, // PUSH1 20 (retsize)
+				0x60, 0x20, // PUSH1 20 (retOffset)
+				0x60, 0x01, // PUSH1 1 (argsSize)
+				0x60, 0x1F, // PUSH1 0x1F (argsOffset)
+				0x60, 0x02, // PUSH1 2 (SHA256)
+				0x63, 0xFF, 0xFF, 0xFF, 0xFF, // PUSH4
+				0xFA, // STATICCALL
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(1)}, // success:1, failure:0
+			expectedMemory: &Memory{
+				store:       hexutil.MustDecode("0x00000000000000000000000000000000000000000000000000000000000000ffa8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"),
+				lastGasCost: 6,
+			},
+			// Since the Berlin hardfork, all precompiled contract addresses, along with tx.sender and tx.to,
+			// are considered warm and only cost 100 gas. Geth handles this in state_transition, but we don’t
+			// account for it here.
+			expectedGas: 205 + 2500,
+		},
+		{
 			name: "REVERT",
 			bytecode: []byte{
 				0x60, 0x00, // PUSH1 0 (size)
