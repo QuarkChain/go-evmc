@@ -72,6 +72,7 @@ func (c *Contract) RefundGas(gas uint64, logger *tracing.Hooks, reason tracing.G
 	c.Gas += gas
 }
 
+// TODO: replace SetCallCode logic with direct loading of compiled code.
 // SetCallCode sets the code of the contract
 func (c *Contract) SetCallCode(hash common.Hash, code []byte) {
 	c.Code = code
