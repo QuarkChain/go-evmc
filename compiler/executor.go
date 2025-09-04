@@ -12,8 +12,15 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"tinygo.org/x/go-llvm"
+	"github.com/ethereum/go-ethereum/params"
 )
+
+type CompiledCodeVersion string
+type FuncPtr uint64
+type NativeLoader interface {
+	// CompiledFuncPtr retrieves the function pointer associated with the codeHash and fork.
+	CompiledFuncPtr(codeHash common.Hash, chainRules params.Rules, extraEips []int) (FuncPtr, CompiledCodeVersion, error)
+}
 
 // An executor to execute native compiled code within EVM.
 // Data layout rules:
@@ -22,16 +29,8 @@ import (
 // - Memory: always big-endian encoded as in execution spec
 // - Storage: always big-endian encoded as in execution spec
 type EVMExecutor struct {
-	callContext *ScopeContext // current call context
-
-	ctx    llvm.Context
-	module llvm.Module
-	engine *llvm.ExecutionEngine
-
-	hostFuncType llvm.Type
-	hostFunc     llvm.Value
-
-	loadedContracts map[common.Hash]bool
+	callContext  *ScopeContext // current call context
+	nativeLoader NativeLoader
 
 	evm   *EVM
 	table *JumpTable
@@ -50,52 +49,19 @@ type ScopeContext struct {
 	Stack    *Stack
 }
 
-type EVMExecutorOptions struct {
-}
-
-func NewEVMExecutor(evm *EVM) *EVMExecutor {
-	ctx := llvm.NewContext()
-	module := ctx.NewModule("evm_module")
-
-	hostFuncType, hostFunc := initializeHostFunction(ctx, module)
-
-	engine, err := llvm.NewJITCompiler(module, 3)
-	if err != nil {
-		panic(fmt.Errorf("failed to create JIT compiler: %v", err))
-	}
-
+func NewEVMExecutor(evm *EVM, nativeLoader NativeLoader) *EVMExecutor {
 	table, extraEips, err := getJumpTable(evm.chainRules, evm.Config.ExtraEips)
 	if err != nil {
-		// return
-		// TODO: log error
+		panic(fmt.Sprintf("Failed to get jumpTable: %s", err))
 	}
-
 	evm.Config.ExtraEips = extraEips
-
 	e := &EVMExecutor{
-		ctx:             ctx,
-		module:          module,
-		engine:          &engine,
-		evm:             evm,
-		hostFuncType:    hostFuncType,
-		hostFunc:        hostFunc,
-		loadedContracts: make(map[common.Hash]bool),
-		table:           table,
-		hasher:          crypto.NewKeccakState(),
+		nativeLoader: nativeLoader,
+		evm:          evm,
+		table:        table,
+		hasher:       crypto.NewKeccakState(),
 	}
-	e.addGlobalMappingForHostFunctions()
 	return e
-}
-
-func (e *EVMExecutor) AddCompiledContract(codeHash common.Hash, compiledCode []byte) {
-	if compiledCode == nil {
-		// no compiled code is found
-		return
-	}
-	if _, ok := e.loadedContracts[codeHash]; !ok {
-		e.engine.AddObjectFileFromBuffer(compiledCode)
-		e.loadedContracts[codeHash] = true
-	}
 }
 
 func (e *EVMExecutor) AddInstructionTable(table *JumpTable) {
@@ -107,24 +73,51 @@ func (e *EVMExecutor) AddInstructionTable(table *JumpTable) {
 }
 
 // Run a contract.
-func (e *EVMExecutor) Run(contract Contract, input []byte, readOnly bool) (ret *EVMExecutionResult, err error) {
-	e.AddCompiledContract(contract.CodeHash, contract.CompiledCode)
-	// Get function pointer for direct execution
-	funcPtr := e.engine.GetFunctionAddress(GetContractFunction(contract.CodeHash))
-	if funcPtr == 0 {
-		return nil, fmt.Errorf("compiled contract code not found")
+func (e *EVMExecutor) Run(contract *Contract, input []byte, readOnly bool) (ret *EVMExecutionResult, err error) {
+	// Don't bother with the execution if there's no code.
+	if len(contract.Code) == 0 {
+		return nil, nil
 	}
 
+	funcPtr, _, err := e.nativeLoader.CompiledFuncPtr(contract.CodeHash, e.evm.chainRules, e.evm.Config.ExtraEips)
+	if err != nil {
+		return nil, err
+	}
+
+	// Increment the call depth which is restricted to 1024
+	e.evm.depth++
+	defer func() { e.evm.depth-- }()
+
+	// Make sure the readOnly is only set if we aren't in readOnly yet.
+	// This also makes sure that the readOnly flag isn't removed for child calls.
+	if readOnly && !e.readOnly {
+		e.readOnly = true
+		defer func() { e.readOnly = false }()
+	}
+
+	// Reset the previous call's return data. It's unimportant to preserve the old buffer
+	// as every returning call will return new data anyway.
+	e.returnData = nil
+
+	prevCallContext := e.callContext
 	// Prepare execution environment
 	memory := NewMemory()
 	stack := newstack()
-	e.callContext = &ScopeContext{
-		Contract: &contract,
+	callContext := &ScopeContext{
+		Contract: contract,
 		Memory:   memory,
 		Stack:    stack,
 	}
+	e.callContext = callContext
 
-	defer returnStack(stack)
+	defer func() {
+		returnStack(stack)
+		// here memory is not freed for checking testCase's memory
+		// memory.Free()
+		// Recover prev context cause e.callContext is used to store gas/memory/stack in the whole tx execution lifecycle.
+		e.callContext = prevCallContext
+		e.evm.internalRet = []byte{}
+	}()
 	contract.Input = input
 
 	// Execute using function pointer
@@ -136,7 +129,7 @@ func (e *EVMExecutor) Run(contract Contract, input []byte, readOnly bool) (ret *
 
 	gasRemaining := uint64(gasRemainingResult)
 
-	if errorCode != int64(ExecutionSuccess) {
+	if errorCode != int64(VMExecutionSuccess) {
 		return &EVMExecutionResult{
 			Stack:        nil,
 			Memory:       nil,
@@ -144,10 +137,12 @@ func (e *EVMExecutor) Run(contract Contract, input []byte, readOnly bool) (ret *
 			GasUsed:      gas - gasRemaining,
 			GasLimit:     gas,
 			GasRemaining: gasRemaining,
-		}, nil
+			Ret:          e.evm.internalRet,
+		}, vmErrorCodeToErr(errorCode)
 	}
 
 	// Update remaining gas of the contract call
+	// contract.Gas only include hostFunc's gas, while gasRemaining accounts for hostFunc+nativeCall gas
 	contract.Gas = gasRemaining
 
 	stackByte := make([][32]byte, stackDepth)
@@ -163,17 +158,12 @@ func (e *EVMExecutor) Run(contract Contract, input []byte, readOnly bool) (ret *
 		GasUsed:      gas - gasRemaining,
 		GasLimit:     gas,
 		GasRemaining: gasRemaining,
+		Ret:          e.evm.internalRet,
 	}, nil
 }
 
-func (e *EVMExecutor) Dispose() {
-	e.engine.Dispose()
-	// c.module.Dispose() TODO: segfault after execute() - does engine take the ownership of the module
-	e.ctx.Dispose()
-}
-
 // Helper function to call native function pointer (requires CGO)
-func (e *EVMExecutor) callNativeFunction(funcPtr uint64, inst cgo.Handle, stack unsafe.Pointer, gas uint64) (int64, int64, int64) {
+func (e *EVMExecutor) callNativeFunction(funcPtr FuncPtr, inst cgo.Handle, stack unsafe.Pointer, gas uint64) (int64, int64, int64) {
 	var output [OUTPUT_SIZE]byte
 	C.execute(C.uint64_t(funcPtr), C.uintptr_t(inst), stack, nil, C.uint64_t(gas), unsafe.Pointer(&output[0]))
 	errorCode := binary.LittleEndian.Uint64(output[OUTPUT_IDX_ERROR_CODE*8:])

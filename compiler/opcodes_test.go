@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"bytes"
+	"encoding/json"
 	"math/big"
 	"testing"
 
@@ -9,12 +10,15 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm/runtime"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/holiman/uint256"
 )
 
@@ -101,54 +105,16 @@ func (d *dummyChain) Config() *params.ChainConfig {
 	return nil
 }
 
-// Test case structure for opcode tests
-type OpcodeTestCase struct {
-	name            string
-	bytecode        []byte
-	gasLimit        uint64
-	expectedStack   [][32]byte       // skip if nil, check machine-endian encoded
-	expectedStatus  *ExecutionStatus // ExecutionSuccess if nil
-	expectedGas     uint64           // skip if 0
-	expectedRefund  uint64
-	expectedMemory  *Memory       // skip if nil, check big-endian encoded
-	expectedStorage state.Storage // skip if nil, check big-endian encoded
-	originStorage   state.Storage
-	originAccount   *types.StateAccount
-	originCode      []byte
-}
-
-// Helper function to run individual opcode test
-func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
-	t.Helper()
-
-	comp := NewEVMCompiler()
-	defer comp.Dispose()
-
-	if testCase.gasLimit == 0 {
-		testCase.gasLimit = 1000000
-	}
-
-	// create a new stateDB for each testCase to avoid state pollution.
-	stateDB, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
-	if acct := testCase.originAccount; acct != nil {
-		stateDB.AddBalance(defaultCompilationAddress, acct.Balance, tracing.BalanceChangeUnspecified)
-		stateDB.SetNonce(defaultCompilationAddress, acct.Nonce, tracing.NonceChangeUnspecified)
-	}
-	if code := testCase.originCode; code != nil {
-		stateDB.SetCode(defaultCompilationAddress, code)
-	}
-	if len(testCase.originStorage) > 0 {
-		for key, value := range testCase.originStorage {
-			stateDB.SetState(defaultCompilationAddress, key, value)
-		}
-	}
-	// Finalise stateDB to clear dirty storage and set the above state as original storage
-	stateDB.Finalise(false)
-
-	opts := &EVMExecutionOpts{
+func NewTestExecutor(bytecode []byte, loader CompiledLoader, copts *EVMCompilationOpts) *EVMExecutor {
+	db := rawdb.NewMemoryDatabase()
+	testDB := state.NewDatabase(triedb.NewDatabase(db, nil), nil)
+	stateDB, _ := state.New(types.EmptyRootHash, testDB)
+	writeCodeToDB(db, bytecode)
+	stateDB.SetCode(defaultCompilationAddress, bytecode)
+	eopts := &EVMExecutionOpts{
 		Config: &runtime.Config{
-			ChainConfig: params.MergedTestChainConfig,
-			GasLimit:    testCase.gasLimit,
+			ChainConfig: params.AllDevChainProtocolChanges,
+			GasLimit:    defaultGaslimit,
 			GasPrice:    defaultGasPrice,
 			State:       stateDB,
 			Origin:      defaultOriginAddress,
@@ -162,17 +128,132 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 			BlobHashes:  defaultBlobHashes,
 			GetHashFn:   defaultHashFn,
 		},
-		Input: defaultInput[:],
 	}
 
-	result, err := comp.ExecuteCompiledWithOpts(testCase.bytecode, DefaultEVMCompilationOpts(), opts)
+	if loader == nil {
+		if copts == nil {
+			copts = DefaultEVMCompilationOpts()
+		}
+		loader = &JITLoader{
+			codeReader: stateDB.Reader(),
+			copts:      copts,
+		}
+	}
+	nativeJITLoader := NewNativeEngine(loader)
+	evm := NewEnv(eopts.Config, nativeJITLoader)
+	return evm.executor
+}
+
+func writeCodeToDB(db ethdb.Database, code []byte) {
+	batch := db.NewBatch()
+	rawdb.WriteCode(batch, crypto.Keccak256Hash(code), code)
+	batch.Write()
+}
+
+func (e *EVMExecutor) RunBytecode(bytecode, input []byte, gasLimit uint64) (*EVMExecutionResult, error) {
+	contract := NewContract(defaultCallerAddress, defaultCompilationAddress, common.U2560, gasLimit)
+	codeHash := crypto.Keccak256Hash(bytecode)
+	contract.SetCallCode(codeHash, bytecode)
+	return e.Run(contract, input, false)
+}
+
+// Test case structure for opcode tests
+type OpcodeTestCase struct {
+	name                string
+	bytecode            []byte
+	gasLimit            uint64
+	expectedStack       [][32]byte       // skip if nil, check machine-endian encoded
+	expectedStatus      *ExecutionStatus // VMExecutionSuccess if nil
+	expectedGas         uint64           // skip if 0
+	expectedRefund      uint64
+	expectedMemory      *Memory       // skip if nil, check big-endian encoded
+	expectedStorage     state.Storage // skip if nil, check big-endian encoded
+	expectedLogsFn      func(cfg *runtime.Config) []*types.Log
+	expectedCAAndCodeFn func() (ca common.Address, code []byte)
+	expectedBalance     *uint256.Int
+	expectedTStorage    state.Storage
+	input               []byte // contract input for byteCode
+	originStorage       state.Storage
+	originAccount       *types.StateAccount
+	calledCode          []byte
+	calledCodeAddr      common.Address
+	callCodeStorage     state.Storage
+}
+
+// Helper function to run individual opcode test
+func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
+	t.Helper()
+
+	gasLimit := testCase.gasLimit
+	if gasLimit == 0 {
+		gasLimit = defaultGaslimit
+	}
+
+	// create a new stateDB for each testCase to avoid state pollution.
+	db := rawdb.NewMemoryDatabase()
+	testDB := state.NewDatabase(triedb.NewDatabase(db, nil), nil)
+	stateDB, _ := state.New(types.EmptyRootHash, testDB)
+	writeCodeToDB(db, testCase.bytecode)
+	stateDB.SetCode(defaultCompilationAddress, testCase.bytecode)
+	if acct := testCase.originAccount; acct != nil {
+		stateDB.AddBalance(defaultCompilationAddress, acct.Balance, tracing.BalanceChangeUnspecified)
+		stateDB.SetNonce(defaultCompilationAddress, acct.Nonce, tracing.NonceChangeUnspecified)
+	}
+	if len(testCase.originStorage) > 0 {
+		for key, value := range testCase.originStorage {
+			stateDB.SetState(defaultCompilationAddress, key, value)
+		}
+	}
+	if code := testCase.calledCode; code != nil {
+		writeCodeToDB(db, code)
+		stateDB.SetCode(testCase.calledCodeAddr, code)
+	}
+	if len(testCase.callCodeStorage) > 0 {
+		for key, value := range testCase.callCodeStorage {
+			stateDB.SetState(testCase.calledCodeAddr, key, value)
+		}
+	}
+	// Finalise stateDB to clear dirty storage and set the above state as original storage
+	stateDB.Finalise(false)
+
+	eopts := &EVMExecutionOpts{
+		Config: &runtime.Config{
+			ChainConfig: params.AllDevChainProtocolChanges,
+			GasLimit:    gasLimit,
+			GasPrice:    defaultGasPrice,
+			State:       stateDB,
+			Origin:      defaultOriginAddress,
+			Coinbase:    defaultCoinbaseAddress,
+			BlockNumber: defaultBlockNumber,
+			Time:        defaultTime,
+			Value:       defaultCallValue,
+			Random:      &defaultRANDAO,
+			BaseFee:     defaultBaseFee,
+			BlobBaseFee: defaultBlobBaseFee,
+			BlobHashes:  defaultBlobHashes,
+			GetHashFn:   defaultHashFn,
+		},
+	}
+
+	copts := DefaultEVMCompilationOpts()
+	compiledLoader := &JITLoader{
+		codeReader: stateDB.Reader(),
+		copts:      copts,
+	}
+	fnLoader := NewNativeEngine(compiledLoader)
+	evm := NewEnv(eopts.Config, fnLoader)
+
+	contract := NewContract(defaultCallerAddress, defaultCompilationAddress, uint256.MustFromBig(eopts.Config.Value), gasLimit)
+	codeHash := crypto.Keccak256Hash(testCase.bytecode)
+	contract.SetCallCode(codeHash, testCase.bytecode)
+	result, err := evm.executor.Run(contract, testCase.input, false)
 
 	if testCase.expectedStatus != nil {
 		if *testCase.expectedStatus != result.Status {
 			t.Errorf("Expected error %v but got %v", *testCase.expectedStatus, result.Status)
 		}
 		return
-	} else if result.Status != ExecutionSuccess {
+	} else if result.Status != VMExecutionSuccess {
 		t.Errorf("Expected success but got error %v", result.Status)
 	}
 
@@ -202,21 +283,71 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 		mem := result.Memory
 		if expectedMem.lastGasCost != mem.lastGasCost {
 			t.Errorf("Expected memory's lastGasCost: %v, actual lastGasCost: %v", expectedMem.lastGasCost, mem.lastGasCost)
-			return
 		}
 		if !bytes.Equal(expectedMem.store, mem.store) {
 			t.Errorf("Expected memory: %v, actual memory: %v", expectedMem.store, mem.store)
-			return
 		}
 	}
 
 	if expectedStorage := testCase.expectedStorage; expectedStorage != nil {
-		for key, expected := range testCase.expectedStorage {
+		for key, expected := range expectedStorage {
 			got := stateDB.GetState(defaultCompilationAddress, key)
 			if got != expected {
 				t.Errorf("Storage for [key:%v] mismatch: expected %v, got %v",
 					key, expected, got)
+				return
 			}
+		}
+	}
+
+	if expectedTStorage := testCase.expectedTStorage; expectedTStorage != nil {
+		for key, expected := range expectedTStorage {
+			got := stateDB.GetTransientState(defaultCompilationAddress, key)
+			if got != expected {
+				t.Errorf("Transient storage for [key:%v] mismatch: expected %v, got %v",
+					key, expected, got)
+				return
+			}
+		}
+	}
+
+	if testCase.expectedLogsFn != nil {
+		bn := eopts.Config.BlockNumber.Uint64()
+		blockHash := eopts.Config.GetHashFn(bn)
+		logs := stateDB.GetLogs(common.Hash{}, bn, blockHash, eopts.Config.Time)
+		expectedLogs := testCase.expectedLogsFn(eopts.Config)
+		if len(logs) != len(expectedLogs) {
+			t.Errorf("Logs length mismatch: expected %d, got %d",
+				len(expectedLogs), len(logs))
+			t.Errorf("Expected logs: %v", expectedLogs)
+			t.Errorf("Actual logs: %v", logs)
+			return
+		}
+
+		for i, expected := range expectedLogs {
+			logBytes, _ := json.Marshal(logs[i])
+			expectedBytes, _ := json.Marshal(expected)
+			if !bytes.Equal(logBytes, expectedBytes) {
+				t.Errorf("Log[%d] mismatch: expected %v, got %v", i, expected, logs[i])
+			}
+		}
+	}
+
+	if fn := testCase.expectedCAAndCodeFn; fn != nil {
+		expectedCA, expectedCode := fn()
+		got := stateDB.GetCode(expectedCA)
+		if !bytes.Equal(expectedCode, got) {
+			t.Errorf("Expected code: %v, actual code: %v", expectedCode, got)
+			return
+		}
+	}
+
+	if expected := testCase.expectedBalance; expected != nil {
+		got := stateDB.GetBalance(defaultCompilationAddress)
+		if !got.Eq(expected) {
+			t.Errorf("Balance mismatch: expected %v (value: %d), got %v (value: %d)",
+				expected, expected.Uint64(), got, got.Uint64())
+			return
 		}
 	}
 
@@ -1088,7 +1219,7 @@ func TestPushOpcodes(t *testing.T) {
 				}
 				return buf
 			}(),
-			expectedStatus: getExpectedStatus(ExecutionStackOverflow),
+			expectedStatus: getExpectedStatus(VMErrorCodeStackOverflow),
 		},
 	}
 
@@ -1243,6 +1374,67 @@ func TestMemoryOpcodes(t *testing.T) {
 			},
 			expectedGas: 3*5 + 6 + 3 + 6 + 3,
 		},
+		{
+			name: "MSIZE",
+			bytecode: []byte{
+				0x60, 0x42, // PUSH1 0x42
+				0x60, 0x00, // PUSH1 0x00
+				0x52, // MSTORE
+				0x59, // MSIZE
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(32)},
+			expectedGas:   12 + 2,
+		},
+		{
+			name: "TLOAD",
+			bytecode: []byte{
+				0x60, 0x02, // PUSH1 2 (value)
+				0x60, 0x00, // PUSH1 0x00 (key)
+				0x5D,       // TSTORE
+				0x60, 0x00, // PUSH1 0 (key)
+				0x5C, // TLOAD
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(2)},
+			expectedTStorage: state.Storage{
+				common.Hash(uint64ToBigEndianBytes32(0)): common.Hash(uint64ToBigEndianBytes32(2)),
+			},
+			expectedGas: 106 + 3 + 100,
+		},
+		{
+			name: "TSTORE",
+			bytecode: []byte{
+				0x60, 0x02, // PUSH1 2 (value)
+				0x60, 0x00, // PUSH1 0x00 (key)
+				0x5D, // TSTORE
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{},
+			expectedTStorage: state.Storage{
+				common.Hash(uint64ToBigEndianBytes32(0)): common.Hash(uint64ToBigEndianBytes32(2)),
+			},
+			expectedGas: 3*2 + 100,
+		},
+		{
+			name: "MCOPY",
+			bytecode: []byte{
+				0x60, 0x42, // PUSH1 0x42 (value)
+				0x60, 0x00, // PUSH1 0x00
+				0x52,       // MSTORE
+				0x60, 0x20, // PUSH1 32 (size)
+				0x60, 0x00, // PUSH1 0 (offset)
+				0x60, 0x20, // PUSH1 32 (destOffset)
+				0x5E, // MCOPY
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{},
+			expectedMemory: &Memory{
+				store:       common.Hex2Bytes("00000000000000000000000000000000000000000000000000000000000000420000000000000000000000000000000000000000000000000000000000000042"),
+				lastGasCost: 6,
+			},
+			expectedGas: 12 + 3*3 + 3 + 6,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1290,7 +1482,7 @@ func TestStorageOpcodes(t *testing.T) {
 			},
 			expectedStack:  [][32]byte{uint64ToBigEndianBytes32(0x00)},
 			gasLimit:       2000,
-			expectedStatus: getExpectedStatus(ExecutionOutOfGas),
+			expectedStatus: getExpectedStatus(VMErrorCodeOutOfGas),
 		},
 		{
 			name: "SSTORE_ORIGIN_0_EQ_CURRENT_EQ_NEW",
@@ -1455,7 +1647,7 @@ func TestStorageOpcodes(t *testing.T) {
 				common.Hash(uint64ToBigEndianBytes32(0x01)): common.Hash(uint64ToBigEndianBytes32(0x00)),
 			},
 			gasLimit:       15000,
-			expectedStatus: getExpectedStatus(ExecutionOutOfGas),
+			expectedStatus: getExpectedStatus(VMErrorCodeOutOfGas),
 		},
 		{
 			name: "SSTORE_SLOAD_ENCODING",
@@ -1610,7 +1802,7 @@ func TestOpcodeErrorConditions(t *testing.T) {
 				0x50, // POP
 				0x00, // STOP
 			},
-			expectedStatus: getExpectedStatus(ExecutionStackUnderflow),
+			expectedStatus: getExpectedStatus(VMErrorCodeStackUnderflow),
 		},
 		{
 			name: "STACK_UNDERFLOW_ADD",
@@ -1619,7 +1811,7 @@ func TestOpcodeErrorConditions(t *testing.T) {
 				0x01, // ADD (needs two operands)
 				0x00, // STOP
 			},
-			expectedStatus: getExpectedStatus(ExecutionStackUnderflow),
+			expectedStatus: getExpectedStatus(VMErrorCodeStackUnderflow),
 		},
 		{
 			name: "STACK_UNDERFLOW_MSTORE",
@@ -1628,7 +1820,7 @@ func TestOpcodeErrorConditions(t *testing.T) {
 				0x52, // MSTORE
 				0x00, // STOP
 			},
-			expectedStatus: getExpectedStatus(ExecutionStackUnderflow),
+			expectedStatus: getExpectedStatus(VMErrorCodeStackUnderflow),
 		},
 		{
 			name: "STACK_UNDERFLOW_ADDMOD",
@@ -1638,7 +1830,7 @@ func TestOpcodeErrorConditions(t *testing.T) {
 				0x08, // ADDMOD
 				0x00, // STOP
 			},
-			expectedStatus: getExpectedStatus(ExecutionStackUnderflow),
+			expectedStatus: getExpectedStatus(VMErrorCodeStackUnderflow),
 		},
 		{
 			name: "INVALID_JUMP_TARGET",
@@ -1647,14 +1839,14 @@ func TestOpcodeErrorConditions(t *testing.T) {
 				0x56, // JUMP
 				0x00, // STOP
 			},
-			expectedStatus: getExpectedStatus(ExecutionInvalidJumpDest),
+			expectedStatus: getExpectedStatus(VMErrorCodeInvalidJump),
 		},
 		{
 			name: "UNSUPPORTED_OPCODE",
 			bytecode: []byte{
 				0xBB,
 			},
-			expectedStatus: getExpectedStatus(ExecutionInvalidOpcode),
+			expectedStatus: getExpectedStatus(VMErrorCodeInvalidOpCode),
 		},
 		{
 			name: "PUSH1_EOF",
@@ -1677,7 +1869,7 @@ func TestOpcodeErrorConditions(t *testing.T) {
 			bytecode: []byte{
 				0xFE, // INVALID
 			},
-			expectedStatus: getExpectedStatus(ExecutionInvalidOpcode),
+			expectedStatus: getExpectedStatus(VMErrorCodeInvalidOpCode),
 		},
 	}
 
@@ -1796,7 +1988,8 @@ func TestOpcodeBlockContext(t *testing.T) {
 			expectedGas: 2,
 		},
 		{
-			name: "CALLDATALOAD",
+			name:  "CALLDATALOAD",
+			input: defaultInput[:],
 			bytecode: []byte{
 				0x60, 0x00, // PUSH1 0x00
 				0x35, // CALLDATALOAD
@@ -1810,7 +2003,8 @@ func TestOpcodeBlockContext(t *testing.T) {
 			expectedGas: 3 + 3,
 		},
 		{
-			name: "CALLDATASIZE",
+			name:  "CALLDATASIZE",
+			input: defaultInput[:],
 			bytecode: []byte{
 				0x36, // CALLDATASIZE
 				0x00, // STOP
@@ -1835,7 +2029,8 @@ func TestOpcodeBlockContext(t *testing.T) {
 			expectedGas: 3*3 + 3,
 		},
 		{
-			name: "CALLDATACOPY_SIZE_N0",
+			name:  "CALLDATACOPY_SIZE_N0",
+			input: defaultInput[:],
 			bytecode: []byte{
 				0x60, 0x20, // PUSH1 0x20 (size to copy)
 				0x60, 0x00, // PUSH1 0 (offset in the calldata)
@@ -1850,15 +2045,29 @@ func TestOpcodeBlockContext(t *testing.T) {
 			},
 			expectedGas: 3*3 + 9,
 		},
-		// {
-		// 	name:       "CODESIZE",
-		// 	bytecode: []byte{
-		// 		0x38, // CODESIZE
-		// 		0x00, // STOP
-		// 	},
-		// 	expectedStack: [][32]byte{uint64ToBytes32(3)},
-		// 	expectedGas:   2,
-		// },
+		{
+			name: "CODESIZE",
+			bytecode: []byte{
+				0x38, 0x00, // CODESIZE STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(2)},
+			expectedGas:   2,
+		},
+		{
+			name: "CODECOPY",
+			bytecode: []byte{
+				0x60, 0x20, // PUSH1 32 (size)
+				0x60, 0x00, // PUSH1 0 (offset)
+				0x60, 0x00, // PUSH1 0 (destOffset)
+				0x39, 0x00, // CODECOPY STOP
+			},
+			expectedStack: [][32]byte{},
+			expectedMemory: &Memory{
+				store:       hexutil.MustDecode("0x6020600060003900000000000000000000000000000000000000000000000000"),
+				lastGasCost: 3,
+			},
+			expectedGas: 3*3 + 3 + 6,
+		},
 		{
 			name: "GASPRICE",
 			bytecode: []byte{
@@ -1875,12 +2084,11 @@ func TestOpcodeBlockContext(t *testing.T) {
 				0x3B, // EXTCODESIZE
 				0x00, // STOP
 			},
-			expectedStack: [][32]byte{uint64ToBytes32(0)},
+			expectedStack: [][32]byte{uint64ToBytes32(3)},
 			expectedGas:   2 + 100,
 		},
 		{
-			name:       "EXTCODESIZE",
-			originCode: []byte{0x60, 0x01, 0x00},
+			name: "EXTCODESIZE",
 			bytecode: []byte{
 				0x30, // ADDRESS
 				0x3B, // EXTCODESIZE
@@ -1890,18 +2098,97 @@ func TestOpcodeBlockContext(t *testing.T) {
 			expectedGas:   2 + 100,
 		},
 		{
+			name:           "EXTCODECOPY",
+			calledCode:     []byte{0x60, 0xFF, 0x00},
+			calledCodeAddr: defaultOriginAddress,
+			bytecode: append(
+				[]byte{
+					0x60, 0x20, // PUSH1 32 (size)
+					0x60, 0x00, // PUSH1 0 (offset)
+					0x60, 0x00, // PUSH1 0 (destOffset)
+					0x73, // PUSH20
+				},
+				append(
+					defaultOriginAddress.Bytes(), // ADDRESS
+					0x3C, 0x00,                   // EXTCODECOPY STOP
+				)...,
+			),
+			expectedStack: [][32]byte{},
+			expectedMemory: &Memory{
+				store:       hexutil.MustDecode("0x60FF000000000000000000000000000000000000000000000000000000000000"),
+				lastGasCost: 3,
+			},
+			expectedGas: 3*4 + 100 + 6,
+		},
+		{
+			name: "RETURNDATASIZE",
+			// a contract that returns 0xFF01
+			calledCode:     hexutil.MustDecode("0x61FF016000526002601EF300"),
+			calledCodeAddr: defaultOriginAddress,
+			bytecode: append(
+				[]byte{
+					0x60, 0x00, // PUSH1 0 (retSize)
+					0x60, 0x00, // PUSH1 0 (retOffset)
+					0x60, 0x00, // PUSH1 0 (argsSize)
+					0x60, 0x00, // PUSH1 0 (argsOffset)
+					0x73, // PUSH20
+				},
+				append(
+					defaultOriginAddress.Bytes(), // ADDRESS
+					0x61, 0xFF, 0xFF,             // PUSH2 0xFFFF (gas)
+					0xFA, // STATICCALL
+					0x50, // POP STATICCALL's return status
+					0x3D, // RETURNDATASIZE
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(2)},
+			expectedGas:   2640,
+		},
+		{
+			name: "RETURNDATACOPY",
+			// a contract that returns 0xFF01
+			calledCode:     hexutil.MustDecode("0x61FF016000526002601EF300"),
+			calledCodeAddr: defaultOriginAddress,
+			bytecode: append(
+				[]byte{
+					0x60, 0x00, // PUSH1 0 (retSize)
+					0x60, 0x00, // PUSH1 0 (retOffset)
+					0x60, 0x00, // PUSH1 0 (argsSize)
+					0x60, 0x00, // PUSH1 0 (argsOffset)
+					0x73, // PUSH20
+				},
+				append(
+					defaultOriginAddress.Bytes(), // ADDRESS
+					0x61, 0xFF, 0xFF,             // PUSH2 0xFFFF (gas)
+					0xFA,       // STATICCALL
+					0x50,       // POP STATICCALL's return status
+					0x60, 0x02, // PUSH1 2 (size)
+					0x60, 0x00, // PUSH1 30 (offset)
+					0x60, 0x00, // PUSH1 0 (destOffset)
+					0x3E, // RETURNDATACOPY
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{},
+			expectedMemory: &Memory{
+				store:       hexutil.MustDecode("0xff01000000000000000000000000000000000000000000000000000000000000"),
+				lastGasCost: 3,
+			},
+			expectedGas: 2656,
+		},
+		{
 			name: "EXTCODEHASH_EMPTY",
 			bytecode: []byte{
-				0x30, // ADDRESS
+				0x60, 0x01, // PUSH1 0x01 (ADDRESS)
 				0x3F, // EXTCODEHASH
 				0x00, // STOP
 			},
 			expectedStack: [][32]byte{uint64ToBytes32(0)},
-			expectedGas:   2 + 100,
+			expectedGas:   3 + 100,
 		},
 		{
-			name:       "EXTCODEHASH",
-			originCode: []byte{0x60, 0x01, 0x00},
+			name: "EXTCODEHASH",
 			bytecode: []byte{
 				0x30, // ADDRESS
 				0x3F, // EXTCODEHASH
@@ -1909,7 +2196,7 @@ func TestOpcodeBlockContext(t *testing.T) {
 			},
 			expectedStack: [][32]byte{func() [32]byte {
 				var buf [32]byte
-				CopyFromBigToMachine(crypto.Keccak256([]byte{0x60, 0x01, 0x00})[:], buf[:])
+				CopyFromBigToMachine(crypto.Keccak256([]byte{0x30, 0x3F, 0x00})[:], buf[:])
 				return buf
 			}()},
 			expectedGas: 2 + 100,
@@ -2007,7 +2294,7 @@ func TestOpcodeBlockContext(t *testing.T) {
 				0x46, // CHAINID
 				0x00, // STOP
 			},
-			expectedStack: [][32]byte{uint64ToBytes32(params.MergedTestChainConfig.ChainID.Uint64())},
+			expectedStack: [][32]byte{uint64ToBytes32(params.AllDevChainProtocolChanges.ChainID.Uint64())},
 			expectedGas:   2,
 		},
 		{
@@ -2075,6 +2362,457 @@ func TestOpcodeBlockContext(t *testing.T) {
 			}()},
 			expectedGas: 2,
 		},
+		{
+			name: "GAS",
+			bytecode: []byte{
+				0x5A, // GAS
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(defaultGaslimit - 2)},
+			expectedGas:   2,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			runOpcodeTest(t, tc)
+		})
+	}
+}
+
+func TestLogOpcodes(t *testing.T) {
+	testCases := []OpcodeTestCase{
+		{
+			name: "LOG0",
+			bytecode: []byte{
+				0x60, 0xFF, // PUSH1 0xFF (value)
+				0x60, 0x00, // PUSH1 0 (offset)
+				0x52,       // MSTORE
+				0x60, 0x01, // PUSH1 1 (size)
+				0x60, 0x1F, // PUSH1 31 (offset)
+				0xA0, 0x00, // LOG0 STOP
+			},
+			expectedLogsFn: func(cfg *runtime.Config) []*types.Log {
+				bn := cfg.BlockNumber.Uint64()
+				return []*types.Log{
+					{
+						Address:        defaultCompilationAddress,
+						Topics:         []common.Hash{},
+						Data:           hexutil.MustDecode("0xFF"),
+						BlockNumber:    bn,
+						TxHash:         common.Hash{},
+						TxIndex:        0,
+						BlockHash:      cfg.GetHashFn(bn),
+						BlockTimestamp: cfg.Time,
+						Index:          0,
+					},
+				}
+			},
+			expectedGas: 12 + 3*2 + 8 + 375,
+		},
+		{
+			name: "LOG2",
+			bytecode: []byte{
+				0x60, 0xFF, // PUSH1 0xFF (value)
+				0x60, 0x00, // PUSH1 0 (offset)
+				0x52,       // MSTORE
+				0x60, 0x12, // PUSH1 0x12 (topic 2)
+				0x60, 0x11, // PUSH1 0x11 (topic 1)
+				0x60, 0x01, // PUSH1 1 (size)
+				0x60, 0x1F, // PUSH1 31 (offset)
+				0xA2, 0x00, // LOG2 STOP
+			},
+			expectedLogsFn: func(cfg *runtime.Config) []*types.Log {
+				bn := cfg.BlockNumber.Uint64()
+				return []*types.Log{
+					{
+						Address: defaultCompilationAddress,
+						Topics: []common.Hash{
+							common.Hash(uint64ToBigEndianBytes32(0x11)),
+							common.Hash(uint64ToBigEndianBytes32(0x12)),
+						},
+						Data:           hexutil.MustDecode("0xFF"),
+						BlockNumber:    bn,
+						TxHash:         common.Hash{},
+						TxIndex:        0,
+						BlockHash:      cfg.GetHashFn(bn),
+						BlockTimestamp: cfg.Time,
+						Index:          0,
+					},
+				}
+			},
+			expectedGas: 12 + 3*4 + 8 + 1125,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			runOpcodeTest(t, tc)
+		})
+	}
+}
+
+func TestContractOpcodes(t *testing.T) {
+	testCases := []OpcodeTestCase{
+		// {
+		// 	name: "CREATE_EMPTY",
+		// 	bytecode: []byte{
+		// 		0x60, 0x00, // PUSH1 0 (size)
+		// 		0x60, 0x00, // PUSH1 0 (offset)
+		// 		0x60, 0x00, // PUSH1 0 (value)
+		// 		0xF0, 0x00, // CREATE STOP
+		// 	},
+		// 	expectedStack: [][32]byte{func() [32]byte {
+		// 		var buf [32]byte
+		// 		ca := crypto.CreateAddress(defaultCompilationAddress, 0)
+		// 		CopyFromBigToMachine(ca.Bytes(), buf[:])
+		// 		return buf
+		// 	}()},
+		// 	expectedGas: 3*3 + 32000,
+		// },
+		{
+			name:           "CALL_SUCCESS",
+			calledCode:     []byte{0x60, 0x01, 0x00}, // PUSH1 0x00 STOP
+			calledCodeAddr: defaultOriginAddress,
+			bytecode: append(
+				[]byte{
+					0x60, 0x00, // PUSH1 0 (retSize)
+					0x60, 0x00, // PUSH1 0 (retOffset)
+					0x60, 0x00, // PUSH1 0 (argsSize)
+					0x60, 0x00, // PUSH1 0 (argsOffset)
+					0x60, 0x00, // PUSH1 0 (value)
+					0x73, // PUSH20
+				},
+				append(
+					defaultOriginAddress.Bytes(), // ADDRESS
+					0x61, 0xFF, 0xFF,             // PUSH2 0xFFFF (gas)
+					0xF1, // CALL
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(1)}, // success:1, failure:0
+			expectedMemory: &Memory{
+				store:       []byte{},
+				lastGasCost: 0,
+			},
+			expectedGas: 3*7 + 2500 + 100 + 3,
+		},
+		{
+			name:           "CALL_REVERT",
+			calledCode:     []byte{0x60, 0x00, 0xFD, 0x00}, // PUSH1 0x00 REVERT STOP
+			calledCodeAddr: defaultOriginAddress,
+			bytecode: append(
+				[]byte{
+					0x60, 0x00, // PUSH1 0 (retSize)
+					0x60, 0x00, // PUSH1 0 (retOffset)
+					0x60, 0x00, // PUSH1 0 (argsSize)
+					0x60, 0x00, // PUSH1 0 (argsOffset)
+					0x60, 0x00, // PUSH1 0 (value)
+					0x73, // PUSH20
+				},
+				append(
+					defaultOriginAddress.Bytes(), // ADDRESS
+					0x61, 0xFF, 0xFF,             // PUSH2 0xFFFF (gas)
+					0xF1, // CALL
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(0)}, // success:1, failure:0
+			expectedMemory: &Memory{
+				store:       []byte{},
+				lastGasCost: 0,
+			},
+			expectedGas: 3*7 + 2500 + 100 + 3 + 65532,
+		},
+		{
+			name: "CALLCODE",
+			// a contract that creates an exception if first slot of storage is 0
+			calledCode:     hexutil.MustDecode("0x600054600757FE5B00")[:],
+			calledCodeAddr: defaultCallerAddress,
+			originStorage: state.Storage{ // storage for defaultCompilationAddress
+				common.Hash(uint64ToBigEndianBytes32(0x00)): common.Hash(uint64ToBigEndianBytes32(0x01)),
+			},
+			bytecode: append(
+				[]byte{
+					0x60, 0x00, // PUSH1 0 (retSize)
+					0x60, 0x00, // PUSH1 0 (retOffset)
+					0x60, 0x00, // PUSH1 0 (argsSize)
+					0x60, 0x00, // PUSH1 0 (argsOffset)
+					0x60, 0x00, // PUSH1 0 (value)
+					0x73, // PUSH20
+				},
+				append(
+					defaultCallerAddress.Bytes(), // ADDRESS
+					0x61, 0xFF, 0xFF,             // PUSH2 0xFFFF (gas)
+					0xF2, // CALLCODE
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(1)}, // success:1, failure:0
+			expectedMemory: &Memory{
+				store:       []byte{},
+				lastGasCost: 0,
+			},
+			expectedGas: 3*7 + 4500 + 217,
+		},
+		{
+			name: "CALLCODE_REVERT",
+			// a contract that creates an exception if first slot of storage is 0
+			calledCode:     hexutil.MustDecode("0x600054600757FE5B00")[:],
+			calledCodeAddr: defaultCallerAddress,
+			originStorage: state.Storage{ // storage for defaultCompilationAddress
+				common.Hash(uint64ToBigEndianBytes32(0x00)): common.Hash(uint64ToBigEndianBytes32(0x00)),
+			},
+			bytecode: append(
+				[]byte{
+					0x60, 0x00, // PUSH1 0 (retSize)
+					0x60, 0x00, // PUSH1 0 (retOffset)
+					0x60, 0x00, // PUSH1 0 (argsSize)
+					0x60, 0x00, // PUSH1 0 (argsOffset)
+					0x60, 0x00, // PUSH1 0 (value)
+					0x73, // PUSH20
+				},
+				append(
+					defaultCallerAddress.Bytes(), // ADDRESS
+					0x61, 0xFF, 0xFF,             // PUSH2 0xFFFF (gas)
+					0xF2, // CALLCODE
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(0)}, // success:1, failure:0
+			expectedMemory: &Memory{
+				store:       []byte{},
+				lastGasCost: 0,
+			},
+			expectedGas: 3*7 + 2500 + 100 + 3 + 65532,
+		},
+		{
+			name: "RETURN",
+			bytecode: append(
+				[]byte{0x7F}, // PUSH32
+				append(
+					hexutil.MustDecode("0xFF01000000000000000000000000000000000000000000000000000000000000")[:],
+					0x60, 0x00, // PUSH1 0
+					0x52,       // MSTORE
+					0x60, 0x02, // PUSH1 2 (size)
+					0x60, 0x00, // PUSH1 0 (offset)
+					0xF3, 0x00, // RETURN Stop
+				)...,
+			),
+			expectedStack: [][32]byte{},
+			expectedMemory: &Memory{
+				store:       hexutil.MustDecode("0xff01000000000000000000000000000000000000000000000000000000000000")[:],
+				lastGasCost: 3,
+			},
+			expectedGas: 3*4 + 6,
+		},
+		{
+			name: "DELEGATECALL",
+			// a contract that creates an exception if first slot of storage is 0
+			calledCode:     hexutil.MustDecode("0x600054600757FE5B00")[:],
+			calledCodeAddr: defaultCallerAddress,
+			originStorage: state.Storage{ // storage for defaultCompilationAddress
+				common.Hash(uint64ToBigEndianBytes32(0x00)): common.Hash(uint64ToBigEndianBytes32(0x01)),
+			},
+			bytecode: append(
+				[]byte{
+					0x60, 0x00, // PUSH1 0 (retSize)
+					0x60, 0x00, // PUSH1 0 (retOffset)
+					0x60, 0x00, // PUSH1 0 (argsSize)
+					0x60, 0x00, // PUSH1 0 (argsOffset)
+					0x73, // PUSH20
+				},
+				append(
+					defaultCallerAddress.Bytes(), // ADDRESS
+					0x61, 0xFF, 0xFF,             // PUSH2 0xFFFF (gas)
+					0xF4, // DELEGATECALL
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(1)}, // success:1, failure:0
+			expectedMemory: &Memory{
+				store:       []byte{},
+				lastGasCost: 0,
+			},
+			expectedGas: 3*6 + 4500 + 217,
+		},
+		{
+			name: "DELEGATECALL_REVERT",
+			// a contract that creates an exception if first slot of storage is 0
+			calledCode:     hexutil.MustDecode("0x600054600757FE5B00")[:],
+			calledCodeAddr: defaultCallerAddress,
+			bytecode: append(
+				[]byte{
+					0x60, 0x00, // PUSH1 0 (retSize)
+					0x60, 0x00, // PUSH1 0 (retOffset)
+					0x60, 0x00, // PUSH1 0 (argsSize)
+					0x60, 0x00, // PUSH1 0 (argsOffset)
+					0x73, // PUSH20
+				},
+				append(
+					defaultCallerAddress.Bytes(), // ADDRESS
+					0x61, 0xFF, 0xFF,             // PUSH2 0xFFFF (gas)
+					0xF4, // DELEGATECALL
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(0)}, // success:1, failure:0
+			expectedMemory: &Memory{
+				store:       []byte{},
+				lastGasCost: 0,
+			},
+			expectedGas: 3*6 + 2500 + 100 + 65535,
+		},
+		// {
+		// 	name: "CREATE2_EMPTY",
+		// 	bytecode: []byte{
+		// 		0x60, 0x00, // PUSH1 0 (salt)
+		// 		0x60, 0x00, // PUSH1 0 (size)
+		// 		0x60, 0x00, // PUSH1 0 (offset)
+		// 		0x60, 0x00, // PUSH1 0 (value)
+		// 		0xF5, 0x00, // CREATE2 STOP
+		// 	},
+		// 	expectedStack: [][32]byte{func() [32]byte {
+		// 		var buf [32]byte
+		// 		inithash := crypto.Keccak256Hash([]byte{})
+		// 		ca := crypto.CreateAddress2(defaultCompilationAddress, uint64ToBytes32(0), inithash[:])
+		// 		CopyFromBigToMachine(ca.Bytes(), buf[:])
+		// 		return buf
+		// 	}()},
+		// 	expectedGas: 3*4 + 32000,
+		// },
+		// {
+		// 	name: "CREATE2",
+		// 	bytecode: append(
+		// 		[]byte{0x6c}, // PUSH13
+		// 		append(
+		// 			// Create an account with 0 wei and 4 FF as code
+		// 			hexutil.MustDecode("0x63FFFFFFFF6000526004601CF3"),
+		// 			0x60, 0x00, // PUSH1 0x00
+		// 			0x52,       // MSTORE
+		// 			0x60, 0x02, // PUSH1 2 (salt)
+		// 			0x60, 0x0d, // PUSH1 13 (size)
+		// 			0x60, 0x13, // PUSH1 19 (offset)
+		// 			0x60, 0x00, // PUSH1 0 (value)
+		// 			0xF5, 0x00, // CREATE2 STOP
+		// 		)...,
+		// 	),
+		// 	expectedCAAndCodeFn: func() (ca common.Address, code []byte) {
+		// 		callCode := hexutil.MustDecode("0x63FFFFFFFF6000526004601CF3")
+		// 		inithash := crypto.Keccak256Hash(callCode)
+		// 		salt := uint64ToBigEndianBytes32(2)
+		// 		ca = crypto.CreateAddress2(defaultCompilationAddress, salt, inithash[:])
+		// 		code = hexutil.MustDecode("0xFFFFFFFF")
+		// 		return
+		// 	},
+		// 	expectedGas: 32850,
+		// },
+		{
+			name: "STATICCALL",
+			// a contract that creates an exception if first slot of storage is 0
+			calledCode:     hexutil.MustDecode("0x600054600757FE5B00")[:],
+			calledCodeAddr: defaultCallerAddress,
+			callCodeStorage: state.Storage{ // storage for defaultCompilationAddress
+				common.Hash(uint64ToBigEndianBytes32(0x00)): common.Hash(uint64ToBigEndianBytes32(0x01)),
+			},
+			bytecode: append(
+				[]byte{
+					0x60, 0x00, // PUSH1 0 (retSize)
+					0x60, 0x00, // PUSH1 0 (retOffset)
+					0x60, 0x00, // PUSH1 0 (argsSize)
+					0x60, 0x00, // PUSH1 0 (argsOffset)
+					0x73, // PUSH20
+				},
+				append(
+					defaultCallerAddress.Bytes(), // ADDRESS
+					0x61, 0xFF, 0xFF,             // PUSH2 0xFFFF (gas)
+					0xFA, // STATICCALL
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(1)}, // success:1, failure:0
+			expectedMemory: &Memory{
+				store:       []byte{},
+				lastGasCost: 0,
+			},
+			expectedGas: 3*6 + 4500 + 217,
+		},
+		{
+			name: "STATICCALL_WRITE_REVERT",
+			// a contract that store 0x01 at slot:0x00
+			calledCode:     hexutil.MustDecode("0x600060015500")[:],
+			calledCodeAddr: defaultCallerAddress,
+			callCodeStorage: state.Storage{ // storage for defaultCompilationAddress
+				common.Hash(uint64ToBigEndianBytes32(0x00)): common.Hash(uint64ToBigEndianBytes32(0x00)),
+			},
+			bytecode: append(
+				[]byte{
+					0x60, 0x00, // PUSH1 0 (retSize)
+					0x60, 0x00, // PUSH1 0 (retOffset)
+					0x60, 0x00, // PUSH1 0 (argsSize)
+					0x60, 0x00, // PUSH1 0 (argsOffset)
+					0x73, // PUSH20
+				},
+				append(
+					defaultCallerAddress.Bytes(), // ADDRESS
+					0x61, 0xFF, 0xFF,             // PUSH2 0xFFFF (gas)
+					0xFA, // STATICCALL
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(0)}, // success:1, failure:0
+			expectedMemory: &Memory{
+				store:       []byte{},
+				lastGasCost: 0,
+			},
+			expectedGas: 3*6 + 2500 + 100 + 65535,
+		},
+		{
+			name: "STATICCALL_PRECOMPILE",
+			bytecode: []byte{
+				0x60, 0xFF, // PUSH1 0xFF (data)
+				0x60, 0x00, // PUSH1 0 (retOffset)
+				0x52, // MSTORE
+				// Do the call
+				0x60, 0x20, // PUSH1 20 (retsize)
+				0x60, 0x20, // PUSH1 20 (retOffset)
+				0x60, 0x01, // PUSH1 1 (argsSize)
+				0x60, 0x1F, // PUSH1 0x1F (argsOffset)
+				0x60, 0x02, // PUSH1 2 (SHA256)
+				0x63, 0xFF, 0xFF, 0xFF, 0xFF, // PUSH4
+				0xFA, // STATICCALL
+			},
+			expectedStack: [][32]byte{uint64ToBytes32(1)}, // success:1, failure:0
+			expectedMemory: &Memory{
+				store:       hexutil.MustDecode("0x00000000000000000000000000000000000000000000000000000000000000ffa8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"),
+				lastGasCost: 6,
+			},
+			// Since the Berlin hardfork, all precompiled contract addresses, along with tx.sender and tx.to,
+			// are considered warm and only cost 100 gas. Geth handles this in state_transition, but we don’t
+			// account for it here.
+			expectedGas: 205 + 2500,
+		},
+		{
+			name: "REVERT",
+			bytecode: []byte{
+				0x60, 0x00, // PUSH1 0 (size)
+				0x60, 0x00, // PUSH1 0 (offset)
+				0xFD, // REVERT
+			},
+			expectedStatus: getExpectedStatus(VMErrorCodeExecutionReverted),
+			expectedGas:    defaultGaslimit,
+		},
+		{
+			name: "SELFDESTRUCT",
+			originAccount: &types.StateAccount{
+				Balance: uint256.NewInt(100000),
+			},
+			bytecode: []byte{
+				0x60, 0x01, // PUSH1 01 (address)
+				0xFF, 0x00, // SELFDESTRUCT
+			},
+			expectedBalance: common.U2560,
+			expectedGas:     5000 + 27600 + 3,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -2086,19 +2824,17 @@ func TestOpcodeBlockContext(t *testing.T) {
 
 // Benchmark tests for performance measurement
 func BenchmarkArithmeticOpcodes(b *testing.B) {
-	comp := NewEVMCompiler()
-	defer comp.Dispose()
-
 	bytecode := []byte{
 		0x60, 0x05, // PUSH1 5
 		0x60, 0x03, // PUSH1 3
 		0x01, // ADD
 		0x00, // STOP
 	}
+	e := NewTestExecutor(bytecode, nil, nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := comp.ExecuteCompiled(bytecode)
+		_, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
 		if err != nil {
 			b.Fatalf("Execution failed: %v", err)
 		}
@@ -2106,8 +2842,6 @@ func BenchmarkArithmeticOpcodes(b *testing.B) {
 }
 
 func BenchmarkComplexProgram(b *testing.B) {
-	comp := NewEVMCompiler()
-	defer comp.Dispose()
 
 	bytecode := []byte{
 		0x60, 0x05, // PUSH1 5
@@ -2120,9 +2854,11 @@ func BenchmarkComplexProgram(b *testing.B) {
 		0x00, // STOP
 	}
 
+	e := NewTestExecutor(bytecode, nil, nil)
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := comp.ExecuteCompiled(bytecode)
+		_, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
 		if err != nil {
 			b.Fatalf("Execution failed: %v", err)
 		}

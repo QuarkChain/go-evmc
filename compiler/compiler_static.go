@@ -40,6 +40,9 @@ func (c *EVMCompiler) u64Const(value uint64) llvm.Value {
 
 // CompileBytecodeStatic compiles EVM bytecode using static PC analysis
 func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilationOpts) (llvm.Module, error) {
+	if opts == nil {
+		panic("nil EVMCompilationOpts")
+	}
 	instructions, err := c.ParseBytecode(bytecode)
 	if err != nil {
 		return llvm.Module{}, err
@@ -177,7 +180,6 @@ func (c *EVMCompiler) analyzeProgram(instructions []EVMInstruction) *PCAnalysis 
 			analysis.jumpTargets[instr.PC] = true
 		}
 
-		// TODO: Add CALL code
 		if instr.Opcode == JUMPDEST || instr.Opcode == JUMP || instr.Opcode == JUMPI || instr.Opcode == STOP {
 			// end of section
 			if instr.Opcode == JUMPDEST {
@@ -246,7 +248,7 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 	// If the code is unsupported, return error
 	if instr.Opcode == INVALID || c.table[instr.Opcode].undefined {
 		// Store error code and exit
-		c.builder.CreateStore(c.u64Const(uint64(ExecutionInvalidOpcode)), errorCodePtr)
+		c.builder.CreateStore(c.u64Const(uint64(VMErrorCodeInvalidOpCode)), errorCodePtr)
 		c.builder.CreateBr(errorBlock)
 		return
 	}
@@ -270,7 +272,7 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 
 	// Check if it is host function
 	if c.table[instr.Opcode].execute != nil {
-		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, c.u64Const(uint64(instr.Opcode)), gasPtr, stackIdxPtr}, "")
+		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, c.u64Const(uint64(instr.Opcode)), c.u64Const(uint64(instr.PC)), gasPtr, stackIdxPtr}, "")
 		if c.table[instr.Opcode].diffStack < 0 {
 			for i := 0; i < -c.table[instr.Opcode].diffStack; i++ {
 				c.popStack(stack, stackIdxPtr)
@@ -542,16 +544,6 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 		// JUMPDEST is a no-op, charge the section gas before continue to next instruction
 		c.builder.CreateBr(nextBlock)
 
-	case RETURN:
-		_ = c.popStack(stack, stackIdxPtr) // offset
-		_ = c.popStack(stack, stackIdxPtr) // size
-		c.builder.CreateBr(exitBlock)
-
-	case REVERT:
-		_ = c.popStack(stack, stackIdxPtr) // offset
-		_ = c.popStack(stack, stackIdxPtr) // size
-		c.builder.CreateBr(exitBlock)
-
 	default:
 		if instr.Opcode >= PUSH0 && instr.Opcode <= PUSH32 {
 			c.compilePushStatic(instr, stack, stackIdxPtr, nextBlock)
@@ -588,7 +580,7 @@ func (c *EVMCompiler) createDynamicJump(target llvm.Value, analysis *PCAnalysis,
 
 	c.builder.SetInsertPointAtEnd(invalidJumpDestBlock)
 	// Store error code and exit
-	c.builder.CreateStore(c.u64Const(uint64(ExecutionInvalidJumpDest)), errorCodePtr)
+	c.builder.CreateStore(c.u64Const(uint64(VMErrorCodeInvalidJump)), errorCodePtr)
 	c.builder.CreateBr(errorBlock)
 }
 
@@ -652,7 +644,7 @@ func (c *EVMCompiler) consumeGas(gasCost uint64, gasPtr, errorCodePtr llvm.Value
 
 	c.builder.SetInsertPointAtEnd(outOfGasBlock)
 	// Store error code and exit
-	c.builder.CreateStore(c.u64Const(uint64(ExecutionOutOfGas)), errorCodePtr)
+	c.builder.CreateStore(c.u64Const(uint64(VMErrorCodeOutOfGas)), errorCodePtr)
 	c.builder.CreateBr(errorBlock)
 
 	c.builder.SetInsertPointAtEnd(continueBlock)
@@ -664,16 +656,8 @@ func (c *EVMCompiler) consumeGas(gasCost uint64, gasPtr, errorCodePtr llvm.Value
 // CompileAndOptimizeStatic compiles using static analysis
 func (c *EVMCompiler) CompileAndOptimizeStatic(bytecode []byte, opts *EVMCompilationOpts) error {
 	c.initailizeHostFunctions()
-	c.contractAddress = opts.ContractAddress
-	c.codeHash = crypto.Keccak256Hash(bytecode)
-	table, extraEips, err := getJumpTable(opts.ChainRules, opts.ExtraEips)
-	if err != nil {
-		return err
-	}
-	c.table = table
-	c.extraEips = extraEips
 
-	_, err = c.CompileBytecodeStatic(bytecode, opts)
+	_, err := c.CompileBytecodeStatic(bytecode, opts)
 	if err != nil {
 		return err
 	}

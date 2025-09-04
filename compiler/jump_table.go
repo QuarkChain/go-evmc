@@ -195,10 +195,10 @@ func newConstantinopleInstructionSet() JumpTable {
 	instructionSet[CREATE2] = &operation{
 		// execute:     opCreate2,
 		constantGas: params.Create2Gas,
-		// // dynamicGas:  gasCreate2,
+		// dynamicGas:  gasCreate2,
 		minStack:  minStack(4, 1),
 		diffStack: diffStack(4, 1),
-		// // memorySize:  memoryCreate2,
+		// memorySize:  memoryCreate2,
 	}
 	return validate(instructionSet)
 }
@@ -208,33 +208,33 @@ func newConstantinopleInstructionSet() JumpTable {
 func newByzantiumInstructionSet() JumpTable {
 	instructionSet := newSpuriousDragonInstructionSet()
 	instructionSet[STATICCALL] = &operation{
-		// execute:     opStaticCall,
+		execute:     opStaticCall,
 		constantGas: params.CallGasEIP150,
-		// // dynamicGas:  gasStaticCall,
-		minStack:  minStack(6, 1),
-		diffStack: diffStack(6, 1),
-		// // memorySize:  memoryStaticCall,
+		dynamicGas:  gasStaticCall,
+		minStack:    minStack(6, 1),
+		diffStack:   diffStack(6, 1),
+		memorySize:  memoryStaticCall,
 	}
 	instructionSet[RETURNDATASIZE] = &operation{
-		// execute:     opReturnDataSize,
+		execute:     opReturnDataSize,
 		constantGas: GasQuickStep,
 		minStack:    minStack(0, 1),
 		diffStack:   diffStack(0, 1),
 	}
 	instructionSet[RETURNDATACOPY] = &operation{
-		// execute:     opReturnDataCopy,
+		execute:     opReturnDataCopy,
 		constantGas: GasFastestStep,
-		// // dynamicGas:  gasReturnDataCopy,
-		minStack:  minStack(3, 0),
-		diffStack: diffStack(3, 0),
-		// // memorySize:  memoryReturnDataCopy,
+		dynamicGas:  gasReturnDataCopy,
+		minStack:    minStack(3, 0),
+		diffStack:   diffStack(3, 0),
+		memorySize:  memoryReturnDataCopy,
 	}
 	instructionSet[REVERT] = &operation{
-		// execute:    opRevert,
-		// // dynamicGas: gasRevert,
-		minStack:  minStack(2, 0),
-		diffStack: diffStack(2, 0),
-		// // memorySize: memoryRevert,
+		execute:    opRevert,
+		dynamicGas: gasRevert,
+		minStack:   minStack(2, 0),
+		diffStack:  diffStack(2, 0),
+		memorySize: memoryRevert,
 	}
 	return validate(instructionSet)
 }
@@ -264,12 +264,12 @@ func newTangerineWhistleInstructionSet() JumpTable {
 func newHomesteadInstructionSet() JumpTable {
 	instructionSet := newFrontierInstructionSet()
 	instructionSet[DELEGATECALL] = &operation{
-		// execute:     opDelegateCall,
-		// // dynamicGas:  gasDelegateCall,
+		execute:     opDelegateCall,
+		dynamicGas:  gasDelegateCall,
 		constantGas: params.CallGasFrontier,
 		minStack:    minStack(6, 1),
 		diffStack:   diffStack(6, 1),
-		// // memorySize:  memoryDelegateCall,
+		memorySize:  memoryDelegateCall,
 	}
 	return validate(instructionSet)
 }
@@ -475,18 +475,18 @@ func newFrontierInstructionSet() JumpTable {
 			memorySize:  memoryCallDataCopy,
 		},
 		CODESIZE: {
-			// execute:     opCodeSize,
+			execute:     opCodeSize,
 			constantGas: GasQuickStep,
 			minStack:    minStack(0, 1),
 			diffStack:   diffStack(0, 1),
 		},
 		CODECOPY: {
-			// execute:     opCodeCopy,
+			execute:     opCodeCopy,
 			constantGas: GasFastestStep,
-			// // dynamicGas:  gasCodeCopy,
-			minStack:  minStack(3, 0),
-			diffStack: diffStack(3, 0),
-			// // memorySize:  memoryCodeCopy,
+			dynamicGas:  gasCodeCopy,
+			minStack:    minStack(3, 0),
+			diffStack:   diffStack(3, 0),
+			memorySize:  memoryCodeCopy,
 		},
 		GASPRICE: {
 			execute:     opGasprice,
@@ -501,12 +501,12 @@ func newFrontierInstructionSet() JumpTable {
 			diffStack:   diffStack(1, 1),
 		},
 		EXTCODECOPY: {
-			// execute:     opExtCodeCopy,
+			execute:     opExtCodeCopy,
 			constantGas: params.ExtcodeCopyBaseFrontier,
-			// // dynamicGas:  gasExtCodeCopy,
-			minStack:  minStack(4, 0),
-			diffStack: diffStack(4, 0),
-			// // memorySize:  memoryExtCodeCopy,
+			dynamicGas:  gasExtCodeCopy,
+			minStack:    minStack(4, 0),
+			diffStack:   diffStack(4, 0),
+			memorySize:  memoryExtCodeCopy,
 		},
 		BLOCKHASH: {
 			execute:     opBlockhash,
@@ -605,13 +605,13 @@ func newFrontierInstructionSet() JumpTable {
 			diffStack:   diffStack(0, 1),
 		},
 		MSIZE: {
-			// execute:     opMsize,
+			execute:     opMsize,
 			constantGas: GasQuickStep,
 			minStack:    minStack(0, 1),
 			diffStack:   diffStack(0, 1),
 		},
 		GAS: {
-			// execute:     opGas,
+			execute:     opGas,
 			constantGas: GasQuickStep,
 			minStack:    minStack(0, 1),
 			diffStack:   diffStack(0, 1),
@@ -1007,39 +1007,39 @@ func newFrontierInstructionSet() JumpTable {
 			diffStack:   diffSwapStack(17),
 		},
 		LOG0: {
-			// execute:    makeLog(0),
-			// dynamicGas: makeGasLog(0),
-			minStack:  minStack(2, 0),
-			diffStack: diffStack(2, 0),
-			// memorySize: memoryLog,
+			execute:    makeLog(0),
+			dynamicGas: makeGasLog(0),
+			minStack:   minStack(2, 0),
+			diffStack:  diffStack(2, 0),
+			memorySize: memoryLog,
 		},
 		LOG1: {
-			// execute:    makeLog(1),
-			// dynamicGas: makeGasLog(1),
-			minStack:  minStack(3, 0),
-			diffStack: diffStack(3, 0),
-			// memorySize: memoryLog,
+			execute:    makeLog(1),
+			dynamicGas: makeGasLog(1),
+			minStack:   minStack(3, 0),
+			diffStack:  diffStack(3, 0),
+			memorySize: memoryLog,
 		},
 		LOG2: {
-			// execute:    makeLog(2),
-			// dynamicGas: makeGasLog(2),
-			minStack:  minStack(4, 0),
-			diffStack: diffStack(4, 0),
-			// memorySize: memoryLog,
+			execute:    makeLog(2),
+			dynamicGas: makeGasLog(2),
+			minStack:   minStack(4, 0),
+			diffStack:  diffStack(4, 0),
+			memorySize: memoryLog,
 		},
 		LOG3: {
-			// execute:    makeLog(3),
-			// dynamicGas: makeGasLog(3),
-			minStack:  minStack(5, 0),
-			diffStack: diffStack(5, 0),
-			// memorySize: memoryLog,
+			execute:    makeLog(3),
+			dynamicGas: makeGasLog(3),
+			minStack:   minStack(5, 0),
+			diffStack:  diffStack(5, 0),
+			memorySize: memoryLog,
 		},
 		LOG4: {
-			// execute:    makeLog(4),
-			// dynamicGas: makeGasLog(4),
-			minStack:  minStack(6, 0),
-			diffStack: diffStack(6, 0),
-			// memorySize: memoryLog,
+			execute:    makeLog(4),
+			dynamicGas: makeGasLog(4),
+			minStack:   minStack(6, 0),
+			diffStack:  diffStack(6, 0),
+			memorySize: memoryLog,
 		},
 		CREATE: {
 			// execute:     opCreate,
@@ -1049,28 +1049,28 @@ func newFrontierInstructionSet() JumpTable {
 			diffStack: diffStack(3, 1),
 			// memorySize:  memoryCreate,
 		},
-		// CALL: {
-		// 	execute:     opCall,
-		// 	constantGas: params.CallGasFrontier,
-		// 	dynamicGas:  gasCall,
-		// 	minStack:    minStack(7, 1),
-		// 	diffDiff:    diffStack(7, 1),
-		// 	memorySize:  memoryCall,
-		// },
-		CALLCODE: {
-			// execute:     opCallCode,
+		CALL: {
+			execute:     opCall,
 			constantGas: params.CallGasFrontier,
-			// dynamicGas:  gasCallCode,
-			minStack:  minStack(7, 1),
-			diffStack: diffStack(7, 1),
-			// memorySize:  memoryCall,
+			dynamicGas:  gasCall,
+			minStack:    minStack(7, 1),
+			diffStack:   diffStack(7, 1),
+			memorySize:  memoryCall,
+		},
+		CALLCODE: {
+			execute:     opCallCode,
+			constantGas: params.CallGasFrontier,
+			dynamicGas:  gasCallCode,
+			minStack:    minStack(7, 1),
+			diffStack:   diffStack(7, 1),
+			memorySize:  memoryCall,
 		},
 		RETURN: {
-			// execute:    opReturn,
-			// dynamicGas: gasReturn,
-			minStack:  minStack(2, 0),
-			diffStack: diffStack(2, 0),
-			// memorySize: memoryReturn,
+			execute:    opReturn,
+			dynamicGas: gasReturn,
+			minStack:   minStack(2, 0),
+			diffStack:  diffStack(2, 0),
+			memorySize: memoryReturn,
 		},
 		SELFDESTRUCT: {
 			// execute:    opSelfdestruct,
@@ -1079,7 +1079,7 @@ func newFrontierInstructionSet() JumpTable {
 			diffStack: diffStack(1, 0),
 		},
 		INVALID: {
-			// execute:  opUndefined,
+			execute:   opUndefined,
 			minStack:  minStack(0, 0),
 			diffStack: diffStack(0, 0),
 		},
@@ -1089,7 +1089,7 @@ func newFrontierInstructionSet() JumpTable {
 	for i, entry := range tbl {
 		if entry == nil {
 			tbl[i] = &operation{
-				// execute: opUndefined,
+				execute:   opUndefined,
 				diffStack: diffStack(0, 0),
 				undefined: true,
 			}

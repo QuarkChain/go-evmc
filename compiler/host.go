@@ -1,12 +1,11 @@
 package compiler
 
 // #include <stdint.h>
-// extern int64_t callHostFunc(uintptr_t inst, uint64_t opcode, uint64_t* gas, uint64_t* stackIdx);
+// extern int64_t callHostFunc(uintptr_t inst, uint64_t opcode, uint64_t pc, uint64_t* gas, uint64_t* stackIdx);
 import "C"
 import (
 	"fmt"
 	"runtime/cgo"
-	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common/math"
 	"tinygo.org/x/go-llvm"
@@ -25,7 +24,7 @@ func removeExecutionInstance(h cgo.Handle) {
 }
 
 //export callHostFunc
-func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, gas *C.uint64_t, stackIdx *C.uint64_t) C.int64_t {
+func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, pcC C.uint64_t, gas *C.uint64_t, stackIdx *C.uint64_t) C.int64_t {
 	h := cgo.Handle(inst)
 	e, ok := h.Value().(*EVMExecutor)
 	if !ok || e == nil {
@@ -44,7 +43,6 @@ func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, gas *C.uint64_t, stackIdx
 
 	// Set the gas in the contract, which may be used in dynamic gas.
 	e.callContext.Contract.Gas = uint64(*gas)
-
 	// All ops with a dynamic memory usage also has a dynamic gas cost.
 	var memorySize uint64
 	if instr.dynamicGas != nil {
@@ -55,24 +53,23 @@ func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, gas *C.uint64_t, stackIdx
 		if instr.memorySize != nil {
 			memSize, overflow := instr.memorySize(stack)
 			if overflow {
-				return C.int64_t(ExecutionOutOfGas)
+				return C.int64_t(VMErrorCodeGasUintOverflow)
 			}
 			// memory is expanded in words of 32 bytes. Gas
 			// is also calculated in words.
 			if memorySize, overflow = math.SafeMul(toWordSize(memSize), 32); overflow {
-				return C.int64_t(ExecutionOutOfGas)
+				return C.int64_t(VMErrorCodeGasUintOverflow)
 			}
 		}
 		// Consume the gas and return an error if not enough gas is available.
 		// cost is explicitly set so that the capture state defer method can get the proper cost
-		var dynamicCost uint64
 		dynamicCost, err := instr.dynamicGas(e.evm, e.callContext.Contract, stack, e.callContext.Memory, memorySize)
 		if err != nil {
-			return C.int64_t(ExecutionOutOfGas)
+			return C.int64_t(VMErrorCodeOutOfGas)
 		}
 		// for tracing: this gas consumption event is emitted below in the debug section.
 		if e.callContext.Contract.Gas < dynamicCost {
-			return C.int64_t(ExecutionOutOfGas)
+			return C.int64_t(VMErrorCodeOutOfGas)
 		} else {
 			e.callContext.Contract.Gas -= dynamicCost
 		}
@@ -80,25 +77,20 @@ func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, gas *C.uint64_t, stackIdx
 
 	e.callContext.Memory.Resize(memorySize)
 
-	// TODO: pass pc
-	pc := uint64(0)
-	_, err := f(&pc, e, e.callContext)
-	var ret int64
-	if err == nil {
-		ret = int64(ExecutionSuccess)
-	} else if err == ErrGasUintOverflow || err == ErrOutOfGas {
-		ret = int64(ExecutionOutOfGas)
-	} else {
-		// TODO: rest of errors? panic?
-		ret = int64(ExecutionUnknown)
-	}
+	// pc is already handled in compiler, so there is no need to pass pc back to native.
+	pc := uint64(pcC)
+	ret, err := f(&pc, e, e.callContext)
+	errCode := vmErrorCodeFromErr(err)
+	// Pass ret to parent context
+	e.evm.internalRet = ret
 	*gas = C.uint64_t(e.callContext.Contract.Gas)
-	return C.int64_t(ret)
+
+	return C.int64_t(errCode)
 }
 
 func initializeHostFunction(ctx llvm.Context, module llvm.Module) (hostFuncType llvm.Type, hostFunc llvm.Value) {
 	i64ptr := llvm.PointerType(ctx.Int64Type(), 0)
-	hostFuncType = llvm.FunctionType(ctx.Int64Type(), []llvm.Type{ctx.Int64Type(), ctx.Int64Type(), i64ptr, i64ptr}, false)
+	hostFuncType = llvm.FunctionType(ctx.Int64Type(), []llvm.Type{ctx.Int64Type(), ctx.Int64Type(), ctx.Int64Type(), i64ptr, i64ptr}, false)
 	hostFunc = llvm.AddFunction(module, "host_func", hostFuncType)
 	// Set the host function's linkage to External.
 	// This prevents LLVM from internalizing it during LTO/IPO passes,
@@ -117,8 +109,4 @@ func initializeHostFunction(ctx llvm.Context, module llvm.Module) (hostFuncType 
 
 func (c *EVMCompiler) initailizeHostFunctions() {
 	c.hostFuncType, c.hostFunc = initializeHostFunction(c.ctx, c.module)
-}
-
-func (e *EVMExecutor) addGlobalMappingForHostFunctions() {
-	e.engine.AddGlobalMapping(e.hostFunc, unsafe.Pointer(C.callHostFunc))
 }
