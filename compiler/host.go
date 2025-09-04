@@ -1,7 +1,7 @@
 package compiler
 
 // #include <stdint.h>
-// extern int64_t callHostFunc(uintptr_t inst, uint64_t opcode, uint64_t* gas, uint32_t* stackIdx);
+// extern int64_t callHostFunc(uintptr_t inst, uint64_t opcode, uint64_t* gas, uint64_t* stackIdx);
 import "C"
 import (
 	"fmt"
@@ -9,7 +9,6 @@ import (
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common/math"
-	"github.com/holiman/uint256"
 	"tinygo.org/x/go-llvm"
 )
 
@@ -26,7 +25,7 @@ func removeExecutionInstance(h cgo.Handle) {
 }
 
 //export callHostFunc
-func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, gas *C.uint64_t, stackIdx *C.uint32_t) C.int64_t {
+func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, gas *C.uint64_t, stackIdx *C.uint64_t) C.int64_t {
 	h := cgo.Handle(inst)
 	e, ok := h.Value().(*EVMExecutor)
 	if !ok || e == nil {
@@ -97,21 +96,9 @@ func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, gas *C.uint64_t, stackIdx
 	return C.int64_t(ret)
 }
 
-// getStackElement returns the slice of the 32-byte stack element
-func getStackElement(stackPtr uintptr, idx int) []byte {
-	return unsafe.Slice((*byte)(unsafe.Pointer(uintptr(stackPtr)-uintptr(32*idx))), 32)
-}
-
-// loadUint256 loads the stack element at idx as a uint256.Int (big-endian).
-func loadUint256(stackPtr uintptr, idx int) *uint256.Int {
-	b := getStackElement(stackPtr, idx)
-	return new(uint256.Int).SetBytes(FromMachineToBigInplace(b))
-}
-
 func initializeHostFunction(ctx llvm.Context, module llvm.Module) (hostFuncType llvm.Type, hostFunc llvm.Value) {
-	i32ptr := llvm.PointerType(ctx.Int32Type(), 0)
 	i64ptr := llvm.PointerType(ctx.Int64Type(), 0)
-	hostFuncType = llvm.FunctionType(ctx.Int64Type(), []llvm.Type{ctx.Int64Type(), ctx.Int64Type(), i64ptr, i32ptr}, false)
+	hostFuncType = llvm.FunctionType(ctx.Int64Type(), []llvm.Type{ctx.Int64Type(), ctx.Int64Type(), i64ptr, i64ptr}, false)
 	hostFunc = llvm.AddFunction(module, "host_func", hostFuncType)
 	// Set the host function's linkage to External.
 	// This prevents LLVM from internalizing it during LTO/IPO passes,
