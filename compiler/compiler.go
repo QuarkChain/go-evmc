@@ -180,13 +180,13 @@ func (c *EVMCompiler) CompileBytecode(bytecode []byte) (llvm.Module, error) {
 	return c.CompileBytecodeStatic(bytecode, &EVMCompilationOpts{DisableGas: false})
 }
 
-func (c *EVMCompiler) checkStackOverflow(stackPtrVal llvm.Value, num int, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
+func (c *EVMCompiler) checkStackOverflow(stackIdxVal llvm.Value, num int, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
 	if num <= 0 {
 		return
 	}
 
 	// Check if we exceed stack limit
-	exceedsLimit := c.builder.CreateICmp(llvm.IntUGT, stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), uint64(1024-num), false), "stack_overflow_cond")
+	exceedsLimit := c.builder.CreateICmp(llvm.IntUGT, stackIdxVal, c.u64Const(uint64(1024-num)), "stack_overflow_cond")
 
 	// Create continuation block & stack overflow block
 	continueBlock := llvm.AddBasicBlock(c.builder.GetInsertBlock().Parent(), "stack_overflow_check_continue")
@@ -197,19 +197,19 @@ func (c *EVMCompiler) checkStackOverflow(stackPtrVal llvm.Value, num int, errorC
 
 	c.builder.SetInsertPointAtEnd(stackOverflowBlock)
 	// Store error code and exit
-	c.builder.CreateStore(llvm.ConstInt(c.ctx.Int64Type(), uint64(ExecutionStackOverflow), false), errorCodePtr)
+	c.builder.CreateStore(c.u64Const(uint64(ExecutionStackOverflow)), errorCodePtr)
 	c.builder.CreateBr(errorBlock)
 
 	// Insert to continueBlock so that we can insert the rest code
 	c.builder.SetInsertPointAtEnd(continueBlock)
 }
 
-func (c *EVMCompiler) checkStackUnderflow(stackPtrVal llvm.Value, num uint64, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
+func (c *EVMCompiler) checkStackUnderflow(stackIdxVal llvm.Value, num uint64, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
 	if num == 0 {
 		return
 	}
 	// Check if we exceed stack limit
-	exceedsLimit := c.builder.CreateICmp(llvm.IntULT, stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), num, false), "stack_underflow_cond")
+	exceedsLimit := c.builder.CreateICmp(llvm.IntULT, stackIdxVal, c.u64Const(num), "stack_underflow_cond")
 
 	// Create continuation block & stack underflow block
 	continueBlock := llvm.AddBasicBlock(c.builder.GetInsertBlock().Parent(), "stack_underflow_check_continue")
@@ -220,41 +220,41 @@ func (c *EVMCompiler) checkStackUnderflow(stackPtrVal llvm.Value, num uint64, er
 
 	c.builder.SetInsertPointAtEnd(stackUnderflowBlock)
 	// Store error code and exit
-	c.builder.CreateStore(llvm.ConstInt(c.ctx.Int64Type(), uint64(ExecutionStackUnderflow), false), errorCodePtr)
+	c.builder.CreateStore(c.u64Const(uint64(ExecutionStackUnderflow)), errorCodePtr)
 	c.builder.CreateBr(errorBlock)
 
 	// Insert to continueBlock so that we can insert the rest code
 	c.builder.SetInsertPointAtEnd(continueBlock)
 }
 
-func (c *EVMCompiler) pushStackEmpty(stackPtr llvm.Value) {
-	stackPtrVal := c.builder.CreateLoad(c.ctx.Int32Type(), stackPtr, "stack_ptr_val")
-	newStackPtr := c.builder.CreateAdd(stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), 1, false), "new_stack_ptr")
-	c.builder.CreateStore(newStackPtr, stackPtr)
+func (c *EVMCompiler) pushStackEmpty(stackIdxPtr llvm.Value) {
+	stackIdxVal := c.builder.CreateLoad(c.ctx.Int64Type(), stackIdxPtr, "stack_idx_val")
+	newStackIdxVal := c.builder.CreateAdd(stackIdxVal, c.u64Const(1), "new_stack_idx_val")
+	c.builder.CreateStore(newStackIdxVal, stackIdxPtr)
 }
 
-func (c *EVMCompiler) pushStack(stack, stackPtr, value llvm.Value) {
-	stackPtrVal := c.builder.CreateLoad(c.ctx.Int32Type(), stackPtr, "stack_ptr_val")
+func (c *EVMCompiler) pushStack(stack, stackIdxPtr, value llvm.Value) {
+	stackIdxVal := c.builder.CreateLoad(c.ctx.Int64Type(), stackIdxPtr, "stack_idx_val")
 
 	// Obtain stack value and store new stack idx
-	stackElem := c.builder.CreateGEP(c.ctx.IntType(256), stack, []llvm.Value{stackPtrVal}, "stack_elem")
+	stackElem := c.builder.CreateGEP(c.ctx.IntType(256), stack, []llvm.Value{stackIdxVal}, "stack_elem")
 	c.builder.CreateStore(value, stackElem)
-	newStackPtr := c.builder.CreateAdd(stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), 1, false), "new_stack_ptr")
-	c.builder.CreateStore(newStackPtr, stackPtr)
+	newStackIdxVal := c.builder.CreateAdd(stackIdxVal, c.u64Const(1), "new_stack_idx_val")
+	c.builder.CreateStore(newStackIdxVal, stackIdxPtr)
 }
 
-func (c *EVMCompiler) popStack(stack, stackPtr llvm.Value) llvm.Value {
-	stackPtrVal := c.builder.CreateLoad(c.ctx.Int32Type(), stackPtr, "stack_ptr_val")
-	newStackPtr := c.builder.CreateSub(stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), 1, false), "new_stack_ptr")
-	c.builder.CreateStore(newStackPtr, stackPtr)
-	stackElem := c.builder.CreateGEP(c.ctx.IntType(256), stack, []llvm.Value{newStackPtr}, "stack_elem")
+func (c *EVMCompiler) popStack(stack, stackIdxPtr llvm.Value) llvm.Value {
+	stackIdxVal := c.builder.CreateLoad(c.ctx.Int64Type(), stackIdxPtr, "stack_idx_val")
+	newStackIdxVal := c.builder.CreateSub(stackIdxVal, c.u64Const(1), "new_stack_idx_val")
+	c.builder.CreateStore(newStackIdxVal, stackIdxPtr)
+	stackElem := c.builder.CreateGEP(c.ctx.IntType(256), stack, []llvm.Value{newStackIdxVal}, "stack_elem")
 	return c.builder.CreateLoad(c.ctx.IntType(256), stackElem, "stack_value")
 }
 
-func (c *EVMCompiler) peekStackPtr(stack, stackPtr llvm.Value) llvm.Value {
-	stackPtrVal := c.builder.CreateLoad(c.ctx.Int32Type(), stackPtr, "stack_ptr_val")
-	newStackPtr := c.builder.CreateSub(stackPtrVal, llvm.ConstInt(c.ctx.Int32Type(), 1, false), "new_stack_ptr")
-	return c.builder.CreateGEP(c.ctx.IntType(256), stack, []llvm.Value{newStackPtr}, "stack_elem")
+func (c *EVMCompiler) peekStackPtr(stack, stackIdxPtr llvm.Value) llvm.Value {
+	stackIdxVal := c.builder.CreateLoad(c.ctx.Int64Type(), stackIdxPtr, "stack_idx_val")
+	newStackIdxVal := c.builder.CreateSub(stackIdxVal, c.u64Const(1), "new_stack_idx_val")
+	return c.builder.CreateGEP(c.ctx.IntType(256), stack, []llvm.Value{newStackIdxVal}, "stack_elem")
 }
 
 func (c *EVMCompiler) createUint256ConstantFromBytes(data []byte) llvm.Value {
@@ -273,7 +273,7 @@ func (c *EVMCompiler) loadFromMemory(memory, offset llvm.Value) llvm.Value {
 
 	value := llvm.ConstInt(c.ctx.IntType(256), 0, false)
 	for i := 0; i < 32; i++ {
-		byteOffset := llvm.ConstInt(c.ctx.Int64Type(), uint64(i), false)
+		byteOffset := c.u64Const(uint64(i))
 		bytePtr := c.builder.CreateGEP(c.ctx.Int8Type(), memPtr, []llvm.Value{byteOffset}, "byte_ptr")
 		byteVal := c.builder.CreateLoad(c.ctx.Int8Type(), bytePtr, "byte_val")
 		byteValExt := c.builder.CreateZExt(byteVal, c.ctx.IntType(256), "byte_ext")
@@ -293,7 +293,7 @@ func (c *EVMCompiler) storeToMemory(memory, offset, value llvm.Value) {
 		shiftedValue := c.builder.CreateLShr(value, shift, "shifted_value")
 		byteVal := c.builder.CreateTrunc(shiftedValue, c.ctx.Int8Type(), "byte_val")
 
-		byteOffset := llvm.ConstInt(c.ctx.Int64Type(), uint64(i), false)
+		byteOffset := c.u64Const(uint64(i))
 		bytePtr := c.builder.CreateGEP(c.ctx.Int8Type(), memPtr, []llvm.Value{byteOffset}, "byte_ptr")
 		c.builder.CreateStore(byteVal, bytePtr)
 	}
