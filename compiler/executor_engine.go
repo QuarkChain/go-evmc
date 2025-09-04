@@ -8,26 +8,24 @@ import (
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 	"tinygo.org/x/go-llvm"
 )
 
-type EVMEngineConfig struct {
-	CompilerOpts   *EVMCompilationOpts
-	CompiledLoader MakeLoader
+type CompiledLoader interface {
+	LoadCompiledCode(codeHash common.Hash, chainRules params.Rules, extraEips []int) ([]byte, CompiledCodeVersion, error)
 }
 
+// Default NativeLoader that loads compiled code and returns its function pointer.
 type NativeEngine struct {
-	ctx             llvm.Context
-	module          llvm.Module
 	engine          llvm.ExecutionEngine
-	table           *JumpTable
-	copts           *EVMCompilationOpts
-	compiledLoader  NativeLoader
+	compiledLoader  CompiledLoader
 	loadedContracts map[common.Hash]bool
 }
 
-func NewNativeEngine(copts *EVMCompilationOpts, table *JumpTable, loaderFn MakeLoader) *NativeEngine {
+var _ NativeLoader = (*NativeEngine)(nil)
+
+func NewNativeEngine(loader CompiledLoader) *NativeEngine {
 	ctx := llvm.NewContext()
 	module := ctx.NewModule("evm_module")
 
@@ -37,43 +35,40 @@ func NewNativeEngine(copts *EVMCompilationOpts, table *JumpTable, loaderFn MakeL
 	}
 
 	nativeEngine := &NativeEngine{
-		ctx:             ctx,
-		module:          module,
 		engine:          engine,
-		table:           table,
-		copts:           copts,
+		compiledLoader:  loader,
 		loadedContracts: map[common.Hash]bool{},
 	}
-	nativeEngine.compiledLoader = loaderFn(nativeEngine)
+	_, hostFunc := initializeHostFunction(ctx, module)
+	engine.AddGlobalMapping(hostFunc, unsafe.Pointer(C.callHostFunc))
 	return nativeEngine
 }
 
-func (n *NativeEngine) Dispose() {
-	n.compiledLoader.Dispose()
-	n.module.Dispose()
-	n.ctx.Dispose()
-}
-
-func (n *NativeEngine) LoadCompiledContract(contract *Contract) (uint64, error) {
-	if len(contract.Code) < 1 {
-		// no compiled code is found
-		return 0, fmt.Errorf("contract has no code")
+// TODO: support forks and version management for different loader.
+func (n *NativeEngine) CompiledFuncPtr(codeHash common.Hash, chainRules params.Rules, extraEips []int) (FuncPtr, CompiledCodeVersion, error) {
+	if codeHash == (common.Hash{}) { // Create and Create2 are not supported in native executor.
+		return FuncPtr(0), "", fmt.Errorf("codeHash:%v is nil", codeHash)
 	}
-	// Recalculate the hash because SetCallCode may not set the contract's CodeHash to the actual value.
-	codeHash := crypto.Keccak256Hash(contract.Code)
+	var version CompiledCodeVersion
 	if _, ok := n.loadedContracts[codeHash]; !ok {
-		compiledCode, hostFunc, err := n.compiledLoader.LoadCompiledContract(contract)
+		compiledCode, ver, err := n.compiledLoader.LoadCompiledCode(codeHash, chainRules, extraEips)
 		if err != nil {
-			return 0, err
+			return 0, version, err
 		}
 		n.engine.AddObjectFileFromBuffer(compiledCode)
-		n.engine.AddGlobalMapping(hostFunc, unsafe.Pointer(C.callHostFunc))
 		n.loadedContracts[codeHash] = true
+		version = ver
 	}
 
 	funcPtr := n.engine.GetFunctionAddress(GetContractFunction(codeHash))
+
 	if funcPtr == 0 {
-		return 0, fmt.Errorf("compiled contract code not found")
+		return FuncPtr(0), "", fmt.Errorf("compiled contract code not found")
 	}
-	return funcPtr, nil
+
+	return FuncPtr(funcPtr), version, nil
+}
+
+func (n *NativeEngine) Dispose() {
+	n.engine.Dispose()
 }

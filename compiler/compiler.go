@@ -73,13 +73,6 @@ type EVMCompilationOpts struct {
 	DisableStackUnderflowOptimization bool
 }
 
-type MakeLoader func(engine *NativeEngine) NativeLoader
-type NativeLoader interface {
-	// TODO: support forks
-	LoadCompiledContract(contract *Contract) ([]byte, llvm.Value, error)
-	Dispose()
-}
-
 func DefaultEVMCompilationOpts() *EVMCompilationOpts {
 	return &EVMCompilationOpts{
 		DisableGas:                    false,
@@ -127,47 +120,10 @@ func NewEVMCompiler(chainRules params.Rules, extraEips []int) *EVMCompiler {
 	}
 }
 
-var (
-	_ NativeLoader = (*EVMCompiler)(nil)
-)
-
-func MakeCompilerLoader(engine *NativeEngine) NativeLoader {
-	if engine.table == nil {
-		panic("Table in EVMCompilationOpts must be provided")
-	}
-	ctx := engine.ctx
-	builder := ctx.NewBuilder()
-
-	target, err := llvm.GetTargetFromTriple(llvm.DefaultTargetTriple())
-	if err != nil {
-		panic(fmt.Sprintf("Failed to get target: %s", err))
-	}
-
-	machine := target.CreateTargetMachine(
-		llvm.DefaultTargetTriple(), "generic", "",
-		llvm.CodeGenLevelDefault, llvm.RelocDefault, llvm.CodeModelDefault)
-
-	return &EVMCompiler{
-		ctx:        ctx,
-		module:     engine.module,
-		builder:    builder,
-		target:     target,
-		machine:    machine,
-		stackType:  llvm.PointerType(ctx.IntType(256), 0),
-		memType:    llvm.PointerType(ctx.Int8Type(), 0),
-		llvmEngine: engine.engine,
-		table:      engine.table,
-		copts:      engine.copts,
-	}
-}
-
 func (c *EVMCompiler) Dispose() {
 	c.builder.Dispose()
-}
-
-func (c *EVMCompiler) LoadCompiledContract(contract *Contract) ([]byte, llvm.Value, error) {
-	c.CompileAndOptimizeWithOpts(contract.Code, c.copts)
-	return c.GetCompiledCode(), c.hostFunc, nil
+	c.module.Dispose()
+	c.ctx.Dispose()
 }
 
 func (c *EVMCompiler) ParseBytecode(bytecode []byte) ([]EVMInstruction, error) {

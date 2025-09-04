@@ -36,6 +36,9 @@ func (c *EVMCompiler) setOutputValueAt(outputPtr llvm.Value, idx int, value llvm
 
 // CompileBytecodeStatic compiles EVM bytecode using static PC analysis
 func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilationOpts) (llvm.Module, error) {
+	if opts == nil {
+		panic("nil EVMCompilationOpts")
+	}
 	instructions, err := c.ParseBytecode(bytecode)
 	if err != nil {
 		return llvm.Module{}, err
@@ -173,7 +176,6 @@ func (c *EVMCompiler) analyzeProgram(instructions []EVMInstruction) *PCAnalysis 
 			analysis.jumpTargets[instr.PC] = true
 		}
 
-		// TODO: set sectionGas if program doesn't end with the following opCodes
 		if instr.Opcode == JUMPDEST || instr.Opcode == JUMP || instr.Opcode == JUMPI || instr.Opcode == STOP {
 			// end of section
 			if instr.Opcode == JUMPDEST {

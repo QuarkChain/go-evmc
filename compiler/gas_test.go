@@ -94,8 +94,7 @@ func TestGasConsumptionBasic(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			e := NewTestExecutor(nil, nil)
-			defer e.Dispose()
+			e := NewTestExecutor(tc.bytecode, nil, nil)
 			result, _ := e.RunBytecode(tc.bytecode, []byte{}, tc.gasLimit)
 
 			if tc.expectOutOfGas {
@@ -153,8 +152,7 @@ func TestGasMemoryOperations(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			e := NewTestExecutor(nil, nil)
-			defer e.Dispose()
+			e := NewTestExecutor(tc.bytecode, nil, nil)
 			result, _ := e.RunBytecode(tc.bytecode, []byte{}, tc.gasLimit)
 
 			if tc.expectError {
@@ -202,8 +200,7 @@ func TestGasStackOperations(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			e := NewTestExecutor(nil, nil)
-			defer e.Dispose()
+			e := NewTestExecutor(tc.bytecode, nil, nil)
 			result, _ := e.RunBytecode(tc.bytecode, []byte{}, tc.gasLimit)
 
 			if result.Status == VMErrorCodeOutOfGas {
@@ -247,8 +244,7 @@ func TestGasJumpOperations(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			e := NewTestExecutor(nil, nil)
-			defer e.Dispose()
+			e := NewTestExecutor(tc.bytecode, nil, nil)
 			result, _ := e.RunBytecode(tc.bytecode, []byte{}, tc.gasLimit)
 
 			if result.Status == VMErrorCodeOutOfGas {
@@ -268,9 +264,6 @@ func TestGasJumpOperations(t *testing.T) {
 
 // TestGasComplexContract tests gas consumption for more complex bytecode
 func TestGasComplexContract(t *testing.T) {
-	e := NewTestExecutor(nil, nil)
-	defer e.Dispose()
-
 	// Complex arithmetic: (10 * 5 - 20) / 2 + 3
 	bytecode := []byte{
 		0x60, 0x0A, // PUSH1 10
@@ -286,6 +279,7 @@ func TestGasComplexContract(t *testing.T) {
 		0x01, // ADD (18)
 		0x00, // STOP
 	}
+	e := NewTestExecutor(bytecode, nil, nil)
 
 	testCases := []struct {
 		name           string
@@ -351,11 +345,9 @@ func TestGasComplexContract(t *testing.T) {
 func BenchmarkGasConsumption(b *testing.B) {
 	// Simple ADD operation
 	bytecode := []byte{0x60, 0x05, 0x60, 0x03, 0x01, 0x00} // PUSH1 5, PUSH1 3, ADD, STOP
-	loader := &DummyCompiledLoader{}
-	loader.compileCode(b, bytecode)
-
-	e := NewTestExecutor(nil, loader.MakeDummyCompiledLoader)
-	defer e.Dispose()
+	loader := NewDummyAOTLoader()
+	loader.compileCode(b, bytecode, nil)
+	e := NewTestExecutor(bytecode, loader, nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -388,10 +380,9 @@ func BenchmarkGasComplexContract(b *testing.B) {
 		0x00, // STOP
 	}
 
-	loader := &DummyCompiledLoader{}
-	loader.compileCode(b, bytecode)
-	e := NewTestExecutor(nil, loader.MakeDummyCompiledLoader)
-	defer e.Dispose()
+	loader := NewDummyAOTLoader()
+	loader.compileCode(b, bytecode, nil)
+	e := NewTestExecutor(bytecode, loader, nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

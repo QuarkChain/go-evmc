@@ -61,7 +61,7 @@ type EVM struct {
 // database and several configs. It meant to be used throughout the entire
 // state transition of a block, with the transaction context switched as
 // needed by calling evm.SetTxContext.
-func NewEVM(blockCtx vm.BlockContext, statedb vm.StateDB, chainConfig *params.ChainConfig, config vm.Config, ecfg *EVMEngineConfig) *EVM {
+func NewEVM(blockCtx vm.BlockContext, statedb vm.StateDB, chainConfig *params.ChainConfig, config vm.Config, nativeLoader NativeLoader) *EVM {
 	evm := &EVM{
 		Context:     blockCtx,
 		StateDB:     statedb,
@@ -70,7 +70,7 @@ func NewEVM(blockCtx vm.BlockContext, statedb vm.StateDB, chainConfig *params.Ch
 		chainRules:  chainConfig.Rules(blockCtx.BlockNumber, blockCtx.Random != nil, blockCtx.Time),
 	}
 	evm.precompiles = activePrecompiledContracts(evm.chainRules)
-	evm.executor = NewEVMExecutor(evm, ecfg.CompilerOpts, ecfg.CompiledLoader)
+	evm.executor = NewEVMExecutor(evm, nativeLoader)
 	return evm
 }
 
@@ -83,7 +83,7 @@ func (evm *EVM) SetTxContext(txCtx vm.TxContext) {
 	evm.TxContext = txCtx
 }
 
-func NewEnv(cfg *runtime.Config, ecfg *EVMEngineConfig) *EVM {
+func NewEnv(cfg *runtime.Config, nativeLoader NativeLoader) *EVM {
 	txContext := vm.TxContext{
 		Origin:     cfg.Origin,
 		GasPrice:   cfg.GasPrice,
@@ -104,7 +104,7 @@ func NewEnv(cfg *runtime.Config, ecfg *EVMEngineConfig) *EVM {
 		Random:      cfg.Random,
 	}
 
-	evm := NewEVM(blockContext, cfg.State, cfg.ChainConfig, cfg.EVMConfig, ecfg)
+	evm := NewEVM(blockContext, cfg.State, cfg.ChainConfig, cfg.EVMConfig, nativeLoader)
 	evm.SetTxContext(txContext)
 	return evm
 }

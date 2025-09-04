@@ -7,9 +7,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
-	"tinygo.org/x/go-llvm"
 )
 
 type dummyStatedb struct {
@@ -143,11 +143,9 @@ func TestEVMCompilerMemoryOperations(t *testing.T) {
 }
 
 func TestEVMExecuteSimpleAddition(t *testing.T) {
-	e := NewTestExecutor(nil, nil)
-	defer e.Dispose()
-
 	// PUSH1 5, PUSH1 3, ADD, STOP
 	bytecode := []byte{0x60, 0x05, 0x60, 0x03, 0x01, 0x00}
+	e := NewTestExecutor(bytecode, nil, nil)
 
 	result, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
 	if err != nil {
@@ -172,11 +170,9 @@ func TestEVMExecuteSimpleAddition(t *testing.T) {
 }
 
 func TestEVMExecuteMultiplication(t *testing.T) {
-	e := NewTestExecutor(nil, nil)
-	defer e.Dispose()
-
 	// PUSH1 7, PUSH1 6, MUL, STOP
 	bytecode := []byte{0x60, 0x07, 0x60, 0x06, 0x02, 0x00}
+	e := NewTestExecutor(bytecode, nil, nil)
 
 	result, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
 	if err != nil {
@@ -201,11 +197,9 @@ func TestEVMExecuteMultiplication(t *testing.T) {
 }
 
 func TestEVMExecuteStackPushN(t *testing.T) {
-	e := NewTestExecutor(nil, nil)
-	defer e.Dispose()
-
 	// PUSH2 0x1122, PUSH4 0xaabbccdd, PUSH12 0x0102030405060708090a0b0c, STOP
 	bytecode := []byte{0x61, 0x11, 0x22, 0x63, 0xaa, 0xbb, 0xcc, 0xdd, 0x6b, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 0x00}
+	e := NewTestExecutor(bytecode, nil, nil)
 
 	result, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
 	if err != nil {
@@ -238,11 +232,9 @@ func TestEVMExecuteStackPushN(t *testing.T) {
 }
 
 func TestEVMExecuteMemoryOperations(t *testing.T) {
-	e := NewTestExecutor(nil, nil)
-	defer e.Dispose()
-
 	// PUSH1 0x42, PUSH1 0x00, MSTORE, PUSH1 0x00, MLOAD, STOP
 	bytecode := []byte{0x60, 0x42, 0x60, 0x00, 0x52, 0x60, 0x00, 0x51, 0x00}
+	e := NewTestExecutor(bytecode, nil, nil)
 
 	result, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
 	if err != nil {
@@ -271,11 +263,9 @@ func TestEVMExecuteMemoryOperations(t *testing.T) {
 }
 
 func TestEVMExecuteComparison(t *testing.T) {
-	e := NewTestExecutor(nil, nil)
-	defer e.Dispose()
-
 	// PUSH1 5, PUSH1 3, LT, STOP (3 < 5 should be true = 1)
 	bytecode := []byte{0x60, 0x05, 0x60, 0x03, 0x10, 0x00}
+	e := NewTestExecutor(bytecode, nil, nil)
 
 	result, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
 	if err != nil {
@@ -300,11 +290,9 @@ func TestEVMExecuteComparison(t *testing.T) {
 }
 
 func TestEVMExecuteStackOperations(t *testing.T) {
-	e := NewTestExecutor(nil, nil)
-	defer e.Dispose()
-
 	// PUSH1 0x42, DUP1, STOP (should have two copies of 0x42 on stack)
 	bytecode := []byte{0x60, 0x42, 0x80, 0x00}
+	e := NewTestExecutor(bytecode, nil, nil)
 
 	result, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
 	if err != nil {
@@ -328,12 +316,11 @@ func TestEVMExecuteStackOperations(t *testing.T) {
 }
 
 func TestEVMExecuteFib(t *testing.T) {
-	e := NewTestExecutor(nil, nil)
-	defer e.Dispose()
-
 	n := uint32(10000000)
+	bytecode := GetFibCode(n)
+	e := NewTestExecutor(bytecode, nil, nil)
 
-	result, err := e.RunBytecode(GetFibCode(n), []byte{}, uint64(n)*100)
+	result, err := e.RunBytecode(bytecode, []byte{}, uint64(n)*100)
 	if err != nil {
 		t.Fatalf("Execution failed: %v", err)
 	}
@@ -370,12 +357,12 @@ func TestEVMExecuteFib(t *testing.T) {
 }
 
 func TestEVMExecuteFibSectionGasOptimization(t *testing.T) {
-	e := NewTestExecutor(nil, nil)
-	defer e.Dispose()
 
 	n := uint32(10000000)
+	bytecode := GetFibCode(n)
+	e := NewTestExecutor(bytecode, nil, nil)
 
-	resultOpt, err := e.RunBytecode(GetFibCode(n), []byte{}, uint64(n)*100)
+	resultOpt, err := e.RunBytecode(bytecode, []byte{}, uint64(n)*100)
 	if err != nil {
 		t.Fatalf("Execution failed: %v", err)
 	}
@@ -386,10 +373,9 @@ func TestEVMExecuteFibSectionGasOptimization(t *testing.T) {
 
 	actualOpt := FromMachineToUint256(resultOpt.Stack[0])
 
-	eNoOpt := NewTestExecutor(&EVMCompilationOpts{DisableSectionGasOptimization: true}, nil)
-	defer eNoOpt.Dispose()
+	eNoOpt := NewTestExecutor(bytecode, nil, &EVMCompilationOpts{DisableSectionGasOptimization: true})
 
-	resultNoOpt, err := eNoOpt.RunBytecode(GetFibCode(n), []byte{}, uint64(n)*100)
+	resultNoOpt, err := eNoOpt.RunBytecode(bytecode, []byte{}, uint64(n)*100)
 	if err != nil {
 		t.Fatalf("Execution failed: %v", err)
 	}
@@ -449,41 +435,42 @@ func BenchmarkEVMCompilerMediumContract(b *testing.B) {
 	}
 }
 
-type DummyCompiledLoader struct {
-	compiledCode []byte
-	hostFunc     llvm.Value
+type DummyAOTLoader struct {
+	compiledCode map[common.Hash][]byte
 }
 
-func (d *DummyCompiledLoader) LoadCompiledContract(contract *Contract) ([]byte, llvm.Value, error) {
-	return d.compiledCode, d.hostFunc, nil
+func NewDummyAOTLoader() *DummyAOTLoader {
+	return &DummyAOTLoader{
+		compiledCode: make(map[common.Hash][]byte),
+	}
 }
 
-func (d *DummyCompiledLoader) Dispose() {}
-
-func (d *DummyCompiledLoader) MakeDummyCompiledLoader(engine *NativeEngine) NativeLoader {
-	_, d.hostFunc = initializeHostFunction(engine.ctx, engine.module)
-	return d
+func (d *DummyAOTLoader) LoadCompiledCode(hash common.Hash, chainRules params.Rules, extraEips []int) ([]byte, CompiledCodeVersion, error) {
+	return d.compiledCode[hash], "", nil
 }
 
-func (d *DummyCompiledLoader) compileCode(b *testing.B, bytecode []byte) {
+func (d *DummyAOTLoader) compileCode(b *testing.B, bytecode []byte, copts *EVMCompilationOpts) {
 	comp := NewEVMCompiler(params.Rules{IsOsaka: true}, nil)
 	defer comp.Dispose()
 
+	if copts == nil {
+		copts = DefaultEVMCompilationOpts()
+	}
 	// Pre-compile
-	err := comp.CompileAndOptimize(bytecode)
+	err := comp.CompileAndOptimizeWithOpts(bytecode, copts)
 	if err != nil {
 		b.Fatalf("Compilation failed: %v", err)
 	}
-	d.compiledCode = comp.GetCompiledCode()
+	compiledCode := comp.GetCompiledCode()
+	d.compiledCode[crypto.Keccak256Hash(bytecode)] = compiledCode
 }
 
 func BenchmarkEVMExecuteSimpleAddition(b *testing.B) {
 	bytecode := []byte{0x60, 0x05, 0x60, 0x03, 0x01, 0x00} // PUSH1 5, PUSH1 3, ADD, STOP
 
-	loader := &DummyCompiledLoader{}
-	loader.compileCode(b, bytecode)
-	e := NewTestExecutor(nil, loader.MakeDummyCompiledLoader)
-	defer e.Dispose()
+	loader := NewDummyAOTLoader()
+	loader.compileCode(b, bytecode, nil)
+	e := NewTestExecutor(bytecode, loader, nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -509,10 +496,9 @@ func BenchmarkEVMExecuteComplexArithmetic(b *testing.B) {
 		0x00, // STOP
 	}
 
-	loader := &DummyCompiledLoader{}
-	loader.compileCode(b, bytecode)
-	e := NewTestExecutor(nil, loader.MakeDummyCompiledLoader)
-	defer e.Dispose()
+	loader := NewDummyAOTLoader()
+	loader.compileCode(b, bytecode, nil)
+	e := NewTestExecutor(bytecode, loader, nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -538,10 +524,9 @@ func BenchmarkEVMExecuteMemoryOperations(b *testing.B) {
 		0x00, // STOP
 	}
 
-	loader := &DummyCompiledLoader{}
-	loader.compileCode(b, bytecode)
-	e := NewTestExecutor(nil, loader.MakeDummyCompiledLoader)
-	defer e.Dispose()
+	loader := NewDummyAOTLoader()
+	loader.compileCode(b, bytecode, nil)
+	e := NewTestExecutor(bytecode, loader, nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -553,11 +538,9 @@ func BenchmarkEVMExecuteMemoryOperations(b *testing.B) {
 }
 
 func benchmarkNoGas(b *testing.B, code, input []byte, gas uint64) {
-	loader := &DummyCompiledLoader{}
-	loader.compileCode(b, code)
-
-	e := NewTestExecutor(&EVMCompilationOpts{DisableGas: true}, loader.MakeDummyCompiledLoader)
-	defer e.Dispose()
+	loader := NewDummyAOTLoader()
+	loader.compileCode(b, code, &EVMCompilationOpts{DisableGas: true})
+	e := NewTestExecutor(code, loader, nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -569,11 +552,9 @@ func benchmarkNoGas(b *testing.B, code, input []byte, gas uint64) {
 }
 
 func benchmarkGas(b *testing.B, code, input []byte, gas uint64) {
-	loader := &DummyCompiledLoader{}
-	loader.compileCode(b, code)
-
-	e := NewTestExecutor(&EVMCompilationOpts{DisableSectionGasOptimization: true}, loader.MakeDummyCompiledLoader)
-	defer e.Dispose()
+	loader := NewDummyAOTLoader()
+	loader.compileCode(b, code, &EVMCompilationOpts{DisableSectionGasOptimization: true})
+	e := NewTestExecutor(code, loader, nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -585,11 +566,9 @@ func benchmarkGas(b *testing.B, code, input []byte, gas uint64) {
 }
 
 func benchmarkSectionGas(b *testing.B, code, input []byte, gas uint64) {
-	loader := &DummyCompiledLoader{}
-	loader.compileCode(b, code)
-
-	e := NewTestExecutor(nil, loader.MakeDummyCompiledLoader)
-	defer e.Dispose()
+	loader := NewDummyAOTLoader()
+	loader.compileCode(b, code, nil)
+	e := NewTestExecutor(code, loader, nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

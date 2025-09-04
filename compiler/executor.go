@@ -12,7 +12,15 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 )
+
+type CompiledCodeVersion string
+type FuncPtr uint64
+type NativeLoader interface {
+	// CompiledFuncPtr retrieves the function pointer associated with the codeHash and fork.
+	CompiledFuncPtr(codeHash common.Hash, chainRules params.Rules, extraEips []int) (FuncPtr, CompiledCodeVersion, error)
+}
 
 // An executor to execute native compiled code within EVM.
 // Data layout rules:
@@ -22,7 +30,6 @@ import (
 // - Storage: always big-endian encoded as in execution spec
 type EVMExecutor struct {
 	callContext  *ScopeContext // current call context
-	engine       *NativeEngine
 	nativeLoader NativeLoader
 
 	evm   *EVM
@@ -42,18 +49,17 @@ type ScopeContext struct {
 	Stack    *Stack
 }
 
-func NewEVMExecutor(evm *EVM, copts *EVMCompilationOpts, loaderFn MakeLoader) *EVMExecutor {
+func NewEVMExecutor(evm *EVM, nativeLoader NativeLoader) *EVMExecutor {
 	table, extraEips, err := getJumpTable(evm.chainRules, evm.Config.ExtraEips)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to get jumpTable: %s", err))
 	}
 	evm.Config.ExtraEips = extraEips
-	engine := NewNativeEngine(copts, table, loaderFn)
 	e := &EVMExecutor{
-		engine: engine,
-		evm:    evm,
-		table:  table,
-		hasher: crypto.NewKeccakState(),
+		nativeLoader: nativeLoader,
+		evm:          evm,
+		table:        table,
+		hasher:       crypto.NewKeccakState(),
 	}
 	return e
 }
@@ -73,7 +79,7 @@ func (e *EVMExecutor) Run(contract *Contract, input []byte, readOnly bool) (ret 
 		return nil, nil
 	}
 
-	funcPtr, err := e.engine.LoadCompiledContract(contract)
+	funcPtr, _, err := e.nativeLoader.CompiledFuncPtr(contract.CodeHash, e.evm.chainRules, e.evm.Config.ExtraEips)
 	if err != nil {
 		return nil, err
 	}
@@ -157,12 +163,8 @@ func (e *EVMExecutor) Run(contract *Contract, input []byte, readOnly bool) (ret 
 	}, nil
 }
 
-func (e *EVMExecutor) Dispose() {
-	e.engine.Dispose()
-}
-
 // Helper function to call native function pointer (requires CGO)
-func (e *EVMExecutor) callNativeFunction(funcPtr uint64, inst cgo.Handle, stack unsafe.Pointer, gas uint64) (int64, int64, int64) {
+func (e *EVMExecutor) callNativeFunction(funcPtr FuncPtr, inst cgo.Handle, stack unsafe.Pointer, gas uint64) (int64, int64, int64) {
 	var output [OUTPUT_SIZE]byte
 	C.execute(C.uint64_t(funcPtr), C.uintptr_t(inst), stack, nil, C.uint64_t(gas), unsafe.Pointer(&output[0]))
 	errorCode := binary.LittleEndian.Uint64(output[OUTPUT_IDX_ERROR_CODE*8:])
