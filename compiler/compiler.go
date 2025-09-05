@@ -101,7 +101,7 @@ func NewEVMCompiler(chainRules params.Rules, extraEips []int) *EVMCompiler {
 
 	machine := target.CreateTargetMachine(
 		llvm.DefaultTargetTriple(), "generic", "",
-		llvm.CodeGenLevelDefault, llvm.RelocDefault, llvm.CodeModelDefault)
+		llvm.CodeGenLevelDefault, llvm.RelocDefault, llvm.CodeModelJITDefault)
 
 	table, _, err := getJumpTable(chainRules, extraEips)
 	if err != nil {
