@@ -6,15 +6,12 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
-
-type dummyStatedb struct {
-	state.StateDB
-}
 
 func TestEVMCompilerBasic(t *testing.T) {
 	comp := NewEVMCompiler(params.Rules{IsOsaka: true}, nil)
@@ -341,8 +338,9 @@ func TestEVMExecuteFib(t *testing.T) {
 	}
 
 	var (
-		evm      = vm.NewEVM(vm.BlockContext{}, &dummyStatedb{}, params.TestChainConfig, vm.Config{})
-		contract = vm.NewContract(common.Address{}, common.Address{}, new(uint256.Int), uint64(n)*100, nil)
+		statedb, _ = state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+		evm        = vm.NewEVM(vm.BlockContext{}, statedb, params.TestChainConfig, vm.Config{})
+		contract   = vm.NewContract(common.Address{}, common.Address{}, new(uint256.Int), uint64(n)*100, nil)
 	)
 
 	contract.Code = GetFibCode(uint32(n))
@@ -581,8 +579,9 @@ func benchmarkSectionGas(b *testing.B, code, input []byte, gas uint64) {
 
 func benchmarkInterpertor(b *testing.B, code, input []byte, gas uint64) {
 	var (
-		bctx = vm.BlockContext{BlockNumber: big.NewInt(0), Random: &common.Hash{}}
-		evm  = vm.NewEVM(bctx, &dummyStatedb{}, params.AllDevChainProtocolChanges, vm.Config{})
+		bctx       = vm.BlockContext{BlockNumber: big.NewInt(0), Random: &common.Hash{}}
+		statedb, _ = state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+		evm        = vm.NewEVM(bctx, statedb, params.AllDevChainProtocolChanges, vm.Config{})
 	)
 
 	for i := 0; i < b.N; i++ {
