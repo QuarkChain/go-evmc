@@ -96,6 +96,11 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 	// Create exit block
 	exitBlock := llvm.AddBasicBlock(execFunc, "exit")
 
+	// Create jump table block
+	dynJumpBlock := llvm.AddBasicBlock(execFunc, "jump")
+	jumpTargetPtr := c.builder.CreateAlloca(uint256Type, "jump_target")
+	c.builder.CreateStore(llvm.ConstInt(uint256Type, 0, false), jumpTargetPtr)
+
 	// Create basic blocks for each instruction
 	for _, instr := range instructions {
 		blockName := fmt.Sprintf("pc_%d", instr.PC)
@@ -124,8 +129,12 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 			}
 		}
 
-		c.compileInstructionStatic(instr, instParam, stackParam, stackIdxPtr, gasPtr, errorCodePtr, analysis, nextBlock, exitBlock, errorBlock, opts)
+		c.compileInstructionStatic(instr, instParam, stackParam, stackIdxPtr, gasPtr, jumpTargetPtr, errorCodePtr, analysis, nextBlock, dynJumpBlock, exitBlock, errorBlock, opts)
 	}
+
+	// Finalize dynamic jump block
+	c.builder.SetInsertPointAtEnd(dynJumpBlock)
+	c.createDynamicJumpBlock(jumpTargetPtr, analysis, errorCodePtr, errorBlock)
 
 	// Finalize error block
 	c.builder.SetInsertPointAtEnd(errorBlock)
@@ -242,7 +251,7 @@ func (c *EVMCompiler) checkHostReturn(ret, errorCodePtr llvm.Value, nextBlock, e
 }
 
 // compileInstructionStatic compiles an instruction using static analysis with gas metering
-func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, stack, stackIdxPtr, gasPtr, errorCodePtr llvm.Value, analysis *PCAnalysis, nextBlock, exitBlock, errorBlock llvm.BasicBlock, opts *EVMCompilationOpts) {
+func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, stack, stackIdxPtr, gasPtr, jumpTargetPtr, errorCodePtr llvm.Value, analysis *PCAnalysis, nextBlock, dynJumpBlock, exitBlock, errorBlock llvm.BasicBlock, opts *EVMCompilationOpts) {
 	uint256Type := c.ctx.IntType(256)
 
 	// If the code is unsupported, return error
@@ -518,8 +527,8 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 
 	case JUMP:
 		target := c.popStack(stack, stackIdxPtr)
-		// Create dynamic jump using switch
-		c.createDynamicJump(target, analysis, errorCodePtr, errorBlock)
+		c.builder.CreateStore(target, jumpTargetPtr)
+		c.builder.CreateBr(dynJumpBlock)
 
 	case JUMPI:
 		target := c.popStack(stack, stackIdxPtr)
@@ -532,7 +541,8 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 		c.builder.CreateCondBr(isNonZero, jumpBlock, nextBlock)
 
 		c.builder.SetInsertPointAtEnd(jumpBlock)
-		c.createDynamicJump(target, analysis, errorCodePtr, errorBlock)
+		c.builder.CreateStore(target, jumpTargetPtr)
+		c.builder.CreateBr(dynJumpBlock)
 
 	case PC:
 		// Push current PC as a constant (static analysis!)
@@ -557,6 +567,34 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 			// c.builder.CreateBr(nextBlock)
 		}
 	}
+}
+
+// createDynamicJumpBlock creates a block with switch statement for dynamic jumps
+func (c *EVMCompiler) createDynamicJumpBlock(targetPtr llvm.Value, analysis *PCAnalysis, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
+	// Truncate 256-bit target to 64-bit PC
+	// TODO: error if overflow
+	target := c.builder.CreateLoad(c.ctx.Int64Type(), targetPtr, "jump_target_u256")
+	targetPC := c.builder.CreateTrunc(target, c.ctx.Int64Type(), "jump_target")
+
+	// Create invalid jump dest block
+	invalidJumpDestBlock := llvm.AddBasicBlock(c.builder.GetInsertBlock().Parent(), "invalid_jump_dest")
+
+	// Create switch instruction with all valid jump targets
+	switchInstr := c.builder.CreateSwitch(targetPC, invalidJumpDestBlock, len(analysis.jumpTargets))
+
+	for pc := range analysis.jumpTargets {
+		if block, ok := analysis.instructionBlocks[pc]; ok {
+			pcConstant := c.u64Const(pc)
+			switchInstr.AddCase(pcConstant, block)
+		} else {
+			panic("jump target not found")
+		}
+	}
+
+	c.builder.SetInsertPointAtEnd(invalidJumpDestBlock)
+	// Store error code and exit
+	c.builder.CreateStore(c.u64Const(uint64(VMErrorCodeInvalidJump)), errorCodePtr)
+	c.builder.CreateBr(errorBlock)
 }
 
 // createDynamicJump creates a switch statement for dynamic jumps
