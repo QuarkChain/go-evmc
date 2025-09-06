@@ -117,6 +117,7 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 	}
 
 	// Compile each instruction
+	var prevInstr *EVMInstruction
 	for _, instr := range instructions {
 		block := analysis.instructionBlocks[instr.PC]
 		c.builder.SetInsertPointAtEnd(block)
@@ -129,7 +130,8 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 			}
 		}
 
-		c.compileInstructionStatic(instr, instParam, stackParam, stackIdxPtr, gasPtr, jumpTargetPtr, errorCodePtr, analysis, nextBlock, dynJumpBlock, exitBlock, errorBlock, opts)
+		c.compileInstructionStatic(instr, prevInstr, instParam, stackParam, stackIdxPtr, gasPtr, jumpTargetPtr, errorCodePtr, analysis, nextBlock, dynJumpBlock, exitBlock, errorBlock, opts)
+		prevInstr = &instr
 	}
 
 	// Finalize dynamic jump block
@@ -251,7 +253,7 @@ func (c *EVMCompiler) checkHostReturn(ret, errorCodePtr llvm.Value, nextBlock, e
 }
 
 // compileInstructionStatic compiles an instruction using static analysis with gas metering
-func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, stack, stackIdxPtr, gasPtr, jumpTargetPtr, errorCodePtr llvm.Value, analysis *PCAnalysis, nextBlock, dynJumpBlock, exitBlock, errorBlock llvm.BasicBlock, opts *EVMCompilationOpts) {
+func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, prevInstr *EVMInstruction, execInst, stack, stackIdxPtr, gasPtr, jumpTargetPtr, errorCodePtr llvm.Value, analysis *PCAnalysis, nextBlock, dynJumpBlock, exitBlock, errorBlock llvm.BasicBlock, opts *EVMCompilationOpts) {
 	uint256Type := c.ctx.IntType(256)
 
 	// If the code is unsupported, return error
@@ -527,8 +529,7 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 
 	case JUMP:
 		target := c.popStack(stack, stackIdxPtr)
-		c.builder.CreateStore(target, jumpTargetPtr)
-		c.builder.CreateBr(dynJumpBlock)
+		c.createJump(prevInstr, target, jumpTargetPtr, errorCodePtr, analysis, dynJumpBlock, errorBlock)
 
 	case JUMPI:
 		target := c.popStack(stack, stackIdxPtr)
@@ -541,8 +542,7 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 		c.builder.CreateCondBr(isNonZero, jumpBlock, nextBlock)
 
 		c.builder.SetInsertPointAtEnd(jumpBlock)
-		c.builder.CreateStore(target, jumpTargetPtr)
-		c.builder.CreateBr(dynJumpBlock)
+		c.createJump(prevInstr, target, jumpTargetPtr, errorCodePtr, analysis, dynJumpBlock, errorBlock)
 
 	case PC:
 		// Push current PC as a constant (static analysis!)
@@ -566,6 +566,23 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, execInst, s
 			panic(fmt.Sprintf("unsupported op %d", instr.Opcode))
 			// c.builder.CreateBr(nextBlock)
 		}
+	}
+}
+
+// createJump creates a static jump if the previous instruction is PUSH; o.w., a dynamic jump given target from stack
+func (c *EVMCompiler) createJump(prevInstr *EVMInstruction, target, jumpTargetPtr, errorCodePtr llvm.Value, analysis *PCAnalysis, dynJumpBlock, errorBlock llvm.BasicBlock) {
+	if prevInstr != nil && prevInstr.Opcode.IsPush() {
+		dest := uint256.NewInt(0).SetBytes(prevInstr.Data)
+		dest64, overflow := dest.Uint64WithOverflow()
+		if block, ok := analysis.instructionBlocks[dest64]; !overflow && ok {
+			c.builder.CreateBr(block)
+		} else {
+			c.builder.CreateStore(llvm.ConstInt(c.ctx.Int64Type(), uint64(VMErrorCodeInvalidJump), false), errorCodePtr)
+			c.builder.CreateBr(errorBlock)
+		}
+	} else {
+		c.builder.CreateStore(target, jumpTargetPtr)
+		c.builder.CreateBr(dynJumpBlock)
 	}
 }
 
