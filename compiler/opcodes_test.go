@@ -105,7 +105,7 @@ func (d *dummyChain) Config() *params.ChainConfig {
 	return nil
 }
 
-func NewTestExecutor(bytecode []byte, loader CompiledLoader, copts *EVMCompilationOpts) *EVMExecutor {
+func NewTestExecutor(bytecode []byte, loader CompiledLoader, copts *EVMCompilationOpts) (*EVMExecutor, *Contract) {
 	db := rawdb.NewMemoryDatabase()
 	testDB := state.NewDatabase(triedb.NewDatabase(db, nil), nil)
 	stateDB, _ := state.New(types.EmptyRootHash, testDB)
@@ -141,7 +141,12 @@ func NewTestExecutor(bytecode []byte, loader CompiledLoader, copts *EVMCompilati
 	}
 	nativeJITLoader := NewNativeEngine(loader)
 	evm := NewEnv(eopts.Config, nativeJITLoader)
-	return evm.executor
+	return evm.executor, NewContractCode(bytecode)
+}
+
+func (e *EVMExecutor) RunContract(contract *Contract, input []byte, gasLimit uint64) (ret *EVMExecutionResult, err error) {
+	contract.Gas = gasLimit
+	return e.Run(contract, input, false)
 }
 
 func writeCodeToDB(db ethdb.Database, code []byte) {
@@ -150,11 +155,11 @@ func writeCodeToDB(db ethdb.Database, code []byte) {
 	batch.Write()
 }
 
-func (e *EVMExecutor) RunBytecode(bytecode, input []byte, gasLimit uint64) (*EVMExecutionResult, error) {
-	contract := NewContract(defaultCallerAddress, defaultCompilationAddress, common.U2560, gasLimit)
+func NewContractCode(bytecode []byte) *Contract {
+	contract := NewContract(defaultCallerAddress, defaultCompilationAddress, common.U2560, defaultGaslimit)
 	codeHash := crypto.Keccak256Hash(bytecode)
 	contract.SetCallCode(codeHash, bytecode)
-	return e.Run(contract, input, false)
+	return contract
 }
 
 // Test case structure for opcode tests
@@ -2830,11 +2835,11 @@ func BenchmarkArithmeticOpcodes(b *testing.B) {
 		0x01, // ADD
 		0x00, // STOP
 	}
-	e := NewTestExecutor(bytecode, nil, nil)
+	e, contract := NewTestExecutor(bytecode, nil, nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
+		_, err := e.RunContract(contract, []byte{}, defaultGaslimit)
 		if err != nil {
 			b.Fatalf("Execution failed: %v", err)
 		}
@@ -2854,11 +2859,11 @@ func BenchmarkComplexProgram(b *testing.B) {
 		0x00, // STOP
 	}
 
-	e := NewTestExecutor(bytecode, nil, nil)
+	e, contract := NewTestExecutor(bytecode, nil, nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
+		_, err := e.RunContract(contract, []byte{}, defaultGaslimit)
 		if err != nil {
 			b.Fatalf("Execution failed: %v", err)
 		}
