@@ -503,23 +503,23 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, prevInstr *
 		c.builder.CreateBr(nextBlock)
 
 	case SHL:
-		a := c.popStack(stack, stackIdxPtr)
-		b := c.popStack(stack, stackIdxPtr)
-		result := c.builder.CreateShl(a, b, "shl_result")
+		shift := c.popStack(stack, stackIdxPtr)
+		value := c.popStack(stack, stackIdxPtr)
+		result := c.builder.CreateShl(value, shift, "shl_result")
 		c.pushStack(stack, stackIdxPtr, result)
 		c.builder.CreateBr(nextBlock)
 
 	case SHR:
-		a := c.popStack(stack, stackIdxPtr)
-		b := c.popStack(stack, stackIdxPtr)
-		result := c.builder.CreateLShr(a, b, "shr_result")
+		shift := c.popStack(stack, stackIdxPtr)
+		value := c.popStack(stack, stackIdxPtr)
+		result := c.builder.CreateLShr(value, shift, "shr_result")
 		c.pushStack(stack, stackIdxPtr, result)
 		c.builder.CreateBr(nextBlock)
 
 	case SAR:
-		a := c.popStack(stack, stackIdxPtr)
-		b := c.popStack(stack, stackIdxPtr)
-		result := c.builder.CreateAShr(a, b, "sar_result")
+		shift := c.popStack(stack, stackIdxPtr)
+		value := c.popStack(stack, stackIdxPtr)
+		result := c.builder.CreateAShr(value, shift, "sar_result")
 		c.pushStack(stack, stackIdxPtr, result)
 		c.builder.CreateBr(nextBlock)
 
