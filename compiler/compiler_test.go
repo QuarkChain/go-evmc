@@ -142,9 +142,9 @@ func TestEVMCompilerMemoryOperations(t *testing.T) {
 func TestEVMExecuteSimpleAddition(t *testing.T) {
 	// PUSH1 5, PUSH1 3, ADD, STOP
 	bytecode := []byte{0x60, 0x05, 0x60, 0x03, 0x01, 0x00}
-	e := NewTestExecutor(bytecode, nil, nil)
+	e, contract := NewTestExecutor(bytecode, nil, nil)
 
-	result, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
+	result, err := e.RunContract(contract, []byte{}, defaultGaslimit)
 	if err != nil {
 		t.Fatalf("Execution failed: %v", err)
 	}
@@ -169,9 +169,9 @@ func TestEVMExecuteSimpleAddition(t *testing.T) {
 func TestEVMExecuteMultiplication(t *testing.T) {
 	// PUSH1 7, PUSH1 6, MUL, STOP
 	bytecode := []byte{0x60, 0x07, 0x60, 0x06, 0x02, 0x00}
-	e := NewTestExecutor(bytecode, nil, nil)
+	e, contract := NewTestExecutor(bytecode, nil, nil)
 
-	result, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
+	result, err := e.RunContract(contract, []byte{}, defaultGaslimit)
 	if err != nil {
 		t.Fatalf("Execution failed: %v", err)
 	}
@@ -196,9 +196,9 @@ func TestEVMExecuteMultiplication(t *testing.T) {
 func TestEVMExecuteStackPushN(t *testing.T) {
 	// PUSH2 0x1122, PUSH4 0xaabbccdd, PUSH12 0x0102030405060708090a0b0c, STOP
 	bytecode := []byte{0x61, 0x11, 0x22, 0x63, 0xaa, 0xbb, 0xcc, 0xdd, 0x6b, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 0x00}
-	e := NewTestExecutor(bytecode, nil, nil)
+	e, contract := NewTestExecutor(bytecode, nil, nil)
 
-	result, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
+	result, err := e.RunContract(contract, []byte{}, defaultGaslimit)
 	if err != nil {
 		t.Fatalf("Execution failed: %v", err)
 	}
@@ -231,9 +231,9 @@ func TestEVMExecuteStackPushN(t *testing.T) {
 func TestEVMExecuteMemoryOperations(t *testing.T) {
 	// PUSH1 0x42, PUSH1 0x00, MSTORE, PUSH1 0x00, MLOAD, STOP
 	bytecode := []byte{0x60, 0x42, 0x60, 0x00, 0x52, 0x60, 0x00, 0x51, 0x00}
-	e := NewTestExecutor(bytecode, nil, nil)
+	e, contract := NewTestExecutor(bytecode, nil, nil)
 
-	result, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
+	result, err := e.RunContract(contract, []byte{}, defaultGaslimit)
 	if err != nil {
 		t.Fatalf("Execution failed: %v", err)
 	}
@@ -262,9 +262,9 @@ func TestEVMExecuteMemoryOperations(t *testing.T) {
 func TestEVMExecuteComparison(t *testing.T) {
 	// PUSH1 5, PUSH1 3, LT, STOP (3 < 5 should be true = 1)
 	bytecode := []byte{0x60, 0x05, 0x60, 0x03, 0x10, 0x00}
-	e := NewTestExecutor(bytecode, nil, nil)
+	e, contract := NewTestExecutor(bytecode, nil, nil)
 
-	result, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
+	result, err := e.RunContract(contract, []byte{}, defaultGaslimit)
 	if err != nil {
 		t.Fatalf("Execution failed: %v", err)
 	}
@@ -289,9 +289,9 @@ func TestEVMExecuteComparison(t *testing.T) {
 func TestEVMExecuteStackOperations(t *testing.T) {
 	// PUSH1 0x42, DUP1, STOP (should have two copies of 0x42 on stack)
 	bytecode := []byte{0x60, 0x42, 0x80, 0x00}
-	e := NewTestExecutor(bytecode, nil, nil)
+	e, contract := NewTestExecutor(bytecode, nil, nil)
 
-	result, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
+	result, err := e.RunContract(contract, []byte{}, defaultGaslimit)
 	if err != nil {
 		t.Fatalf("Execution failed: %v", err)
 	}
@@ -315,9 +315,9 @@ func TestEVMExecuteStackOperations(t *testing.T) {
 func TestEVMExecuteFib(t *testing.T) {
 	n := uint32(10000000)
 	bytecode := GetFibCode(n)
-	e := NewTestExecutor(bytecode, nil, nil)
+	e, contract := NewTestExecutor(bytecode, nil, nil)
 
-	result, err := e.RunBytecode(bytecode, []byte{}, uint64(n)*100)
+	result, err := e.RunContract(contract, []byte{}, uint64(n)*100)
 	if err != nil {
 		t.Fatalf("Execution failed: %v", err)
 	}
@@ -340,11 +340,11 @@ func TestEVMExecuteFib(t *testing.T) {
 	var (
 		statedb, _ = state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
 		evm        = vm.NewEVM(vm.BlockContext{}, statedb, params.TestChainConfig, vm.Config{})
-		contract   = vm.NewContract(common.Address{}, common.Address{}, new(uint256.Int), uint64(n)*100, nil)
+		vmcontract = vm.NewContract(common.Address{}, common.Address{}, new(uint256.Int), uint64(n)*100, nil)
 	)
 
 	contract.Code = GetFibCode(uint32(n))
-	_, err = evm.Interpreter().Run(contract, []byte{}, false)
+	_, err = evm.Interpreter().Run(vmcontract, []byte{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -358,9 +358,9 @@ func TestEVMExecuteFibSectionGasOptimization(t *testing.T) {
 
 	n := uint32(10000000)
 	bytecode := GetFibCode(n)
-	e := NewTestExecutor(bytecode, nil, nil)
+	e, contract := NewTestExecutor(bytecode, nil, nil)
 
-	resultOpt, err := e.RunBytecode(bytecode, []byte{}, uint64(n)*100)
+	resultOpt, err := e.RunContract(contract, []byte{}, uint64(n)*100)
 	if err != nil {
 		t.Fatalf("Execution failed: %v", err)
 	}
@@ -371,9 +371,9 @@ func TestEVMExecuteFibSectionGasOptimization(t *testing.T) {
 
 	actualOpt := FromMachineToUint256(resultOpt.Stack[0])
 
-	eNoOpt := NewTestExecutor(bytecode, nil, &EVMCompilationOpts{DisableSectionGasOptimization: true})
+	eNoOpt, contract := NewTestExecutor(bytecode, nil, &EVMCompilationOpts{DisableSectionGasOptimization: true})
 
-	resultNoOpt, err := eNoOpt.RunBytecode(bytecode, []byte{}, uint64(n)*100)
+	resultNoOpt, err := eNoOpt.RunContract(contract, []byte{}, uint64(n)*100)
 	if err != nil {
 		t.Fatalf("Execution failed: %v", err)
 	}
@@ -468,11 +468,11 @@ func BenchmarkEVMExecuteSimpleAddition(b *testing.B) {
 
 	loader := NewDummyAOTLoader()
 	loader.compileCode(b, bytecode, nil)
-	e := NewTestExecutor(bytecode, loader, nil)
+	e, contract := NewTestExecutor(bytecode, loader, nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
+		_, err := e.RunContract(contract, []byte{}, defaultGaslimit)
 		if err != nil {
 			b.Fatalf("Execution failed: %v", err)
 		}
@@ -496,11 +496,11 @@ func BenchmarkEVMExecuteComplexArithmetic(b *testing.B) {
 
 	loader := NewDummyAOTLoader()
 	loader.compileCode(b, bytecode, nil)
-	e := NewTestExecutor(bytecode, loader, nil)
+	e, contract := NewTestExecutor(bytecode, loader, nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
+		_, err := e.RunContract(contract, []byte{}, defaultGaslimit)
 		if err != nil {
 			b.Fatalf("Execution failed: %v", err)
 		}
@@ -524,11 +524,11 @@ func BenchmarkEVMExecuteMemoryOperations(b *testing.B) {
 
 	loader := NewDummyAOTLoader()
 	loader.compileCode(b, bytecode, nil)
-	e := NewTestExecutor(bytecode, loader, nil)
+	e, contract := NewTestExecutor(bytecode, loader, nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
+		_, err := e.RunContract(contract, []byte{}, defaultGaslimit)
 		if err != nil {
 			b.Fatalf("Execution failed: %v", err)
 		}
@@ -538,11 +538,10 @@ func BenchmarkEVMExecuteMemoryOperations(b *testing.B) {
 func benchmarkNoGas(b *testing.B, code, input []byte, gas uint64) {
 	loader := NewDummyAOTLoader()
 	loader.compileCode(b, code, &EVMCompilationOpts{DisableGas: true})
-	e := NewTestExecutor(code, loader, nil)
-
+	e, contract := NewTestExecutor(code, loader, nil)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		res, err := e.RunBytecode(code, input, gas)
+		res, err := e.RunContract(contract, input, gas)
 		if err != nil || res.Status != VMExecutionSuccess {
 			b.Fatalf("Execution failed: %v, %v", err, res.Status)
 		}
@@ -552,11 +551,10 @@ func benchmarkNoGas(b *testing.B, code, input []byte, gas uint64) {
 func benchmarkGas(b *testing.B, code, input []byte, gas uint64) {
 	loader := NewDummyAOTLoader()
 	loader.compileCode(b, code, &EVMCompilationOpts{DisableSectionGasOptimization: true})
-	e := NewTestExecutor(code, loader, nil)
-
+	e, contract := NewTestExecutor(code, loader, nil)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		res, err := e.RunBytecode(code, input, gas)
+		res, err := e.RunContract(contract, input, gas)
 		if err != nil || res.Status != VMExecutionSuccess {
 			b.Fatalf("Execution failed: %v, %v", err, res.Status)
 		}
@@ -566,11 +564,10 @@ func benchmarkGas(b *testing.B, code, input []byte, gas uint64) {
 func benchmarkSectionGas(b *testing.B, code, input []byte, gas uint64) {
 	loader := NewDummyAOTLoader()
 	loader.compileCode(b, code, nil)
-	e := NewTestExecutor(code, loader, nil)
-
+	e, contract := NewTestExecutor(code, loader, nil)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		res, err := e.RunBytecode(code, input, gas)
+		res, err := e.RunContract(contract, input, gas)
 		if err != nil || res.Status != VMExecutionSuccess {
 			b.Fatalf("Execution failed: %v, %v", err, res.Status)
 		}
@@ -583,10 +580,12 @@ func benchmarkInterpertor(b *testing.B, code, input []byte, gas uint64) {
 		statedb, _ = state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
 		evm        = vm.NewEVM(bctx, statedb, params.AllDevChainProtocolChanges, vm.Config{})
 	)
-
+	contract := vm.NewContract(common.Address{}, common.Address{}, new(uint256.Int), gas, nil)
+	codeHash := crypto.Keccak256Hash(code)
+	contract.SetCallCode(codeHash, code)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		contract := vm.NewContract(common.Address{}, common.Address{}, new(uint256.Int), gas, nil)
-		contract.Code = code
+		contract.Gas = gas
 		_, err := evm.Interpreter().Run(contract, input, false)
 		if err != nil {
 			b.Fatal(err)

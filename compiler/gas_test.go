@@ -94,8 +94,8 @@ func TestGasConsumptionBasic(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			e := NewTestExecutor(tc.bytecode, nil, nil)
-			result, _ := e.RunBytecode(tc.bytecode, []byte{}, tc.gasLimit)
+			e, contract := NewTestExecutor(tc.bytecode, nil, nil)
+			result, _ := e.RunContract(contract, []byte{}, tc.gasLimit)
 
 			if tc.expectOutOfGas {
 				if result.Status != VMErrorCodeOutOfGas {
@@ -152,8 +152,8 @@ func TestGasMemoryOperations(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			e := NewTestExecutor(tc.bytecode, nil, nil)
-			result, _ := e.RunBytecode(tc.bytecode, []byte{}, tc.gasLimit)
+			e, contract := NewTestExecutor(tc.bytecode, nil, nil)
+			result, _ := e.RunContract(contract, []byte{}, tc.gasLimit)
 
 			if tc.expectError {
 				t.Fatalf("Expected execution error but none occurred")
@@ -200,8 +200,8 @@ func TestGasStackOperations(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			e := NewTestExecutor(tc.bytecode, nil, nil)
-			result, _ := e.RunBytecode(tc.bytecode, []byte{}, tc.gasLimit)
+			e, contract := NewTestExecutor(tc.bytecode, nil, nil)
+			result, _ := e.RunContract(contract, []byte{}, tc.gasLimit)
 
 			if result.Status == VMErrorCodeOutOfGas {
 				t.Errorf("Unexpected out of gas error")
@@ -244,8 +244,8 @@ func TestGasJumpOperations(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			e := NewTestExecutor(tc.bytecode, nil, nil)
-			result, _ := e.RunBytecode(tc.bytecode, []byte{}, tc.gasLimit)
+			e, contract := NewTestExecutor(tc.bytecode, nil, nil)
+			result, _ := e.RunContract(contract, []byte{}, tc.gasLimit)
 
 			if result.Status == VMErrorCodeOutOfGas {
 				t.Errorf("Unexpected out of gas error")
@@ -279,7 +279,6 @@ func TestGasComplexContract(t *testing.T) {
 		0x01, // ADD (18)
 		0x00, // STOP
 	}
-	e := NewTestExecutor(bytecode, nil, nil)
 
 	testCases := []struct {
 		name           string
@@ -304,8 +303,9 @@ func TestGasComplexContract(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		e, contract := NewTestExecutor(bytecode, nil, nil)
 		t.Run(tc.name, func(t *testing.T) {
-			result, _ := e.RunBytecode(bytecode, []byte{}, tc.gasLimit)
+			result, _ := e.RunContract(contract, []byte{}, tc.gasLimit)
 
 			if tc.expectOutOfGas {
 				if result.Status != VMErrorCodeOutOfGas {
@@ -347,11 +347,11 @@ func BenchmarkGasConsumption(b *testing.B) {
 	bytecode := []byte{0x60, 0x05, 0x60, 0x03, 0x01, 0x00} // PUSH1 5, PUSH1 3, ADD, STOP
 	loader := NewDummyAOTLoader()
 	loader.compileCode(b, bytecode, nil)
-	e := NewTestExecutor(bytecode, loader, nil)
+	e, contract := NewTestExecutor(bytecode, loader, nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		result, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
+		result, err := e.RunContract(contract, []byte{}, defaultGaslimit)
 		if err != nil {
 			b.Fatalf("Execution failed: %v", err)
 		}
@@ -382,11 +382,11 @@ func BenchmarkGasComplexContract(b *testing.B) {
 
 	loader := NewDummyAOTLoader()
 	loader.compileCode(b, bytecode, nil)
-	e := NewTestExecutor(bytecode, loader, nil)
+	e, contract := NewTestExecutor(bytecode, loader, nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		result, err := e.RunBytecode(bytecode, []byte{}, defaultGaslimit)
+		result, err := e.RunContract(contract, []byte{}, defaultGaslimit)
 		if err != nil {
 			b.Fatalf("Execution failed: %v", err)
 		}
