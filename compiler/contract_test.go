@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
@@ -43,6 +44,9 @@ func BenchmarkContracts(b *testing.B) {
 		// {name: "seaport"},
 		// {name: "uniswap_v2_pair"},
 		// {name: "univ2_router"},
+
+		{name: "poseidon_t2", calldata: common.Hex2Bytes("9d036e710000000000000000000000000000000000000000000000000000000000000000")},
+		{name: "poseidon_t5", calldata: common.Hex2Bytes("0x8709cd8c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000003")},
 	}
 	for _, tc := range testCases {
 		bytecode, err := readHexFile(fmt.Sprintf("../testdata/ContractHex/%v.rt.hex", tc.name))
