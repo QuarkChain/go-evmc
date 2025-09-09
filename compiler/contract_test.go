@@ -24,6 +24,25 @@ func readHexFile(path string) ([]byte, error) {
 func BenchmarkContracts(b *testing.B) {
 	testCases := []ContractTestCase{
 		{name: "weth"},
+		{name: "airdrop", calldata: hexutil.MustDecode("0x5c975abb")},
+		{name: "bswap64", calldata: hexutil.MustDecode(
+			"0xff2f79f10000000000000000000000000000000000000000000000000000000000000102")},
+		{name: "bswap64_opt", calldata: hexutil.MustDecode(
+			"0xff2f79f10000000000000000000000000000000000000000000000000000000000000102")},
+		{name: "counter", calldata: hexutil.MustDecode("0xd09de08a")},
+		{name: "erc20_transfer", calldata: hexutil.MustDecode("0x30627b7c")},
+		{name: "hash_10k", calldata: hexutil.MustDecode("0x30627b7c")},
+		{name: "push0_proxy"},
+		{name: "usdc_proxy"},
+		// TODO: Fix so this contract passes
+		// {name: "snailtracer", calldata: hexutil.MustDecode("0x30627b7c")},
+
+		// The following contracts are expected to revert.
+		// revmc also skips these benchmarks:
+		// {name: "fiat_token"},
+		// {name: "seaport"},
+		// {name: "uniswap_v2_pair"},
+		// {name: "univ2_router"},
 	}
 	for _, tc := range testCases {
 		bytecode, err := readHexFile(fmt.Sprintf("../testdata/ContractHex/%v.rt.hex", tc.name))

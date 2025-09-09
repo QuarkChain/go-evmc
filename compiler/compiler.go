@@ -65,7 +65,7 @@ var defaultGasPrice = big.NewInt(101)
 var defaultBlockNumber = big.NewInt(102)
 var defaultBaseFee = big.NewInt(103)
 var defaultBlobBaseFee = big.NewInt(104)
-var defaultGaslimit = uint64(1000000)
+var defaultGaslimit = uint64(1000000000)
 
 type EVMCompilationOpts struct {
 	DisableGas                        bool

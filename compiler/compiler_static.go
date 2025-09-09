@@ -293,6 +293,10 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, prevInstr *
 				c.pushStackEmpty(stackIdxPtr)
 			}
 		}
+		if instr.Opcode == RETURN {
+			c.builder.CreateBr(exitBlock)
+			return
+		}
 		// TODO: may not check if the opcode will not return error
 		c.checkHostReturn(ret, errorCodePtr, nextBlock, errorBlock)
 		return
