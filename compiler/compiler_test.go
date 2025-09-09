@@ -580,7 +580,7 @@ func benchmarkInterpertor(b *testing.B, code, input []byte, gas uint64) {
 		statedb, _ = state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
 		evm        = vm.NewEVM(bctx, statedb, params.AllDevChainProtocolChanges, vm.Config{})
 	)
-	contract := vm.NewContract(common.Address{}, common.Address{}, new(uint256.Int), gas, nil)
+	contract := vm.NewContract(defaultCallerAddress, defaultCompilationAddress, new(uint256.Int), gas, nil)
 	codeHash := crypto.Keccak256Hash(code)
 	contract.SetCallCode(codeHash, code)
 	b.ResetTimer()

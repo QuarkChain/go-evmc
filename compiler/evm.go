@@ -174,7 +174,9 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 			contract.IsSystemCall = isSystemCall(caller)
 			contract.SetCallCode(evm.resolveCodeHash(addr), code)
 			runRet, runErr := evm.executor.Run(contract, input, false)
-			ret = runRet.Ret
+			if runRet != nil {
+				ret = runRet.Ret
+			}
 			err = runErr
 			gas = contract.Gas
 		}
@@ -235,7 +237,9 @@ func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byt
 		contract := NewContract(caller, caller, value, gas)
 		contract.SetCallCode(evm.resolveCodeHash(addr), evm.resolveCode(addr))
 		runRet, runErr := evm.executor.Run(contract, input, false)
-		ret = runRet.Ret
+		if runRet != nil {
+			ret = runRet.Ret
+		}
 		err = runErr
 		gas = contract.Gas
 	}
@@ -281,7 +285,9 @@ func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address,
 		contract := NewContract(originCaller, caller, value, gas)
 		contract.SetCallCode(evm.resolveCodeHash(addr), evm.resolveCode(addr))
 		runRet, runErr := evm.executor.Run(contract, input, false)
-		ret = runRet.Ret
+		if runRet != nil {
+			ret = runRet.Ret
+		}
 		err = runErr
 		gas = contract.Gas
 	}
@@ -338,7 +344,9 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 		// above we revert to the snapshot and consume any gas remaining. Additionally
 		// when we're in Homestead this also counts for code storage gas errors.
 		runRet, runErr := evm.executor.Run(contract, input, true)
-		ret = runRet.Ret
+		if runRet != nil {
+			ret = runRet.Ret
+		}
 		err = runErr
 		gas = contract.Gas
 	}

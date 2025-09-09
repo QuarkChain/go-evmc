@@ -126,6 +126,9 @@ func (e *EVMExecutor) Run(contract *Contract, input []byte, readOnly bool) (ret 
 	gas := contract.Gas
 	// TODO: passing uint256 pointer as stack to compiled code only works for little-endianess machine!
 	errorCode, gasRemainingResult, stackDepth := e.callNativeFunction(funcPtr, inst, unsafe.Pointer(&stack.data[0][0]), gas)
+	if errorCode == int64(VMErrorCodeStopToken) {
+		errorCode = int64(VMExecutionSuccess) // clear stop token error
+	}
 
 	gasRemaining := uint64(gasRemainingResult)
 
