@@ -149,6 +149,7 @@ const (
 	VMErrorCodeStackUnderflow
 	VMErrorCodeStackOverflow
 	VMErrorCodeInvalidOpCode
+	VMErrorCodeStopToken
 
 	// VMErrorCodeUnknown explicitly marks an error as unknown, this is useful when error is converted
 	// from an actual `error` in which case if the mapping is not known, we can use this value to indicate that.
@@ -157,8 +158,10 @@ const (
 
 func vmErrorCodeFromErr(err error) int {
 	switch {
-	case errors.Is(err, nil), errors.Is(err, errStopToken): // opReturn will throw the error, just ignore it
+	case errors.Is(err, nil):
 		return int(VMExecutionSuccess)
+	case errors.Is(err, errStopToken):
+		return int(VMErrorCodeStopToken)
 	case errors.Is(err, ErrOutOfGas):
 		return int(VMErrorCodeOutOfGas)
 	case errors.Is(err, ErrCodeStoreOutOfGas):

@@ -138,21 +138,25 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 	c.builder.SetInsertPointAtEnd(dynJumpBlock)
 	c.createDynamicJumpBlock(jumpTargetPtr, analysis, errorCodePtr, errorBlock)
 
+	finalizeGas := func() {
+		if opts.DisableGas {
+			c.setOutputValueAt(outputPtrParam, OUTPUT_IDX_GAS, c.u64Const(0))
+		} else {
+			finalGasUsed := c.builder.CreateLoad(c.ctx.Int64Type(), gasPtr, "final_gas_used")
+			c.setOutputValueAt(outputPtrParam, OUTPUT_IDX_GAS, finalGasUsed)
+		}
+	}
+
 	// Finalize error block
 	c.builder.SetInsertPointAtEnd(errorBlock)
 	errorCode := c.builder.CreateLoad(c.ctx.Int64Type(), errorCodePtr, "")
-	c.setOutputValueAt(outputPtrParam, OUTPUT_IDX_GAS, c.u64Const(0)) // error uses all gas
+	finalizeGas()
 	c.setOutputValueAt(outputPtrParam, OUTPUT_IDX_ERROR_CODE, errorCode)
 	c.builder.CreateRetVoid()
 
 	// Finalize exit block
 	c.builder.SetInsertPointAtEnd(exitBlock)
-	if opts.DisableGas {
-		c.setOutputValueAt(outputPtrParam, OUTPUT_IDX_GAS, c.u64Const(0))
-	} else {
-		finalGasUsed := c.builder.CreateLoad(c.ctx.Int64Type(), gasPtr, "final_gas_used")
-		c.setOutputValueAt(outputPtrParam, OUTPUT_IDX_GAS, finalGasUsed)
-	}
+	finalizeGas()
 	stackDepth := c.builder.CreateLoad(c.ctx.Int64Type(), stackIdxPtr, "stack_depth")
 	c.setOutputValueAt(outputPtrParam, OUTPUT_IDX_STACK_DEPTH, stackDepth)
 	c.builder.CreateRetVoid()
@@ -292,10 +296,6 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, prevInstr *
 			for i := 0; i < c.table[instr.Opcode].diffStack; i++ {
 				c.pushStackEmpty(stackIdxPtr)
 			}
-		}
-		if instr.Opcode == RETURN {
-			c.builder.CreateBr(exitBlock)
-			return
 		}
 		// TODO: may not check if the opcode will not return error
 		c.checkHostReturn(ret, errorCodePtr, nextBlock, errorBlock)
