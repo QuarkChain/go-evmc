@@ -391,6 +391,37 @@ func TestArithmeticOpcodes(t *testing.T) {
 			expectedStack: [][32]byte{uint64ToBytes32(42)},
 		},
 		{
+			name: "MUL_OVERFLOW",
+			bytecode: append(
+				[]byte{0x7F}, // PUSH32
+				append(
+					hexutil.MustDecode("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")[:], // -1, second to mul
+					0x60, 0x02, // PUSH1 2, first to mul
+					0x02, // MUL
+					0x00, // STOP
+				)...,
+			),
+			expectedStack: [][32]byte{hexToLittleEndianBytes32("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE")},
+		},
+		{
+			name: "MUL_NEG",
+			bytecode: append(
+				[]byte{0x7F}, // PUSH32
+				append(
+					hexutil.MustDecode("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")[:], // -1, denominator
+					append(
+						[]byte{0x7F}, // PUSH32
+						append(
+							hexutil.MustDecode("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE"), // -2, numerator
+							0x05, // SDIV
+							0x00, // STOP
+						)...,
+					)...,
+				)...,
+			),
+			expectedStack: [][32]byte{uint64ToBytes32(2)},
+		},
+		{
 			name: "SUB",
 			bytecode: []byte{
 				0x60, 0x04, // PUSH1 4
@@ -489,7 +520,7 @@ func TestArithmeticOpcodes(t *testing.T) {
 		{
 			name: "MOD_BY_ZERO",
 			bytecode: []byte{
-				0x60, 0x00, // PUSH1 5, denominator
+				0x60, 0x00, // PUSH1 0, denominator
 				0x60, 0x11, // PUSH1 17, numerator
 				0x06, // MOD
 				0x00, // STOP

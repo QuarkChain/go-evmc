@@ -980,7 +980,7 @@ func makeLog(size int) HostFunc {
 // }
 
 // make push instruction function
-// func makePush(size uint64, pushByteSize int) executionFunc {
+// func makePush(size uint64, pushByteSize int) HostFunc {
 // 	return func(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 // 		var (
 // 			codeLen = len(scope.Contract.Code)
