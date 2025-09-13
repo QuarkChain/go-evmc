@@ -72,6 +72,7 @@ type EVMCompilationOpts struct {
 	DisableGas                        bool
 	DisableSectionGasOptimization     bool
 	DisableStackUnderflowOptimization bool
+	DisableIROptimization             bool
 }
 
 func DefaultEVMCompilationOpts() *EVMCompilationOpts {

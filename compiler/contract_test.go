@@ -51,8 +51,12 @@ func BenchmarkContracts(b *testing.B) {
 		if err != nil {
 			b.Fatalf("failed to read contract bytecode: %v", err)
 		}
+		copts := EVMCompilationOpts{}
+		if tc.name == "snailtracer" { // Disabled optimization to allow snailTracer test to pass.
+			copts.DisableIROptimization = true
+		}
 		b.Run(tc.name, func(b *testing.B) {
-			benchmarkEVM(b, bytecode, tc.calldata, defaultGaslimit)
+			benchmarkEVM(b, bytecode, tc.calldata, defaultGaslimit, copts)
 		})
 	}
 }

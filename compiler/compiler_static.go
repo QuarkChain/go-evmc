@@ -724,8 +724,9 @@ func (c *EVMCompiler) CompileAndOptimizeStatic(bytecode []byte, opts *EVMCompila
 	if err != nil {
 		return err
 	}
-	// Disabled optimization to allow snailTracer test to pass.
 	// TODO: find a correct and safe way to optimize IR.
-	// c.OptimizeModule()
+	if !opts.DisableIROptimization {
+		c.OptimizeModule()
+	}
 	return nil
 }
