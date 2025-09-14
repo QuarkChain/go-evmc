@@ -363,14 +363,18 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, prevInstr *
 	case MOD:
 		a := c.popStack(stack, stackIdxPtr)
 		b := c.popStack(stack, stackIdxPtr)
-		result := c.builder.CreateURem(a, b, "mod_result") // mod by zero is already supported
+		zero := llvm.ConstInt(uint256Type, 0, false)
+		isZero := c.builder.CreateICmp(llvm.IntEQ, b, zero, "mod_by_zero")
+		result := c.builder.CreateSelect(isZero, zero, c.builder.CreateURem(a, b, "mod_result"), "mod_safe")
 		c.pushStack(stack, stackIdxPtr, result)
 		c.builder.CreateBr(nextBlock)
 
 	case SMOD:
 		a := c.popStack(stack, stackIdxPtr)
 		b := c.popStack(stack, stackIdxPtr)
-		result := c.builder.CreateSRem(a, b, "smod_result") // mod by zero is already supported
+		zero := llvm.ConstInt(uint256Type, 0, false)
+		isZero := c.builder.CreateICmp(llvm.IntEQ, b, zero, "smod_by_zero")
+		result := c.builder.CreateSelect(isZero, zero, c.builder.CreateSRem(a, b, "smod_result"), "smod_safe")
 		c.pushStack(stack, stackIdxPtr, result)
 		c.builder.CreateBr(nextBlock)
 
@@ -594,7 +598,7 @@ func (c *EVMCompiler) createJump(prevInstr *EVMInstruction, target, jumpTargetPt
 func (c *EVMCompiler) createDynamicJumpBlock(targetPtr llvm.Value, analysis *PCAnalysis, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
 	// Truncate 256-bit target to 64-bit PC
 	// TODO: error if overflow
-	target := c.builder.CreateLoad(c.ctx.Int64Type(), targetPtr, "jump_target_u256")
+	target := c.builder.CreateLoad(c.ctx.IntType(256), targetPtr, "jump_target_u256")
 	targetPC := c.builder.CreateTrunc(target, c.ctx.Int64Type(), "jump_target")
 
 	// Create invalid jump dest block
@@ -720,7 +724,9 @@ func (c *EVMCompiler) CompileAndOptimizeStatic(bytecode []byte, opts *EVMCompila
 	if err != nil {
 		return err
 	}
-
-	c.OptimizeModule()
+	// TODO: find a correct and safe way to optimize IR.
+	if !opts.DisableIROptimization {
+		c.OptimizeModule()
+	}
 	return nil
 }

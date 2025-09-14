@@ -535,9 +535,10 @@ func BenchmarkEVMExecuteMemoryOperations(b *testing.B) {
 	}
 }
 
-func benchmarkNoGas(b *testing.B, code, input []byte, gas uint64) {
+func benchmarkNoGas(b *testing.B, code, input []byte, gas uint64, copts EVMCompilationOpts) {
 	loader := NewDummyAOTLoader()
-	loader.compileCode(b, code, &EVMCompilationOpts{DisableGas: true})
+	copts.DisableGas = true
+	loader.compileCode(b, code, &copts)
 	e, contract := NewTestExecutor(code, loader, nil)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -548,9 +549,10 @@ func benchmarkNoGas(b *testing.B, code, input []byte, gas uint64) {
 	}
 }
 
-func benchmarkGas(b *testing.B, code, input []byte, gas uint64) {
+func benchmarkGas(b *testing.B, code, input []byte, gas uint64, copts EVMCompilationOpts) {
 	loader := NewDummyAOTLoader()
-	loader.compileCode(b, code, &EVMCompilationOpts{DisableSectionGasOptimization: true})
+	copts.DisableSectionGasOptimization = true
+	loader.compileCode(b, code, &copts)
 	e, contract := NewTestExecutor(code, loader, nil)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -561,9 +563,9 @@ func benchmarkGas(b *testing.B, code, input []byte, gas uint64) {
 	}
 }
 
-func benchmarkSectionGas(b *testing.B, code, input []byte, gas uint64) {
+func benchmarkSectionGas(b *testing.B, code, input []byte, gas uint64, copts EVMCompilationOpts) {
 	loader := NewDummyAOTLoader()
-	loader.compileCode(b, code, nil)
+	loader.compileCode(b, code, &copts)
 	e, contract := NewTestExecutor(code, loader, nil)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -598,10 +600,10 @@ func benchmarkFunc(b *testing.B, f func()) {
 	}
 }
 
-func benchmarkEVM(b *testing.B, code, input []byte, gas uint64) {
-	b.Run("NoGas", func(b *testing.B) { benchmarkNoGas(b, code, input, gas) })
-	b.Run("Gas", func(b *testing.B) { benchmarkGas(b, code, input, gas) })
-	b.Run("Section", func(b *testing.B) { benchmarkSectionGas(b, code, input, gas) })
+func benchmarkEVM(b *testing.B, code, input []byte, gas uint64, copts EVMCompilationOpts) {
+	b.Run("NoGas", func(b *testing.B) { benchmarkNoGas(b, code, input, gas, copts) })
+	b.Run("Gas", func(b *testing.B) { benchmarkGas(b, code, input, gas, copts) })
+	b.Run("Section", func(b *testing.B) { benchmarkSectionGas(b, code, input, gas, copts) })
 	b.Run("Interp", func(b *testing.B) { benchmarkInterpertor(b, code, input, gas) })
 }
 
@@ -610,7 +612,7 @@ func BenchmarkEVMExecuteFibCode(b *testing.B) {
 	code := GetFibCode(uint32(n))
 	input := []byte{}
 	gas := n * 100
-	benchmarkEVM(b, code, input, gas)
+	benchmarkEVM(b, code, input, gas, EVMCompilationOpts{})
 }
 
 func BenchmarkEVMExecuteFibCalldata(b *testing.B) {
@@ -618,7 +620,7 @@ func BenchmarkEVMExecuteFibCalldata(b *testing.B) {
 	code := common.Hex2Bytes("5f355f60015b8215601a578181019150909160019003916005565b9150505f5260205ff3")
 	input := uint256.NewInt(n).PaddedBytes(32)
 	gas := n * 100
-	benchmarkEVM(b, code, input, gas)
+	benchmarkEVM(b, code, input, gas, EVMCompilationOpts{})
 	b.Run("NativeGas", func(b *testing.B) {
 		benchmarkFunc(b, func() {
 			_, _ = FibEVM(n)
@@ -636,5 +638,5 @@ func BenchmarkEVMExecuteFactorial(b *testing.B) {
 	code := common.Hex2Bytes("5f355f60015b8215601b57906001018091029160019003916005565b9150505f5260205ff3")
 	input := uint256.NewInt(n).PaddedBytes(32)
 	gas := n * 100
-	benchmarkEVM(b, code, input, gas)
+	benchmarkEVM(b, code, input, gas, EVMCompilationOpts{})
 }

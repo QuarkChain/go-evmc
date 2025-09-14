@@ -34,8 +34,7 @@ func BenchmarkContracts(b *testing.B) {
 		{name: "hash_10k", calldata: hexutil.MustDecode("0x30627b7c")},
 		{name: "push0_proxy"},
 		{name: "usdc_proxy"},
-		// TODO: Fix so this contract passes
-		// {name: "snailtracer", calldata: hexutil.MustDecode("0x30627b7c")},
+		{name: "snailtracer", calldata: hexutil.MustDecode("0x30627b7c")},
 
 		// The following contracts are expected to revert.
 		// revmc also skips these benchmarks:
@@ -52,8 +51,12 @@ func BenchmarkContracts(b *testing.B) {
 		if err != nil {
 			b.Fatalf("failed to read contract bytecode: %v", err)
 		}
+		copts := EVMCompilationOpts{}
+		if tc.name == "snailtracer" { // Disabled optimization to allow snailTracer test to pass.
+			copts.DisableIROptimization = true
+		}
 		b.Run(tc.name, func(b *testing.B) {
-			benchmarkEVM(b, bytecode, tc.calldata, defaultGaslimit)
+			benchmarkEVM(b, bytecode, tc.calldata, defaultGaslimit, copts)
 		})
 	}
 }
