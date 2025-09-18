@@ -83,6 +83,13 @@ func (m *Memory) Resize(size uint64) {
 	}
 }
 
+func (m *Memory) SetSize(size uint64) {
+	if uint64(m.Len()) < size {
+		m.store = append(m.store, make([]byte, size-uint64(m.Len()))...)
+	}
+	m.store = m.store[:size]
+}
+
 // GetCopy returns offset + size as a new slice
 func (m *Memory) GetCopy(offset, size uint64) (cpy []byte) {
 	if size == 0 {

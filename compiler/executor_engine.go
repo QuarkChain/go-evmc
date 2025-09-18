@@ -20,7 +20,7 @@ type CompiledLoader interface {
 type NativeEngine struct {
 	engine          llvm.ExecutionEngine
 	compiledLoader  CompiledLoader
-	loadedContracts map[common.Hash]bool
+	loadedContracts map[common.Hash]FuncPtr
 }
 
 var _ NativeLoader = (*NativeEngine)(nil)
@@ -37,7 +37,7 @@ func NewNativeEngine(loader CompiledLoader) *NativeEngine {
 	nativeEngine := &NativeEngine{
 		engine:          engine,
 		compiledLoader:  loader,
-		loadedContracts: map[common.Hash]bool{},
+		loadedContracts: map[common.Hash]FuncPtr{},
 	}
 	_, hostFunc := initializeHostFunction(ctx, module)
 	engine.AddGlobalMapping(hostFunc, unsafe.Pointer(C.callHostFunc))
@@ -50,17 +50,18 @@ func (n *NativeEngine) CompiledFuncPtr(codeHash common.Hash, chainRules params.R
 		return FuncPtr(0), "", fmt.Errorf("codeHash:%v is nil", codeHash)
 	}
 	var version CompiledCodeVersion
-	if _, ok := n.loadedContracts[codeHash]; !ok {
+	funcPtr, ok := n.loadedContracts[codeHash]
+	if !ok {
 		compiledCode, ver, err := n.compiledLoader.LoadCompiledCode(codeHash, chainRules, extraEips)
 		if err != nil {
 			return 0, version, err
 		}
 		n.engine.AddObjectFileFromBuffer(compiledCode)
-		n.loadedContracts[codeHash] = true
+		ptr := n.engine.GetFunctionAddress(GetContractFunction(codeHash))
+		funcPtr = FuncPtr(ptr)
+		n.loadedContracts[codeHash] = funcPtr
 		version = ver
 	}
-
-	funcPtr := n.engine.GetFunctionAddress(GetContractFunction(codeHash))
 
 	if funcPtr == 0 {
 		return FuncPtr(0), "", fmt.Errorf("compiled contract code not found")

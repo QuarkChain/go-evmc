@@ -551,7 +551,7 @@ func newFrontierInstructionSet() JumpTable {
 			diffStack:   diffStack(1, 0),
 		},
 		MLOAD: {
-			execute:     opMload,
+			// execute:     opMload,
 			constantGas: GasFastestStep,
 			dynamicGas:  gasMLoad,
 			minStack:    minStack(1, 1),
@@ -559,7 +559,7 @@ func newFrontierInstructionSet() JumpTable {
 			memorySize:  memoryMLoad,
 		},
 		MSTORE: {
-			execute:     opMstore,
+			// execute:     opMstore,
 			constantGas: GasFastestStep,
 			dynamicGas:  gasMStore,
 			minStack:    minStack(2, 0),
@@ -567,7 +567,7 @@ func newFrontierInstructionSet() JumpTable {
 			memorySize:  memoryMStore,
 		},
 		MSTORE8: {
-			execute:     opMstore8,
+			// execute:     opMstore8,
 			constantGas: GasFastestStep,
 			dynamicGas:  gasMStore8,
 			memorySize:  memoryMStore8,

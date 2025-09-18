@@ -1,7 +1,7 @@
 package compiler
 
 // #include <stdint.h>
-// extern int64_t callHostFunc(uintptr_t inst, uint64_t opcode, uint64_t pc, uint64_t* gas, uint64_t* stackIdx);
+// extern int64_t callHostFunc(uintptr_t inst, uint64_t opcode, uint64_t pc, uint64_t* gas, uint64_t* stackIdx, uint64_t* msize);
 import "C"
 import (
 	"fmt"
@@ -24,7 +24,7 @@ func removeExecutionInstance(h cgo.Handle) {
 }
 
 //export callHostFunc
-func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, pcC C.uint64_t, gas *C.uint64_t, stackIdx *C.uint64_t) C.int64_t {
+func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, pcC C.uint64_t, gas, stackIdx, msize *C.uint64_t) C.int64_t {
 	h := cgo.Handle(inst)
 	e, ok := h.Value().(*EVMExecutor)
 	if !ok || e == nil {
@@ -84,13 +84,14 @@ func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, pcC C.uint64_t, gas *C.ui
 	// Pass ret to parent context
 	e.evm.internalRet = ret
 	*gas = C.uint64_t(e.callContext.Contract.Gas)
+	*msize = C.uint64_t(memorySize)
 
 	return C.int64_t(errCode)
 }
 
 func initializeHostFunction(ctx llvm.Context, module llvm.Module) (hostFuncType llvm.Type, hostFunc llvm.Value) {
 	i64ptr := llvm.PointerType(ctx.Int64Type(), 0)
-	hostFuncType = llvm.FunctionType(ctx.Int64Type(), []llvm.Type{ctx.Int64Type(), ctx.Int64Type(), ctx.Int64Type(), i64ptr, i64ptr}, false)
+	hostFuncType = llvm.FunctionType(ctx.Int64Type(), []llvm.Type{ctx.Int64Type(), ctx.Int64Type(), ctx.Int64Type(), i64ptr, i64ptr, i64ptr}, false)
 	hostFunc = llvm.AddFunction(module, "host_func", hostFuncType)
 	// Set the host function's linkage to External.
 	// This prevents LLVM from internalizing it during LTO/IPO passes,

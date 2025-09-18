@@ -12,7 +12,8 @@ const (
 	OUTPUT_IDX_ERROR_CODE  = 0
 	OUTPUT_IDX_GAS         = 1
 	OUTPUT_IDX_STACK_DEPTH = 2
-	OUTPUT_SIZE            = (OUTPUT_IDX_STACK_DEPTH + 1) * 8
+	OUTPUT_IDX_MSIZE       = 3
+	OUTPUT_SIZE            = (OUTPUT_IDX_MSIZE + 1) * 8
 )
 
 var (
@@ -59,6 +60,7 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 	execType := llvm.FunctionType(c.ctx.VoidType(), []llvm.Type{
 		c.ctx.Int64Type(), // inst
 		uint256PtrType,    // stack
+		uint8PtrType,      // memory
 		uint8PtrType,      // code (unused but kept for signature)
 		c.ctx.Int64Type(), // gas limit
 		uint64PtrType,     // output args
@@ -69,8 +71,9 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 
 	instParam := execFunc.Param(0)
 	stackParam := execFunc.Param(1)
-	gasLimitParam := execFunc.Param(3)
-	outputPtrParam := execFunc.Param(4)
+	memoryParam := execFunc.Param(2)
+	gasLimitParam := execFunc.Param(4)
+	outputPtrParam := execFunc.Param(5)
 
 	// Create entry block
 	entryBlock := llvm.AddBasicBlock(execFunc, "entry")
@@ -79,6 +82,9 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 	// Initialize stack pointer
 	stackIdxPtr := c.builder.CreateAlloca(c.ctx.Int64Type(), "stack_ptr")
 	c.builder.CreateStore(c.u64Const(0), stackIdxPtr)
+
+	msizePtr := c.builder.CreateAlloca(c.ctx.Int64Type(), "msize_ptr")
+	c.builder.CreateStore(c.u64Const(0), msizePtr)
 
 	// Initialize gasPtr tracking
 	gasPtr := c.builder.CreateAlloca(c.ctx.Int64Type(), "gas_used")
@@ -130,7 +136,7 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 			}
 		}
 
-		c.compileInstructionStatic(instr, prevInstr, instParam, stackParam, stackIdxPtr, gasPtr, jumpTargetPtr, errorCodePtr, analysis, nextBlock, dynJumpBlock, exitBlock, errorBlock, opts)
+		c.compileInstructionStatic(instr, prevInstr, instParam, stackParam, stackIdxPtr, memoryParam, msizePtr, gasPtr, jumpTargetPtr, errorCodePtr, analysis, nextBlock, dynJumpBlock, exitBlock, errorBlock, opts)
 		prevInstr = &instr
 	}
 
@@ -159,6 +165,8 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 	finalizeGas()
 	stackDepth := c.builder.CreateLoad(c.ctx.Int64Type(), stackIdxPtr, "stack_depth")
 	c.setOutputValueAt(outputPtrParam, OUTPUT_IDX_STACK_DEPTH, stackDepth)
+	msize := c.builder.CreateLoad(c.ctx.Int64Type(), msizePtr, "memory_size")
+	c.setOutputValueAt(outputPtrParam, OUTPUT_IDX_MSIZE, msize)
 	c.builder.CreateRetVoid()
 
 	err = llvm.VerifyModule(c.module, llvm.ReturnStatusAction)
@@ -257,7 +265,7 @@ func (c *EVMCompiler) checkHostReturn(ret, errorCodePtr llvm.Value, nextBlock, e
 }
 
 // compileInstructionStatic compiles an instruction using static analysis with gas metering
-func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, prevInstr *EVMInstruction, execInst, stack, stackIdxPtr, gasPtr, jumpTargetPtr, errorCodePtr llvm.Value, analysis *PCAnalysis, nextBlock, dynJumpBlock, exitBlock, errorBlock llvm.BasicBlock, opts *EVMCompilationOpts) {
+func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, prevInstr *EVMInstruction, execInst, stack, stackIdxPtr, memory, msizePtr, gasPtr, jumpTargetPtr, errorCodePtr llvm.Value, analysis *PCAnalysis, nextBlock, dynJumpBlock, exitBlock, errorBlock llvm.BasicBlock, opts *EVMCompilationOpts) {
 	uint256Type := c.ctx.IntType(256)
 
 	// If the code is unsupported, return error
@@ -287,7 +295,7 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, prevInstr *
 
 	// Check if it is host function
 	if c.table[instr.Opcode].execute != nil {
-		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, c.u64Const(uint64(instr.Opcode)), c.u64Const(uint64(instr.PC)), gasPtr, stackIdxPtr}, "")
+		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, c.u64Const(uint64(instr.Opcode)), c.u64Const(uint64(instr.PC)), gasPtr, stackIdxPtr, msizePtr}, "")
 		if c.table[instr.Opcode].diffStack < 0 {
 			for i := 0; i < -c.table[instr.Opcode].diffStack; i++ {
 				c.popStack(stack, stackIdxPtr)
@@ -303,6 +311,24 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, prevInstr *
 	}
 
 	switch instr.Opcode {
+
+	case MLOAD:
+		offset := c.popStack(stack, stackIdxPtr)
+
+		offset = c.builder.CreateTrunc(offset, c.ctx.Int64Type(), "mem_offset")
+		c.resizeMemory(offset, msizePtr, 32)
+		value := c.loadFromMemory(memory, offset)
+		c.pushStack(stack, stackIdxPtr, value)
+		c.builder.CreateBr(nextBlock)
+
+	case MSTORE:
+		offset := c.popStack(stack, stackIdxPtr)
+		value := c.popStack(stack, stackIdxPtr)
+		offset = c.builder.CreateTrunc(offset, c.ctx.Int64Type(), "mem_offset")
+		c.resizeMemory(offset, msizePtr, 32)
+		c.storeToMemory(memory, offset, value)
+		c.builder.CreateBr(nextBlock)
+
 	case STOP:
 		c.builder.CreateBr(exitBlock)
 

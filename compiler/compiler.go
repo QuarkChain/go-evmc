@@ -250,40 +250,66 @@ func (c *EVMCompiler) createUint256ConstantFromBytes(data []byte) llvm.Value {
 }
 
 func (c *EVMCompiler) loadFromMemory(memory, offset llvm.Value) llvm.Value {
-	offsetTrunc := c.builder.CreateTrunc(offset, c.ctx.Int64Type(), "mem_offset")
-	memPtr := c.builder.CreateGEP(c.ctx.Int8Type(), memory, []llvm.Value{offsetTrunc}, "mem_ptr")
+	memPtr := c.builder.CreateGEP(c.ctx.Int8Type(), memory, []llvm.Value{offset}, "mem_ptr")
 
-	value := llvm.ConstInt(c.ctx.IntType(256), 0, false)
-	for i := 0; i < 32; i++ {
-		byteOffset := c.u64Const(uint64(i))
-		bytePtr := c.builder.CreateGEP(c.ctx.Int8Type(), memPtr, []llvm.Value{byteOffset}, "byte_ptr")
-		byteVal := c.builder.CreateLoad(c.ctx.Int8Type(), bytePtr, "byte_val")
-		byteValExt := c.builder.CreateZExt(byteVal, c.ctx.IntType(256), "byte_ext")
-		shift := c.builder.CreateShl(byteValExt, llvm.ConstInt(c.ctx.IntType(256), uint64(8*(31-i)), false), "byte_shift")
-		value = c.builder.CreateOr(value, shift, "mem_value")
-	}
+	// value := llvm.ConstInt(c.ctx.IntType(256), 0, false)
+	// for i := 0; i < 32; i++ {
+	// 	byteOffset := c.u64Const(uint64(i))
+	// 	bytePtr := c.builder.CreateGEP(c.ctx.Int8Type(), memPtr, []llvm.Value{byteOffset}, "byte_ptr")
+	// 	byteVal := c.builder.CreateLoad(c.ctx.Int8Type(), bytePtr, "byte_val")
+	// 	byteValExt := c.builder.CreateZExt(byteVal, c.ctx.IntType(256), "byte_ext")
+	// 	shift := c.builder.CreateShl(byteValExt, llvm.ConstInt(c.ctx.IntType(256), uint64(8*(31-i)), false), "byte_shift")
+	// 	value = c.builder.CreateOr(value, shift, "mem_value")
+	// }
+
+	// cast to i256*
+	memPtrTyped := c.builder.CreateBitCast(memPtr, llvm.PointerType(c.ctx.IntType(256), 0), "mem_ptr_typed")
+
+	// load 256-bit value
+	value := c.builder.CreateLoad(c.ctx.IntType(256), memPtrTyped, "val")
 
 	return value
 }
 
+func (c *EVMCompiler) resizeMemory(offset, msizePtr llvm.Value, size uint64) {
+	msizeVal := c.builder.CreateLoad(c.ctx.Int64Type(), msizePtr, "offset_val")
+	raw := c.builder.CreateAdd(offset, c.u64Const(size), "new_msize_val")
+
+	// round up to multiple of 32: (raw + 31) & ~31
+	add31 := c.builder.CreateAdd(raw, c.u64Const(31), "add31")
+	mask := c.u64Const(^uint64(31)) // 0xffff..ffe0
+	leastSize := c.builder.CreateAnd(add31, mask, "new_msize_val")
+
+	maxMsize := c.builder.CreateSelect(
+		c.builder.CreateICmp(llvm.IntULT, msizeVal, leastSize, "mem_resize_cond"),
+		leastSize,
+		msizeVal,
+		"max_msize",
+	)
+
+	c.builder.CreateStore(maxMsize, msizePtr)
+}
+
 func (c *EVMCompiler) storeToMemory(memory, offset, value llvm.Value) {
-	offsetTrunc := c.builder.CreateTrunc(offset, c.ctx.Int64Type(), "mem_offset")
-	memPtr := c.builder.CreateGEP(c.ctx.Int8Type(), memory, []llvm.Value{offsetTrunc}, "mem_ptr")
+	memPtr := c.builder.CreateGEP(c.ctx.Int8Type(), memory, []llvm.Value{offset}, "mem_ptr")
 
-	for i := 0; i < 32; i++ {
-		shift := llvm.ConstInt(c.ctx.IntType(256), uint64(8*(31-i)), false)
-		shiftedValue := c.builder.CreateLShr(value, shift, "shifted_value")
-		byteVal := c.builder.CreateTrunc(shiftedValue, c.ctx.Int8Type(), "byte_val")
+	// for i := 0; i < 32; i++ {
+	// 	shift := llvm.ConstInt(c.ctx.IntType(256), uint64(8*(31-i)), false)
+	// 	shiftedValue := c.builder.CreateLShr(value, shift, "shifted_value")
+	// 	byteVal := c.builder.CreateTrunc(shiftedValue, c.ctx.Int8Type(), "byte_val")
 
-		byteOffset := c.u64Const(uint64(i))
-		bytePtr := c.builder.CreateGEP(c.ctx.Int8Type(), memPtr, []llvm.Value{byteOffset}, "byte_ptr")
-		c.builder.CreateStore(byteVal, bytePtr)
-	}
+	// 	byteOffset := c.u64Const(uint64(i))
+	// 	bytePtr := c.builder.CreateGEP(c.ctx.Int8Type(), memPtr, []llvm.Value{byteOffset}, "byte_ptr")
+	// 	c.builder.CreateStore(byteVal, bytePtr)
+	// }
+	memPtrTyped := c.builder.CreateBitCast(memPtr, llvm.PointerType(c.ctx.IntType(256), 0), "mem_ptr_typed")
+
+	// store 256-bit integer directly
+	c.builder.CreateStore(value, memPtrTyped)
 }
 
 func (c *EVMCompiler) storeByteToMemory(memory, offset, value llvm.Value) {
-	offsetTrunc := c.builder.CreateTrunc(offset, c.ctx.Int64Type(), "mem_offset")
-	memPtr := c.builder.CreateGEP(c.ctx.Int8Type(), memory, []llvm.Value{offsetTrunc}, "mem_ptr")
+	memPtr := c.builder.CreateGEP(c.ctx.Int8Type(), memory, []llvm.Value{offset}, "mem_ptr")
 	byteVal := c.builder.CreateTrunc(value, c.ctx.Int8Type(), "byte_val")
 	c.builder.CreateStore(byteVal, memPtr)
 }

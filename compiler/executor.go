@@ -1,8 +1,8 @@
 package compiler
 
 // #include <stdint.h>
-// typedef void (*func)(uint64_t inst, void* stack, void* code, uint64_t gas, void* output);
-// static void execute(uint64_t f, uint64_t inst, void* stack, void* code, uint64_t gas, void* output) { ((func)f)(inst, stack, code, gas, output); }
+// typedef void (*func)(uint64_t inst, void* stack, void* memory, void* code, uint64_t gas, void* output);
+// static void execute(uint64_t f, uint64_t inst, void* stack, void* memory, void* code, uint64_t gas, void* output) { ((func)f)(inst, stack, memory, code, gas, output); }
 import "C"
 import (
 	"encoding/binary"
@@ -113,7 +113,7 @@ func (e *EVMExecutor) Run(contract *Contract, input []byte, readOnly bool) (ret 
 	defer func() {
 		returnStack(stack)
 		// here memory is not freed for checking testCase's memory
-		// memory.Free()
+		memory.Free()
 		// Recover prev context cause e.callContext is used to store gas/memory/stack in the whole tx execution lifecycle.
 		e.callContext = prevCallContext
 		e.evm.internalRet = []byte{}
@@ -124,8 +124,11 @@ func (e *EVMExecutor) Run(contract *Contract, input []byte, readOnly bool) (ret 
 	inst := createExecutionInstance(e)
 	defer removeExecutionInstance(inst)
 	gas := contract.Gas
+
+	// TODO: expand memory in llvm
+	memory.Resize(128)
 	// TODO: passing uint256 pointer as stack to compiled code only works for little-endianess machine!
-	errorCode, gasRemainingResult, stackDepth := e.callNativeFunction(funcPtr, inst, unsafe.Pointer(&stack.data[0][0]), gas)
+	errorCode, gasRemainingResult, stackDepth, msize := e.callNativeFunction(funcPtr, inst, unsafe.Pointer(&stack.data[0][0]), unsafe.Pointer(&memory.store[0]), gas)
 	if errorCode == int64(VMErrorCodeStopToken) {
 		errorCode = int64(VMExecutionSuccess) // clear stop token error
 	}
@@ -144,6 +147,11 @@ func (e *EVMExecutor) Run(contract *Contract, input []byte, readOnly bool) (ret 
 		}, vmErrorCodeToErr(errorCode)
 	}
 
+	// TODO: add an option to skip this copy if the caller doesn't need the data anymore
+	return &EVMExecutionResult{
+		Status: ExecutionStatus(errorCode),
+	}, nil
+
 	// Update remaining gas of the contract call
 	// contract.Gas only include hostFunc's gas, while gasRemaining accounts for hostFunc+nativeCall gas
 	contract.Gas = gasRemaining
@@ -153,6 +161,8 @@ func (e *EVMExecutor) Run(contract *Contract, input []byte, readOnly bool) (ret 
 	for i := 0; i < int(stackDepth); i++ {
 		stackByte[i] = FromMachineToBig32Bytes(stack.data[i].Bytes32())
 	}
+
+	memory.SetSize(msize)
 
 	return &EVMExecutionResult{
 		Stack:        stackByte,
@@ -166,11 +176,12 @@ func (e *EVMExecutor) Run(contract *Contract, input []byte, readOnly bool) (ret 
 }
 
 // Helper function to call native function pointer (requires CGO)
-func (e *EVMExecutor) callNativeFunction(funcPtr FuncPtr, inst cgo.Handle, stack unsafe.Pointer, gas uint64) (int64, int64, int64) {
+func (e *EVMExecutor) callNativeFunction(funcPtr FuncPtr, inst cgo.Handle, stack, memory unsafe.Pointer, gas uint64) (int64, int64, int64, uint64) {
 	var output [OUTPUT_SIZE]byte
-	C.execute(C.uint64_t(funcPtr), C.uintptr_t(inst), stack, nil, C.uint64_t(gas), unsafe.Pointer(&output[0]))
+	C.execute(C.uint64_t(funcPtr), C.uintptr_t(inst), stack, memory, nil, C.uint64_t(gas), unsafe.Pointer(&output[0]))
 	errorCode := binary.LittleEndian.Uint64(output[OUTPUT_IDX_ERROR_CODE*8:])
 	gasUsed := binary.LittleEndian.Uint64(output[OUTPUT_IDX_GAS*8:])
 	stackDepth := binary.LittleEndian.Uint64(output[OUTPUT_IDX_STACK_DEPTH*8:])
-	return int64(errorCode), int64(gasUsed), int64(stackDepth)
+	memSize := binary.LittleEndian.Uint64(output[OUTPUT_IDX_MSIZE*8:])
+	return int64(errorCode), int64(gasUsed), int64(stackDepth), uint64(memSize)
 }
