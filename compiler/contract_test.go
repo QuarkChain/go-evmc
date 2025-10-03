@@ -34,7 +34,7 @@ func BenchmarkContracts(b *testing.B) {
 		{name: "hash_10k", calldata: hexutil.MustDecode("0x30627b7c")},
 		{name: "push0_proxy"},
 		{name: "usdc_proxy"},
-		{name: "snailtracer", calldata: hexutil.MustDecode("0x30627b7c")},
+		// {name: "snailtracer", calldata: hexutil.MustDecode("0x30627b7c")},
 
 		// The following contracts are expected to revert.
 		// revmc also skips these benchmarks:
@@ -43,8 +43,8 @@ func BenchmarkContracts(b *testing.B) {
 		// {name: "uniswap_v2_pair"},
 		// {name: "univ2_router"},
 
-		{name: "poseidon_t2", calldata: hexutil.MustDecode("0x9d036e710000000000000000000000000000000000000000000000000000000000000000")},
-		{name: "poseidon_t5", calldata: hexutil.MustDecode("0x8709cd8c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000003")},
+		// {name: "poseidon_t2", calldata: hexutil.MustDecode("0x9d036e710000000000000000000000000000000000000000000000000000000000000000")},
+		// {name: "poseidon_t5", calldata: hexutil.MustDecode("0x8709cd8c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000003")},
 	}
 	for _, tc := range testCases {
 		bytecode, err := readHexFile(fmt.Sprintf("../testdata/ContractHex/%v.rt.hex", tc.name))

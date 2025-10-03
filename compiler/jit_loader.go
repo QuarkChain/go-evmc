@@ -26,6 +26,9 @@ func (l *JITLoader) LoadCompiledCode(hash common.Hash, chainRules params.Rules, 
 	if err != nil || len(code) == 0 {
 		return []byte{}, "", fmt.Errorf("code for codeHash:%v not found", hash)
 	}
-	c.CompileAndOptimizeWithOpts(code, l.copts)
+	err = c.CompileAndOptimizeWithOpts(code, l.copts)
+	if err != nil {
+		return []byte{}, "", fmt.Errorf("compilation failed\n:%v", err)
+	}
 	return c.GetCompiledCode(), "", nil
 }

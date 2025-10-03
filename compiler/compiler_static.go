@@ -18,6 +18,17 @@ const (
 var (
 	INT256_NEGATIVE_1   = uint256.MustFromHex("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff").String() // -1
 	INT256_NEGATIVE_MIN = uint256.MustFromHex("0x8000000000000000000000000000000000000000000000000000000000000000").String() // -2^255
+
+	BIT_SWAP256     = "llvm.bswap.i256"
+	MEMORY_NEW      = "memory_new"
+	MEMORY_FREE     = "memory_free"
+	MEMORY_RESIZE   = "memory_resize"
+	MEMORY_SET      = "memory_set"
+	MEMORY_COPY     = "memory_copy"
+	MEMORY_PTR      = "memory_getptr"
+	TO_WORD_SIZE    = "to_word_size"
+	MEMORY_GAS_COST = "memory_gas_cost"
+	MEM_CP_GAS_COST = "memory_copier_gas"
 )
 
 // PCAnalysis holds static program counter analysis results
@@ -38,6 +49,97 @@ func (c *EVMCompiler) u64Const(value uint64) llvm.Value {
 	return llvm.ConstInt(c.ctx.Int64Type(), value, false)
 }
 
+type CHostFunc struct {
+	fnType llvm.Type
+	fn     llvm.Value
+}
+
+func Clibs(ctx llvm.Context, mod llvm.Module) map[string]CHostFunc {
+	// C types
+	i8ptr := llvm.PointerType(ctx.Int8Type(), 0)
+	i32 := ctx.Int32Type()
+	i64 := ctx.Int64Type()
+	i256 := ctx.IntType(256)
+	voidt := ctx.VoidType()
+
+	bswap256FnType := llvm.FunctionType(i256, []llvm.Type{i256}, false)
+	bswap256Fn := llvm.AddFunction(mod, BIT_SWAP256, bswap256FnType)
+
+	// bswap64FnType := llvm.FunctionType(i256, []llvm.Type{i256}, false)
+	// bswap64Fn := llvm.AddFunction(mod, BIT_SWAP64, bswap64FnType)
+
+	// Memory* type is treated as i8*
+	memPtrType := i8ptr
+	// Memory* memory_new(void)
+	memNewType := llvm.FunctionType(memPtrType, nil, false)
+	memNewFn := llvm.AddFunction(mod, MEMORY_NEW, memNewType)
+
+	// void memory_free(Memory*)
+	memFreeType := llvm.FunctionType(voidt, []llvm.Type{memPtrType}, false)
+	memFreeFn := llvm.AddFunction(mod, MEMORY_FREE, memFreeType)
+
+	// void memory_resize(Memory*, i64)
+	resizeType := llvm.FunctionType(voidt, []llvm.Type{memPtrType, i64}, false)
+	memResizeFn := llvm.AddFunction(mod, MEMORY_RESIZE, resizeType)
+
+	// uint8_t* memory_getptr(Memory* m, uint64_t offset, uint64_t size)
+	memGetptrType := llvm.FunctionType(i8ptr, []llvm.Type{memPtrType, i64, i64}, false)
+	memGetptrFn := llvm.AddFunction(mod, MEMORY_PTR, memGetptrType)
+
+	// void memory_set(Memory*, i64, i64, const i8*)
+	memSetType := llvm.FunctionType(voidt, []llvm.Type{memPtrType, i64, i64, i8ptr}, false)
+	memSetFn := llvm.AddFunction(mod, MEMORY_SET, memSetType)
+
+	// void memory_copy(Memory *m, uint64_t dst, uint64_t src, uint64_t len)
+	memCpType := llvm.FunctionType(voidt, []llvm.Type{memPtrType, i64, i64, i64}, false)
+	memCpFn := llvm.AddFunction(mod, MEMORY_COPY, memCpType)
+
+	// int memory_gas_cost(Memory *mem, uint64_t newMemSize, uint64_t *outFee)
+	memGasCostType := llvm.FunctionType(
+		i32, // return int
+		[]llvm.Type{memPtrType, i64, llvm.PointerType(i64, 0)},
+		false,
+	)
+	memGasCostFn := llvm.AddFunction(mod, MEMORY_GAS_COST, memGasCostType)
+
+	// int memory_copier_gas(Memory *mem, uint64_t words, uint64_t memorySize, uint64_t *outGas)
+	memCpGasCostType := llvm.FunctionType(
+		i32, // return int
+		[]llvm.Type{memPtrType, i64, i64, llvm.PointerType(i64, 0)},
+		false,
+	)
+	memCpGasCostFn := llvm.AddFunction(mod, MEM_CP_GAS_COST, memCpGasCostType)
+
+	// uint64_t to_word_size(uint64_t size)
+	toWordSizeType := llvm.FunctionType(i64, []llvm.Type{i64}, false)
+	toWordSizeFn := llvm.AddFunction(mod, "to_word_size", toWordSizeType)
+
+	memNewFn.SetLinkage(llvm.ExternalLinkage)
+	memFreeFn.SetLinkage(llvm.ExternalLinkage)
+	memResizeFn.SetLinkage(llvm.ExternalLinkage)
+	memSetFn.SetLinkage(llvm.ExternalLinkage)
+	toWordSizeFn.SetLinkage(llvm.ExternalLinkage)
+	memGasCostFn.SetLinkage(llvm.ExternalLinkage)
+	memCpFn.SetLinkage(llvm.ExternalLinkage)
+	memCpGasCostFn.SetLinkage(llvm.ExternalLinkage)
+
+	cHostFns := make(map[string]CHostFunc)
+	cHostFns[BIT_SWAP256] = CHostFunc{bswap256FnType, bswap256Fn}
+	// cHostFns[BIT_SWAP64] = CHostFunc{bswap64FnType, bswap64Fn}
+	cHostFns[MEMORY_NEW] = CHostFunc{memNewType, memNewFn}
+	cHostFns[MEMORY_FREE] = CHostFunc{memFreeType, memFreeFn}
+	cHostFns[MEMORY_RESIZE] = CHostFunc{resizeType, memResizeFn}
+	cHostFns[MEMORY_SET] = CHostFunc{memSetType, memSetFn}
+	cHostFns[MEMORY_COPY] = CHostFunc{memCpType, memCpFn}
+	cHostFns[MEMORY_PTR] = CHostFunc{memGetptrType, memGetptrFn}
+	cHostFns[TO_WORD_SIZE] = CHostFunc{toWordSizeType, toWordSizeFn}
+
+	cHostFns[MEMORY_GAS_COST] = CHostFunc{memGasCostType, memGasCostFn}
+	cHostFns[MEM_CP_GAS_COST] = CHostFunc{memCpGasCostType, memCpGasCostFn}
+
+	return cHostFns
+}
+
 // CompileBytecodeStatic compiles EVM bytecode using static PC analysis
 func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilationOpts) (llvm.Module, error) {
 	if opts == nil {
@@ -47,6 +149,7 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 	if err != nil {
 		return llvm.Module{}, err
 	}
+	c.clibs = Clibs(c.ctx, c.module)
 
 	// Perform static analysis
 	analysis := c.analyzeProgram(instructions)
@@ -56,7 +159,8 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 	uint256PtrType := llvm.PointerType(uint256Type, 0)
 	uint64PtrType := llvm.PointerType(c.ctx.Int64Type(), 0)
 
-	execType := llvm.FunctionType(c.ctx.VoidType(), []llvm.Type{
+	memPtrType := llvm.PointerType(c.ctx.Int8Type(), 0)
+	execType := llvm.FunctionType(memPtrType, []llvm.Type{
 		c.ctx.Int64Type(), // inst
 		uint256PtrType,    // stack
 		uint8PtrType,      // code (unused but kept for signature)
@@ -79,6 +183,9 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 	// Initialize stack pointer
 	stackIdxPtr := c.builder.CreateAlloca(c.ctx.Int64Type(), "stack_ptr")
 	c.builder.CreateStore(c.u64Const(0), stackIdxPtr)
+
+	memNewFn := c.clibs[MEMORY_NEW]
+	memory := c.builder.CreateCall(memNewFn.fnType, memNewFn.fn, []llvm.Value{}, "call_memory_new")
 
 	// Initialize gasPtr tracking
 	gasPtr := c.builder.CreateAlloca(c.ctx.Int64Type(), "gas_used")
@@ -130,7 +237,7 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 			}
 		}
 
-		c.compileInstructionStatic(instr, prevInstr, instParam, stackParam, stackIdxPtr, gasPtr, jumpTargetPtr, errorCodePtr, analysis, nextBlock, dynJumpBlock, exitBlock, errorBlock, opts)
+		c.compileInstructionStatic(instr, prevInstr, instParam, stackParam, stackIdxPtr, memory, gasPtr, jumpTargetPtr, errorCodePtr, analysis, nextBlock, dynJumpBlock, exitBlock, errorBlock, opts)
 		prevInstr = &instr
 	}
 
@@ -152,14 +259,27 @@ func (c *EVMCompiler) CompileBytecodeStatic(bytecode []byte, opts *EVMCompilatio
 	errorCode := c.builder.CreateLoad(c.ctx.Int64Type(), errorCodePtr, "")
 	finalizeGas()
 	c.setOutputValueAt(outputPtrParam, OUTPUT_IDX_ERROR_CODE, errorCode)
-	c.builder.CreateRetVoid()
+
+	nullMem := llvm.ConstNull(memPtrType)
+	memFreeFn := c.clibs[MEMORY_FREE]
+	if opts.FreeMemory {
+		c.builder.CreateCall(memFreeFn.fnType, memFreeFn.fn, []llvm.Value{memory}, "")
+		c.builder.CreateRet(nullMem)
+	} else {
+		c.builder.CreateRet(memory)
+	}
 
 	// Finalize exit block
 	c.builder.SetInsertPointAtEnd(exitBlock)
 	finalizeGas()
 	stackDepth := c.builder.CreateLoad(c.ctx.Int64Type(), stackIdxPtr, "stack_depth")
 	c.setOutputValueAt(outputPtrParam, OUTPUT_IDX_STACK_DEPTH, stackDepth)
-	c.builder.CreateRetVoid()
+	if opts.FreeMemory {
+		c.builder.CreateCall(memFreeFn.fnType, memFreeFn.fn, []llvm.Value{memory}, "")
+		c.builder.CreateRet(nullMem)
+	} else {
+		c.builder.CreateRet(memory)
+	}
 
 	err = llvm.VerifyModule(c.module, llvm.ReturnStatusAction)
 	if err != nil {
@@ -257,7 +377,10 @@ func (c *EVMCompiler) checkHostReturn(ret, errorCodePtr llvm.Value, nextBlock, e
 }
 
 // compileInstructionStatic compiles an instruction using static analysis with gas metering
-func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, prevInstr *EVMInstruction, execInst, stack, stackIdxPtr, gasPtr, jumpTargetPtr, errorCodePtr llvm.Value, analysis *PCAnalysis, nextBlock, dynJumpBlock, exitBlock, errorBlock llvm.BasicBlock, opts *EVMCompilationOpts) {
+func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, prevInstr *EVMInstruction, execInst, stack, stackIdxPtr, memory, gasPtr, jumpTargetPtr, errorCodePtr llvm.Value, analysis *PCAnalysis, nextBlock, dynJumpBlock, exitBlock, errorBlock llvm.BasicBlock, opts *EVMCompilationOpts) {
+	clibs := c.clibs
+	ctx, builder := c.ctx, c.builder
+
 	uint256Type := c.ctx.IntType(256)
 
 	// If the code is unsupported, return error
@@ -287,10 +410,10 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, prevInstr *
 
 	// Check if it is host function
 	if c.table[instr.Opcode].execute != nil {
-		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, c.u64Const(uint64(instr.Opcode)), c.u64Const(uint64(instr.PC)), gasPtr, stackIdxPtr}, "")
+		ret := c.builder.CreateCall(c.hostFuncType, c.hostFunc, []llvm.Value{execInst, c.u64Const(uint64(instr.Opcode)), c.u64Const(uint64(instr.PC)), gasPtr, stackIdxPtr, memory}, "")
 		if c.table[instr.Opcode].diffStack < 0 {
 			for i := 0; i < -c.table[instr.Opcode].diffStack; i++ {
-				c.popStack(stack, stackIdxPtr)
+				popStack(ctx, builder, stack, stackIdxPtr)
 			}
 		} else {
 			for i := 0; i < c.table[instr.Opcode].diffStack; i++ {
@@ -303,33 +426,57 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, prevInstr *
 	}
 
 	switch instr.Opcode {
+	case MLOAD:
+		memSizeFn := memoryMLoadC
+		gasFn := gasMLoadC
+		c.consumeDynGasAndResizeMem(stack, stackIdxPtr, memory, gasPtr, errorCodePtr, errorBlock, memSizeFn, gasFn)
+
+		opMloadC(ctx, builder, memory, stack, stackIdxPtr, clibs)
+		c.builder.CreateBr(nextBlock)
+
+	case MSTORE:
+		memSizeFn := memoryMStoreC
+		gasFn := gasMStoreC
+		c.consumeDynGasAndResizeMem(stack, stackIdxPtr, memory, gasPtr, errorCodePtr, errorBlock, memSizeFn, gasFn)
+
+		opMstoreC(ctx, builder, memory, stack, stackIdxPtr, clibs)
+		c.builder.CreateBr(nextBlock)
+
+	case MSTORE8:
+		memSizeFn := memoryMStore8C
+		gasFn := gasMStore8C
+		c.consumeDynGasAndResizeMem(stack, stackIdxPtr, memory, gasPtr, errorCodePtr, errorBlock, memSizeFn, gasFn)
+
+		opMstore8C(ctx, builder, memory, stack, stackIdxPtr, clibs)
+		c.builder.CreateBr(nextBlock)
+
 	case STOP:
 		c.builder.CreateBr(exitBlock)
 
 	case ADD:
-		a := c.popStack(stack, stackIdxPtr)
-		b := c.popStack(stack, stackIdxPtr)
+		a := popStack(ctx, builder, stack, stackIdxPtr)
+		b := popStack(ctx, builder, stack, stackIdxPtr)
 		result := c.builder.CreateAdd(a, b, "add_result")
 		c.pushStack(stack, stackIdxPtr, result)
 		c.builder.CreateBr(nextBlock)
 
 	case MUL:
-		a := c.popStack(stack, stackIdxPtr)
-		b := c.popStack(stack, stackIdxPtr)
+		a := popStack(ctx, builder, stack, stackIdxPtr)
+		b := popStack(ctx, builder, stack, stackIdxPtr)
 		result := c.builder.CreateMul(a, b, "mul_result")
 		c.pushStack(stack, stackIdxPtr, result)
 		c.builder.CreateBr(nextBlock)
 
 	case SUB:
-		a := c.popStack(stack, stackIdxPtr)
-		b := c.popStack(stack, stackIdxPtr)
+		a := popStack(ctx, builder, stack, stackIdxPtr)
+		b := popStack(ctx, builder, stack, stackIdxPtr)
 		result := c.builder.CreateSub(a, b, "sub_result")
 		c.pushStack(stack, stackIdxPtr, result)
 		c.builder.CreateBr(nextBlock)
 
 	case DIV:
-		a := c.popStack(stack, stackIdxPtr)
-		b := c.popStack(stack, stackIdxPtr)
+		a := popStack(ctx, builder, stack, stackIdxPtr)
+		b := popStack(ctx, builder, stack, stackIdxPtr)
 		zero := llvm.ConstInt(uint256Type, 0, false)
 		isZero := c.builder.CreateICmp(llvm.IntEQ, b, zero, "div_by_zero")
 		result := c.builder.CreateSelect(isZero, zero, c.builder.CreateUDiv(a, b, "div_result"), "div_safe")
@@ -337,8 +484,8 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, prevInstr *
 		c.builder.CreateBr(nextBlock)
 
 	case SDIV:
-		a := c.popStack(stack, stackIdxPtr)
-		b := c.popStack(stack, stackIdxPtr)
+		a := popStack(ctx, builder, stack, stackIdxPtr)
+		b := popStack(ctx, builder, stack, stackIdxPtr)
 		zero := llvm.ConstInt(uint256Type, 0, false)
 		int256Min := llvm.ConstIntFromString(uint256Type, INT256_NEGATIVE_MIN, 10)
 		int256Negtive1 := llvm.ConstIntFromString(uint256Type, INT256_NEGATIVE_1, 10)
@@ -361,8 +508,8 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, prevInstr *
 		c.builder.CreateBr(nextBlock)
 
 	case MOD:
-		a := c.popStack(stack, stackIdxPtr)
-		b := c.popStack(stack, stackIdxPtr)
+		a := popStack(ctx, builder, stack, stackIdxPtr)
+		b := popStack(ctx, builder, stack, stackIdxPtr)
 		zero := llvm.ConstInt(uint256Type, 0, false)
 		isZero := c.builder.CreateICmp(llvm.IntEQ, b, zero, "mod_by_zero")
 		result := c.builder.CreateSelect(isZero, zero, c.builder.CreateURem(a, b, "mod_result"), "mod_safe")
@@ -370,8 +517,8 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, prevInstr *
 		c.builder.CreateBr(nextBlock)
 
 	case SMOD:
-		a := c.popStack(stack, stackIdxPtr)
-		b := c.popStack(stack, stackIdxPtr)
+		a := popStack(ctx, builder, stack, stackIdxPtr)
+		b := popStack(ctx, builder, stack, stackIdxPtr)
 		zero := llvm.ConstInt(uint256Type, 0, false)
 		isZero := c.builder.CreateICmp(llvm.IntEQ, b, zero, "smod_by_zero")
 		result := c.builder.CreateSelect(isZero, zero, c.builder.CreateSRem(a, b, "smod_result"), "smod_safe")
@@ -379,16 +526,16 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, prevInstr *
 		c.builder.CreateBr(nextBlock)
 
 	// case EXP:
-	// a := c.popStack(stack, stackPtr)
-	// b := c.popStack(stack, stackPtr)
+	// a := popStack(ctx, builder,stack, stackPtr)
+	// b := popStack(ctx, builder,stack, stackPtr)
 	// result := c.builder. (a, b, "exp_result")
 	// c.pushStack(stack, stackPtr, result)
 	// c.builder.CreateBr(nextBlock)
 
 	case SIGNEXTEND:
 		// Adapted from revm: https://github.com/bluealloy/revm/blob/fda371f73aba2c30a83c639608be78145fd1123b/crates/interpreter/src/instructions/arithmetic.rs#L89
-		a := c.popStack(stack, stackIdxPtr)
-		b := c.popStack(stack, stackIdxPtr)
+		a := popStack(ctx, builder, stack, stackIdxPtr)
+		b := popStack(ctx, builder, stack, stackIdxPtr)
 		cond := c.builder.CreateICmp(llvm.IntULT, a, llvm.ConstInt(a.Type(), 31, false), "a_lt_31")
 		// helper: signextend calculation
 		signExtendCalc := func() llvm.Value {
@@ -417,8 +564,8 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, prevInstr *
 		c.builder.CreateBr(nextBlock)
 
 	case LT, GT, SLT, SGT, EQ:
-		a := c.popStack(stack, stackIdxPtr)
-		b := c.popStack(stack, stackIdxPtr)
+		a := popStack(ctx, builder, stack, stackIdxPtr)
+		b := popStack(ctx, builder, stack, stackIdxPtr)
 
 		var pred llvm.IntPredicate
 		var name string
@@ -447,7 +594,7 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, prevInstr *
 		c.builder.CreateBr(nextBlock)
 
 	case ISZERO:
-		a := c.popStack(stack, stackIdxPtr)
+		a := popStack(ctx, builder, stack, stackIdxPtr)
 		zero := llvm.ConstInt(uint256Type, 0, false)
 		cmp := c.builder.CreateICmp(llvm.IntEQ, a, zero, "iszero_cmp")
 		result := c.builder.CreateZExt(cmp, uint256Type, "iszero_result")
@@ -455,36 +602,36 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, prevInstr *
 		c.builder.CreateBr(nextBlock)
 
 	case AND:
-		a := c.popStack(stack, stackIdxPtr)
-		b := c.popStack(stack, stackIdxPtr)
+		a := popStack(ctx, builder, stack, stackIdxPtr)
+		b := popStack(ctx, builder, stack, stackIdxPtr)
 		result := c.builder.CreateAnd(a, b, "and_result")
 		c.pushStack(stack, stackIdxPtr, result)
 		c.builder.CreateBr(nextBlock)
 
 	case OR:
-		a := c.popStack(stack, stackIdxPtr)
-		b := c.popStack(stack, stackIdxPtr)
+		a := popStack(ctx, builder, stack, stackIdxPtr)
+		b := popStack(ctx, builder, stack, stackIdxPtr)
 		result := c.builder.CreateOr(a, b, "or_result")
 		c.pushStack(stack, stackIdxPtr, result)
 		c.builder.CreateBr(nextBlock)
 
 	case XOR:
-		a := c.popStack(stack, stackIdxPtr)
-		b := c.popStack(stack, stackIdxPtr)
+		a := popStack(ctx, builder, stack, stackIdxPtr)
+		b := popStack(ctx, builder, stack, stackIdxPtr)
 		result := c.builder.CreateXor(a, b, "xor_result")
 		c.pushStack(stack, stackIdxPtr, result)
 		c.builder.CreateBr(nextBlock)
 
 	case NOT:
-		a := c.popStack(stack, stackIdxPtr)
+		a := popStack(ctx, builder, stack, stackIdxPtr)
 		allOnes := llvm.ConstIntFromString(uint256Type, INT256_NEGATIVE_1, 10)
 		result := c.builder.CreateXor(a, allOnes, "not_result")
 		c.pushStack(stack, stackIdxPtr, result)
 		c.builder.CreateBr(nextBlock)
 
 	case BYTE:
-		a := c.popStack(stack, stackIdxPtr)
-		b := c.popStack(stack, stackIdxPtr)
+		a := popStack(ctx, builder, stack, stackIdxPtr)
+		b := popStack(ctx, builder, stack, stackIdxPtr)
 		// Constants
 		const32 := llvm.ConstInt(uint256Type, 32, false)   // upper bound for valid index
 		const31 := llvm.ConstInt(uint256Type, 31, false)   // used for position calculation
@@ -511,37 +658,37 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, prevInstr *
 		c.builder.CreateBr(nextBlock)
 
 	case SHL:
-		shift := c.popStack(stack, stackIdxPtr)
-		value := c.popStack(stack, stackIdxPtr)
+		shift := popStack(ctx, builder, stack, stackIdxPtr)
+		value := popStack(ctx, builder, stack, stackIdxPtr)
 		result := c.builder.CreateShl(value, shift, "shl_result")
 		c.pushStack(stack, stackIdxPtr, result)
 		c.builder.CreateBr(nextBlock)
 
 	case SHR:
-		shift := c.popStack(stack, stackIdxPtr)
-		value := c.popStack(stack, stackIdxPtr)
+		shift := popStack(ctx, builder, stack, stackIdxPtr)
+		value := popStack(ctx, builder, stack, stackIdxPtr)
 		result := c.builder.CreateLShr(value, shift, "shr_result")
 		c.pushStack(stack, stackIdxPtr, result)
 		c.builder.CreateBr(nextBlock)
 
 	case SAR:
-		shift := c.popStack(stack, stackIdxPtr)
-		value := c.popStack(stack, stackIdxPtr)
+		shift := popStack(ctx, builder, stack, stackIdxPtr)
+		value := popStack(ctx, builder, stack, stackIdxPtr)
 		result := c.builder.CreateAShr(value, shift, "sar_result")
 		c.pushStack(stack, stackIdxPtr, result)
 		c.builder.CreateBr(nextBlock)
 
 	case POP:
-		c.popStack(stack, stackIdxPtr)
+		popStack(ctx, builder, stack, stackIdxPtr)
 		c.builder.CreateBr(nextBlock)
 
 	case JUMP:
-		target := c.popStack(stack, stackIdxPtr)
+		target := popStack(ctx, builder, stack, stackIdxPtr)
 		c.createJump(prevInstr, target, jumpTargetPtr, errorCodePtr, analysis, dynJumpBlock, errorBlock)
 
 	case JUMPI:
-		target := c.popStack(stack, stackIdxPtr)
-		condition := c.popStack(stack, stackIdxPtr)
+		target := popStack(ctx, builder, stack, stackIdxPtr)
+		condition := popStack(ctx, builder, stack, stackIdxPtr)
 		zero := llvm.ConstInt(uint256Type, 0, false)
 		isNonZero := c.builder.CreateICmp(llvm.IntNE, condition, zero, "jumpi_cond")
 
@@ -560,6 +707,23 @@ func (c *EVMCompiler) compileInstructionStatic(instr EVMInstruction, prevInstr *
 
 	case JUMPDEST:
 		// JUMPDEST is a no-op, charge the section gas before continue to next instruction
+		c.builder.CreateBr(nextBlock)
+
+	case MSIZE:
+		msizePtr := c.builder.CreateGEP(memory.Type(), memory, []llvm.Value{
+			llvm.ConstInt(c.ctx.Int32Type(), 1, false),
+		}, "msize_ptr")
+
+		msizeVal := c.builder.CreateLoad(llvm.PointerType(c.ctx.Int64Type(), 0), msizePtr, "msize_val")
+		c.pushStack(stack, stackIdxPtr, msizeVal)
+		c.builder.CreateBr(nextBlock)
+
+	case MCOPY:
+		memSizeFn := memoryMcopyC
+		gasFn := memoryCopierGasC(2)
+		c.consumeDynGasAndResizeMem(stack, stackIdxPtr, memory, gasPtr, errorCodePtr, errorBlock, memSizeFn, gasFn)
+
+		opMcopyC(ctx, builder, memory, stack, stackIdxPtr, clibs)
 		c.builder.CreateBr(nextBlock)
 
 	default:
@@ -713,6 +877,31 @@ func (c *EVMCompiler) consumeGas(gasCost uint64, gasPtr, errorCodePtr llvm.Value
 	c.builder.SetInsertPointAtEnd(continueBlock)
 	// Sub gas cost and store
 	newGas := c.builder.CreateSub(currentGas, gasCostValue, "new_gas_used")
+	c.builder.CreateStore(newGas, gasPtr)
+}
+
+func (c *EVMCompiler) consumeDyncGas(gasCost, gasPtr, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
+	// Load current gas used
+	currentGas := c.builder.CreateLoad(c.ctx.Int64Type(), gasPtr, "gas_remaining")
+
+	// Check if we exceed gas limit
+	notExceedsLimit := c.builder.CreateICmp(llvm.IntULE, gasCost, currentGas, "exceeds_gas_limit")
+
+	// Create continuation block
+	continueBlock := llvm.AddBasicBlock(c.builder.GetInsertBlock().Parent(), "gas_check_continue")
+	outOfGasBlock := llvm.AddBasicBlock(c.builder.GetInsertBlock().Parent(), "out_of_gas")
+
+	// Branch to out-of-gas block if limit exceeded, otherwise continue
+	c.builder.CreateCondBr(notExceedsLimit, continueBlock, outOfGasBlock)
+
+	c.builder.SetInsertPointAtEnd(outOfGasBlock)
+	// Store error code and exit
+	c.builder.CreateStore(c.u64Const(uint64(VMErrorCodeOutOfGas)), errorCodePtr)
+	c.builder.CreateBr(errorBlock)
+
+	c.builder.SetInsertPointAtEnd(continueBlock)
+	// Sub gas cost and store
+	newGas := c.builder.CreateSub(currentGas, gasCost, "new_gas_used")
 	c.builder.CreateStore(newGas, gasPtr)
 }
 

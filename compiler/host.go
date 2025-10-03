@@ -1,7 +1,11 @@
 package compiler
 
 // #include <stdint.h>
-// extern int64_t callHostFunc(uintptr_t inst, uint64_t opcode, uint64_t pc, uint64_t* gas, uint64_t* stackIdx);
+// #include "lib/mem.h"
+// #include <stdlib.h>
+// #include <string.h>
+// #include <stdio.h>
+// extern int64_t callHostFunc(uintptr_t inst, uint64_t opcode, uint64_t pc, uint64_t* gas, uint64_t* stackIdx, Memory* m);
 import "C"
 import (
 	"fmt"
@@ -24,7 +28,7 @@ func removeExecutionInstance(h cgo.Handle) {
 }
 
 //export callHostFunc
-func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, pcC C.uint64_t, gas *C.uint64_t, stackIdx *C.uint64_t) C.int64_t {
+func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, pcC C.uint64_t, gas, stackIdx *C.uint64_t, mem *C.Memory) C.int64_t {
 	h := cgo.Handle(inst)
 	e, ok := h.Value().(*EVMExecutor)
 	if !ok || e == nil {
@@ -43,6 +47,10 @@ func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, pcC C.uint64_t, gas *C.ui
 
 	// Set the gas in the contract, which may be used in dynamic gas.
 	e.callContext.Contract.Gas = uint64(*gas)
+	e.callContext.Memory.cmem = mem
+	e.callContext.Memory.lastGasCost = uint64(mem.lastGasCost)
+	defer func() { mem.lastGasCost = C.uint64_t(e.callContext.Memory.lastGasCost) }()
+
 	// All ops with a dynamic memory usage also has a dynamic gas cost.
 	var memorySize uint64
 	if instr.dynamicGas != nil {
@@ -75,7 +83,9 @@ func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, pcC C.uint64_t, gas *C.ui
 		}
 	}
 
-	e.callContext.Memory.Resize(memorySize)
+	if memorySize > 0 {
+		e.callContext.Memory.Resize(memorySize)
+	}
 
 	// pc is already handled in compiler, so there is no need to pass pc back to native.
 	pc := uint64(pcC)
@@ -88,10 +98,10 @@ func callHostFunc(inst C.uintptr_t, opcode C.uint64_t, pcC C.uint64_t, gas *C.ui
 	return C.int64_t(errCode)
 }
 
-func initializeHostFunction(ctx llvm.Context, module llvm.Module) (hostFuncType llvm.Type, hostFunc llvm.Value) {
+func initializeHostFunction(ctx llvm.Context, module llvm.Module) (llvm.Type, llvm.Value) {
 	i64ptr := llvm.PointerType(ctx.Int64Type(), 0)
-	hostFuncType = llvm.FunctionType(ctx.Int64Type(), []llvm.Type{ctx.Int64Type(), ctx.Int64Type(), ctx.Int64Type(), i64ptr, i64ptr}, false)
-	hostFunc = llvm.AddFunction(module, "host_func", hostFuncType)
+	hostFuncType := llvm.FunctionType(ctx.Int64Type(), []llvm.Type{ctx.Int64Type(), ctx.Int64Type(), ctx.Int64Type(), i64ptr, i64ptr, i64ptr}, false)
+	hostFunc := llvm.AddFunction(module, "host_func", hostFuncType)
 	// Set the host function's linkage to External.
 	// This prevents LLVM from internalizing it during LTO/IPO passes,
 	// ensuring it remains visible outside the module.

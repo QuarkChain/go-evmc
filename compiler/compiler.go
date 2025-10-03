@@ -28,6 +28,7 @@ type EVMCompiler struct {
 	hostFuncType llvm.Type
 	hostFunc     llvm.Value
 	table        *JumpTable
+	clibs        map[string]CHostFunc
 
 	copts *EVMCompilationOpts
 }
@@ -73,6 +74,7 @@ type EVMCompilationOpts struct {
 	DisableSectionGasOptimization     bool
 	DisableStackUnderflowOptimization bool
 	DisableIROptimization             bool
+	FreeMemory                        bool
 }
 
 func DefaultEVMCompilationOpts() *EVMCompilationOpts {
@@ -225,18 +227,25 @@ func (c *EVMCompiler) pushStack(stack, stackIdxPtr, value llvm.Value) {
 	c.builder.CreateStore(newStackIdxVal, stackIdxPtr)
 }
 
-func (c *EVMCompiler) popStack(stack, stackIdxPtr llvm.Value) llvm.Value {
-	stackIdxVal := c.builder.CreateLoad(c.ctx.Int64Type(), stackIdxPtr, "stack_idx_val")
-	newStackIdxVal := c.builder.CreateSub(stackIdxVal, c.u64Const(1), "new_stack_idx_val")
-	c.builder.CreateStore(newStackIdxVal, stackIdxPtr)
-	stackElem := c.builder.CreateGEP(c.ctx.IntType(256), stack, []llvm.Value{newStackIdxVal}, "stack_elem")
-	return c.builder.CreateLoad(c.ctx.IntType(256), stackElem, "stack_value")
+func popStack(ctx llvm.Context, builder llvm.Builder, stack, stackIdxPtr llvm.Value) llvm.Value {
+	stackIdxVal := builder.CreateLoad(ctx.Int64Type(), stackIdxPtr, "stack_idx_val")
+	newStackIdxVal := builder.CreateSub(stackIdxVal, u64Const(ctx, 1), "new_stack_idx_val")
+	builder.CreateStore(newStackIdxVal, stackIdxPtr)
+	stackElem := builder.CreateGEP(ctx.IntType(256), stack, []llvm.Value{newStackIdxVal}, "stack_elem")
+	return builder.CreateLoad(ctx.IntType(256), stackElem, "stack_value")
 }
 
-func (c *EVMCompiler) peekStackPtr(stack, stackIdxPtr llvm.Value) llvm.Value {
-	stackIdxVal := c.builder.CreateLoad(c.ctx.Int64Type(), stackIdxPtr, "stack_idx_val")
-	newStackIdxVal := c.builder.CreateSub(stackIdxVal, c.u64Const(1), "new_stack_idx_val")
-	return c.builder.CreateGEP(c.ctx.IntType(256), stack, []llvm.Value{newStackIdxVal}, "stack_elem")
+func peekStackPtr(ctx llvm.Context, builder llvm.Builder, stack, stackIdxPtr llvm.Value) llvm.Value {
+	stackIdxVal := builder.CreateLoad(ctx.Int64Type(), stackIdxPtr, "stack_idx_val")
+	newStackIdxVal := builder.CreateSub(stackIdxVal, u64Const(ctx, 1), "new_stack_idx_val")
+	return builder.CreateGEP(ctx.IntType(256), stack, []llvm.Value{newStackIdxVal}, "stack_elem")
+}
+
+func peekStack(ctx llvm.Context, builder llvm.Builder, stack, stackIdxPtr llvm.Value, pos uint64) llvm.Value {
+	stackIdxVal := builder.CreateLoad(ctx.Int64Type(), stackIdxPtr, "stack_idx_val")
+	newStackIdxVal := builder.CreateSub(stackIdxVal, u64Const(ctx, pos+1), "new_stack_idx_val")
+	stackElem := builder.CreateGEP(ctx.IntType(256), stack, []llvm.Value{newStackIdxVal}, "stack_elem")
+	return builder.CreateLoad(ctx.IntType(256), stackElem, "stack_value")
 }
 
 func (c *EVMCompiler) createUint256ConstantFromBytes(data []byte) llvm.Value {
@@ -249,43 +258,45 @@ func (c *EVMCompiler) createUint256ConstantFromBytes(data []byte) llvm.Value {
 	return llvm.ConstIntFromString(c.ctx.IntType(256), v.String(), 10)
 }
 
-func (c *EVMCompiler) loadFromMemory(memory, offset llvm.Value) llvm.Value {
-	offsetTrunc := c.builder.CreateTrunc(offset, c.ctx.Int64Type(), "mem_offset")
-	memPtr := c.builder.CreateGEP(c.ctx.Int8Type(), memory, []llvm.Value{offsetTrunc}, "mem_ptr")
+func (c *EVMCompiler) checkU64Overflow(overflow, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) {
+	continueBlock := llvm.AddBasicBlock(c.builder.GetInsertBlock().Parent(), "continue")
+	u64OverflowBlock := llvm.AddBasicBlock(c.builder.GetInsertBlock().Parent(), "u64_overflow")
+	// Branch to stack overflow block if limit exceeded, otherwise continue
+	c.builder.CreateCondBr(overflow, u64OverflowBlock, continueBlock)
 
-	value := llvm.ConstInt(c.ctx.IntType(256), 0, false)
-	for i := 0; i < 32; i++ {
-		byteOffset := c.u64Const(uint64(i))
-		bytePtr := c.builder.CreateGEP(c.ctx.Int8Type(), memPtr, []llvm.Value{byteOffset}, "byte_ptr")
-		byteVal := c.builder.CreateLoad(c.ctx.Int8Type(), bytePtr, "byte_val")
-		byteValExt := c.builder.CreateZExt(byteVal, c.ctx.IntType(256), "byte_ext")
-		shift := c.builder.CreateShl(byteValExt, llvm.ConstInt(c.ctx.IntType(256), uint64(8*(31-i)), false), "byte_shift")
-		value = c.builder.CreateOr(value, shift, "mem_value")
-	}
-
-	return value
+	c.builder.SetInsertPointAtEnd(u64OverflowBlock)
+	// Store error code and exit
+	c.builder.CreateStore(c.u64Const(uint64(VMErrorCodeGasUintOverflow)), errorCodePtr)
+	c.builder.CreateBr(errorBlock)
+	c.builder.SetInsertPointAtEnd(continueBlock)
 }
 
-func (c *EVMCompiler) storeToMemory(memory, offset, value llvm.Value) {
-	offsetTrunc := c.builder.CreateTrunc(offset, c.ctx.Int64Type(), "mem_offset")
-	memPtr := c.builder.CreateGEP(c.ctx.Int8Type(), memory, []llvm.Value{offsetTrunc}, "mem_ptr")
+func (c *EVMCompiler) safeMul(x, y, errorCodePtr llvm.Value, errorBlock llvm.BasicBlock) llvm.Value {
+	ctx := c.ctx
+	builder := c.builder
+	i64 := ctx.Int64Type()
+	i128 := ctx.IntType(128)
 
-	for i := 0; i < 32; i++ {
-		shift := llvm.ConstInt(c.ctx.IntType(256), uint64(8*(31-i)), false)
-		shiftedValue := c.builder.CreateLShr(value, shift, "shifted_value")
-		byteVal := c.builder.CreateTrunc(shiftedValue, c.ctx.Int8Type(), "byte_val")
+	// Extend to 128-bit
+	x128 := builder.CreateZExt(x, i128, "x128")
+	y128 := builder.CreateZExt(y, i128, "y128")
 
-		byteOffset := c.u64Const(uint64(i))
-		bytePtr := c.builder.CreateGEP(c.ctx.Int8Type(), memPtr, []llvm.Value{byteOffset}, "byte_ptr")
-		c.builder.CreateStore(byteVal, bytePtr)
-	}
-}
+	// 128-bit product
+	prod := builder.CreateMul(x128, y128, "prod")
 
-func (c *EVMCompiler) storeByteToMemory(memory, offset, value llvm.Value) {
-	offsetTrunc := c.builder.CreateTrunc(offset, c.ctx.Int64Type(), "mem_offset")
-	memPtr := c.builder.CreateGEP(c.ctx.Int8Type(), memory, []llvm.Value{offsetTrunc}, "mem_ptr")
-	byteVal := c.builder.CreateTrunc(value, c.ctx.Int8Type(), "byte_val")
-	c.builder.CreateStore(byteVal, memPtr)
+	// Low 64 bits
+	lo := builder.CreateTrunc(prod, i64, "lo")
+
+	// High 64 bits
+	hi := builder.CreateLShr(prod, llvm.ConstInt(i128, 64, false), "hi_shifted")
+	hi64 := builder.CreateTrunc(hi, i64, "hi")
+
+	// Check overflow: hi != 0
+	hasOverflow := builder.CreateICmp(llvm.IntNE, hi64, llvm.ConstInt(i64, 0, false), "u64_overflow_safeMul")
+
+	// Branch on overflow
+	c.checkU64Overflow(hasOverflow, errorCodePtr, errorBlock)
+	return lo
 }
 
 func (c *EVMCompiler) EmitObjectFile(filename string) error {

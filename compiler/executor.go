@@ -1,8 +1,9 @@
 package compiler
 
 // #include <stdint.h>
-// typedef void (*func)(uint64_t inst, void* stack, void* code, uint64_t gas, void* output);
-// static void execute(uint64_t f, uint64_t inst, void* stack, void* code, uint64_t gas, void* output) { ((func)f)(inst, stack, code, gas, output); }
+// #include "./lib/mem.h"
+// typedef Memory* (*func)(uint64_t inst, void* stack, void* code, uint64_t gas, void* output);
+// static Memory* execute(uint64_t f, uint64_t inst, void* stack, void* code, uint64_t gas, void* output) { return ((func)f)(inst, stack, code, gas, output); }
 import "C"
 import (
 	"encoding/binary"
@@ -40,6 +41,7 @@ type EVMExecutor struct {
 
 	readOnly   bool   // Whether to throw on stateful modifications
 	returnData []byte // Last CALL's return data for subsequent reuse
+	keepMemory bool   // Whether to free memory after callNativeFunction
 }
 
 // ScopeContext is the current context of the call.
@@ -101,12 +103,12 @@ func (e *EVMExecutor) Run(contract *Contract, input []byte, readOnly bool) (ret 
 
 	prevCallContext := e.callContext
 	// Prepare execution environment
-	memory := NewMemory()
+	memory := &Memory{}
 	stack := newstack()
 	callContext := &ScopeContext{
 		Contract: contract,
-		Memory:   memory,
 		Stack:    stack,
+		Memory:   memory,
 	}
 	e.callContext = callContext
 
@@ -124,10 +126,17 @@ func (e *EVMExecutor) Run(contract *Contract, input []byte, readOnly bool) (ret 
 	inst := createExecutionInstance(e)
 	defer removeExecutionInstance(inst)
 	gas := contract.Gas
+
 	// TODO: passing uint256 pointer as stack to compiled code only works for little-endianess machine!
-	errorCode, gasRemainingResult, stackDepth := e.callNativeFunction(funcPtr, inst, unsafe.Pointer(&stack.data[0][0]), gas)
+	errorCode, gasRemainingResult, stackDepth, cmem := e.callNativeFunction(funcPtr, inst, unsafe.Pointer(&stack.data[0][0]), gas)
 	if errorCode == int64(VMErrorCodeStopToken) {
 		errorCode = int64(VMExecutionSuccess) // clear stop token error
+	}
+
+	if cmem != nil {
+		memory.cmem = cmem
+		memory.store = unsafe.Slice((*byte)(cmem.store), cmem.len)
+		memory.lastGasCost = uint64(cmem.lastGasCost)
 	}
 
 	gasRemaining := uint64(gasRemainingResult)
@@ -166,11 +175,11 @@ func (e *EVMExecutor) Run(contract *Contract, input []byte, readOnly bool) (ret 
 }
 
 // Helper function to call native function pointer (requires CGO)
-func (e *EVMExecutor) callNativeFunction(funcPtr FuncPtr, inst cgo.Handle, stack unsafe.Pointer, gas uint64) (int64, int64, int64) {
+func (e *EVMExecutor) callNativeFunction(funcPtr FuncPtr, inst cgo.Handle, stack unsafe.Pointer, gas uint64) (int64, int64, int64, *C.Memory) {
 	var output [OUTPUT_SIZE]byte
-	C.execute(C.uint64_t(funcPtr), C.uintptr_t(inst), stack, nil, C.uint64_t(gas), unsafe.Pointer(&output[0]))
+	cmem := C.execute(C.uint64_t(funcPtr), C.uintptr_t(inst), stack, nil, C.uint64_t(gas), unsafe.Pointer(&output[0]))
 	errorCode := binary.LittleEndian.Uint64(output[OUTPUT_IDX_ERROR_CODE*8:])
 	gasUsed := binary.LittleEndian.Uint64(output[OUTPUT_IDX_GAS*8:])
 	stackDepth := binary.LittleEndian.Uint64(output[OUTPUT_IDX_STACK_DEPTH*8:])
-	return int64(errorCode), int64(gasUsed), int64(stackDepth)
+	return int64(errorCode), int64(gasUsed), int64(stackDepth), cmem
 }

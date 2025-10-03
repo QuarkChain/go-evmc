@@ -491,18 +491,18 @@ func opGasLimit(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]by
 // 	return nil, nil
 // }
 
-func opMload(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-	v := scope.Stack.peek()
-	offset := v.Uint64()
-	v.SetBytes(scope.Memory.GetPtr(offset, 32))
-	return nil, nil
-}
+// func opMload(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+// 	v := scope.Stack.peek()
+// 	offset := v.Uint64()
+// 	v.SetBytes(scope.Memory.GetPtr(offset, 32))
+// 	return nil, nil
+// }
 
-func opMstore(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-	mStart, val := scope.Stack.pop(), scope.Stack.pop()
-	scope.Memory.Set32(mStart.Uint64(), &val)
-	return nil, nil
-}
+// func opMstore(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+// 	mStart, val := scope.Stack.pop(), scope.Stack.pop()
+// 	scope.Memory.Set32(mStart.Uint64(), &val)
+// 	return nil, nil
+// }
 
 func opMstore8(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
 	off, val := scope.Stack.pop(), scope.Stack.pop()

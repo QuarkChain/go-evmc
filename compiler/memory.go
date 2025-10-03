@@ -16,10 +16,12 @@
 
 package compiler
 
+// #include "lib/mem.h"
+// #cgo LDFLAGS: ./lib/clib.o
+import "C"
 import (
 	"sync"
-
-	"github.com/holiman/uint256"
+	"unsafe"
 )
 
 var memoryPool = sync.Pool{
@@ -32,54 +34,123 @@ var memoryPool = sync.Pool{
 type Memory struct {
 	store       []byte
 	lastGasCost uint64
+	cmem        *C.Memory
 }
 
-// NewMemory returns a new memory model.
-func NewMemory() *Memory {
-	return memoryPool.Get().(*Memory)
-}
+// // NewMemory returns a new memory model.
+// func NewMemory() *Memory {
+// 	return memoryPool.Get().(*Memory)
+// }
 
-// Free returns the memory to the pool.
-func (m *Memory) Free() {
-	// To reduce peak allocation, return only smaller memory instances to the pool.
-	const maxBufferSize = 16 << 10
-	if cap(m.store) <= maxBufferSize {
-		m.store = m.store[:0]
-		m.lastGasCost = 0
-		memoryPool.Put(m)
-	}
-}
+// // Free returns the memory to the pool.
+// func (m *Memory) Free() {
+// 	// To reduce peak allocation, return only smaller memory instances to the pool.
+// 	const maxBufferSize = 16 << 10
+// 	if cap(m.store) <= maxBufferSize {
+// 		m.store = m.store[:0]
+// 		m.lastGasCost = 0
+// 		memoryPool.Put(m)
+// 	}
+// }
 
-// Set sets offset + size to value
+// // Set sets offset + size to value
+// func (m *Memory) Set(offset, size uint64, value []byte) {
+// 	// It's possible the offset is greater than 0 and size equals 0. This is because
+// 	// the calcMemSize (common.go) could potentially return 0 when size is zero (NO-OP)
+// 	if size > 0 {
+// 		// length of store may never be less than offset + size.
+// 		// The store should be resized PRIOR to setting the memory
+// 		if offset+size > uint64(len(m.store)) {
+// 			panic("invalid memory: store empty")
+// 		}
+// 		copy(m.store[offset:offset+size], value)
+// 	}
+// }
+
+// // Set32 sets the 32 bytes starting at offset to the value of val, left-padded with zeroes to
+// // 32 bytes.
+// func (m *Memory) Set32(offset uint64, val *uint256.Int) {
+// 	// length of store may never be less than offset + size.
+// 	// The store should be resized PRIOR to setting the memory
+// 	if offset+32 > uint64(len(m.store)) {
+// 		panic("invalid memory: store empty")
+// 	}
+// 	// Fill in relevant bits
+// 	val.PutUint256(m.store[offset:])
+// }
+
+// // Resize resizes the memory to size
+// func (m *Memory) Resize(size uint64) {
+// 	if uint64(m.Len()) < size {
+// 		m.store = append(m.store, make([]byte, size-uint64(m.Len()))...)
+// 	}
+// }
+
+// // GetCopy returns offset + size as a new slice
+// func (m *Memory) GetCopy(offset, size uint64) (cpy []byte) {
+// 	if size == 0 {
+// 		return nil
+// 	}
+
+// 	// memory is always resized before being accessed, no need to check bounds
+// 	cpy = make([]byte, size)
+// 	copy(cpy, m.store[offset:offset+size])
+// 	return
+// }
+
+// // GetPtr returns the offset + size
+// func (m *Memory) GetPtr(offset, size uint64) []byte {
+// 	if size == 0 {
+// 		return nil
+// 	}
+
+// 	// memory is always resized before being accessed, no need to check bounds
+// 	return m.store[offset : offset+size]
+// }
+
+// // Len returns the length of the backing slice
+// func (m *Memory) Len() int {
+// 	return len(m.store)
+// }
+
+// // Data returns the backing slice
+// func (m *Memory) Data() []byte {
+// 	return m.store
+// }
+
+// // Copy copies data from the src position slice into the dst position.
+// // The source and destination may overlap.
+// // OBS: This operation assumes that any necessary memory expansion has already been performed,
+// // and this method may panic otherwise.
+// func (m *Memory) Copy(dst, src, len uint64) {
+// 	if len == 0 {
+// 		return
+// 	}
+// 	copy(m.store[dst:], m.store[src:src+len])
+// }
+
 func (m *Memory) Set(offset, size uint64, value []byte) {
-	// It's possible the offset is greater than 0 and size equals 0. This is because
-	// the calcMemSize (common.go) could potentially return 0 when size is zero (NO-OP)
 	if size > 0 {
-		// length of store may never be less than offset + size.
-		// The store should be resized PRIOR to setting the memory
-		if offset+size > uint64(len(m.store)) {
-			panic("invalid memory: store empty")
-		}
-		copy(m.store[offset:offset+size], value)
+		C.memory_set(m.cmem, C.uint64_t(offset), C.uint64_t(size), (*C.uint8_t)(unsafe.Pointer(&value[0])))
 	}
 }
 
 // Set32 sets the 32 bytes starting at offset to the value of val, left-padded with zeroes to
 // 32 bytes.
-func (m *Memory) Set32(offset uint64, val *uint256.Int) {
-	// length of store may never be less than offset + size.
-	// The store should be resized PRIOR to setting the memory
-	if offset+32 > uint64(len(m.store)) {
-		panic("invalid memory: store empty")
-	}
-	// Fill in relevant bits
-	val.PutUint256(m.store[offset:])
-}
+// func (m *Memory) Set32(offset uint64, val *uint256.Int) {
+// 	// length of store may never be less than offset + size.
+// 	// The store should be resized PRIOR to setting the memory
+// 	if offset+32 > uint64(len(m.store)) {
+// 		panic("invalid memory: store empty")
+// 	}
+// 	// Fill in relevant bits
+// 	val.PutUint256(m.store[offset:])
+// }
 
 // Resize resizes the memory to size
 func (m *Memory) Resize(size uint64) {
 	if uint64(m.Len()) < size {
-		m.store = append(m.store, make([]byte, size-uint64(m.Len()))...)
+		C.memory_resize(m.cmem, C.uint64_t(size))
 	}
 }
 
@@ -88,40 +159,25 @@ func (m *Memory) GetCopy(offset, size uint64) (cpy []byte) {
 	if size == 0 {
 		return nil
 	}
-
-	// memory is always resized before being accessed, no need to check bounds
-	cpy = make([]byte, size)
-	copy(cpy, m.store[offset:offset+size])
-	return
+	ccpy := C.memory_getcopy(m.cmem, C.uint64_t(offset), C.uint64_t(size))
+	return unsafe.Slice((*byte)(ccpy), size)
 }
 
 // GetPtr returns the offset + size
 func (m *Memory) GetPtr(offset, size uint64) []byte {
-	if size == 0 {
-		return nil
-	}
-
-	// memory is always resized before being accessed, no need to check bounds
-	return m.store[offset : offset+size]
+	// if size == 0 {
+	// 	return nil
+	// }
+	ptr := C.memory_getptr(m.cmem, C.uint64_t(offset), C.uint64_t(size))
+	return unsafe.Slice((*byte)(ptr), size)
 }
 
 // Len returns the length of the backing slice
 func (m *Memory) Len() int {
-	return len(m.store)
+	return int(m.cmem.len)
 }
 
 // Data returns the backing slice
 func (m *Memory) Data() []byte {
-	return m.store
-}
-
-// Copy copies data from the src position slice into the dst position.
-// The source and destination may overlap.
-// OBS: This operation assumes that any necessary memory expansion has already been performed,
-// and this method may panic otherwise.
-func (m *Memory) Copy(dst, src, len uint64) {
-	if len == 0 {
-		return
-	}
-	copy(m.store[dst:], m.store[src:src+len])
+	return unsafe.Slice((*byte)(m.cmem.store), int(m.cmem.len))
 }
