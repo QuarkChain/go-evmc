@@ -289,7 +289,7 @@ func runOpcodeTest(t *testing.T, testCase OpcodeTestCase) {
 		if expectedMem.lastGasCost != mem.lastGasCost {
 			t.Errorf("Expected memory's lastGasCost: %v, actual lastGasCost: %v", expectedMem.lastGasCost, mem.lastGasCost)
 		}
-		if !bytes.Equal(expectedMem.store, mem.store) {
+		if !bytes.Equal(expectedMem.store, mem.Data()) {
 			t.Errorf("Expected memory: %v, actual memory: %v", expectedMem.store, mem.store)
 		}
 	}
@@ -1349,6 +1349,24 @@ func TestMemoryOpcodes(t *testing.T) {
 			expectedStack: [][32]byte{},
 			expectedMemory: &Memory{
 				store:       common.Hex2Bytes("0000000000000000000000000000000000000000000000000000000000000000ff00000000000000000000000000000000000000000000000000000000000000"),
+				lastGasCost: 2 * 3, // memory expansion cost for the last MSTORE
+			},
+			expectedGas: 3*6 + 2*3,
+		},
+		{
+			name: "MSTORE_MSTORE_RESIZE",
+			bytecode: []byte{
+				0x60, 0xFF, // PUSH1 0xFF (value)
+				0x60, 0x01, // PUSH1 0x01 (offset)
+				0x52,       // MSTORE
+				0x60, 0xFF, // PUSH1 0x40 (offset)
+				0x60, 0x00, // PUSH1 0x00, memorySize is less than current memorySize, memory shouldn't shrink
+				0x52, // MSTORE
+				0x00, // STOP
+			},
+			expectedStack: [][32]byte{},
+			expectedMemory: &Memory{
+				store:       common.Hex2Bytes("00000000000000000000000000000000000000000000000000000000000000ffff00000000000000000000000000000000000000000000000000000000000000"),
 				lastGasCost: 2 * 3, // memory expansion cost for the last MSTORE
 			},
 			expectedGas: 3*6 + 2*3,

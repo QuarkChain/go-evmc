@@ -251,27 +251,27 @@ func enable3860(jt *JumpTable) {
 // https://eips.ethereum.org/EIPS/eip-5656
 func enable5656(jt *JumpTable) {
 	jt[MCOPY] = &operation{
-		execute:     opMcopy,
+		// execute:     opMcopy,
 		constantGas: GasFastestStep,
-		dynamicGas:  gasMcopy,
-		minStack:    minStack(3, 0),
-		diffStack:   diffStack(3, 0),
-		memorySize:  memoryMcopy,
+		// dynamicGas:  gasMcopy,
+		minStack:  minStack(3, 0),
+		diffStack: diffStack(3, 0),
+		// memorySize:  memoryMcopy,
 	}
 }
 
 // opMcopy implements the MCOPY opcode (https://eips.ethereum.org/EIPS/eip-5656)
-func opMcopy(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
-	var (
-		dst    = scope.Stack.pop()
-		src    = scope.Stack.pop()
-		length = scope.Stack.pop()
-	)
-	// These values are checked for overflow during memory expansion calculation
-	// (the memorySize function on the opcode).
-	scope.Memory.Copy(dst.Uint64(), src.Uint64(), length.Uint64())
-	return nil, nil
-}
+// func opMcopy(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {
+// 	var (
+// 		dst    = scope.Stack.pop()
+// 		src    = scope.Stack.pop()
+// 		length = scope.Stack.pop()
+// 	)
+// 	// These values are checked for overflow during memory expansion calculation
+// 	// (the memorySize function on the opcode).
+// 	scope.Memory.Copy(dst.Uint64(), src.Uint64(), length.Uint64())
+// 	return nil, nil
+// }
 
 // opBlobHash implements the BLOBHASH opcode
 func opBlobHash(pc *uint64, interpreter *EVMExecutor, scope *ScopeContext) ([]byte, error) {

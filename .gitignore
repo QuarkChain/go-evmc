@@ -1,2 +1,8 @@
 ## IR outputs
 *.ll
+## obj files
+*.o
+*.a
+*.so
+## vscode
+.vscode
