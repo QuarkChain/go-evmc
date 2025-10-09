@@ -165,9 +165,9 @@ func (m *Memory) GetCopy(offset, size uint64) (cpy []byte) {
 
 // GetPtr returns the offset + size
 func (m *Memory) GetPtr(offset, size uint64) []byte {
-	// if size == 0 {
-	// 	return nil
-	// }
+	if size == 0 {
+		return nil
+	}
 	ptr := C.memory_getptr(m.cmem, C.uint64_t(offset), C.uint64_t(size))
 	return unsafe.Slice((*byte)(ptr), size)
 }

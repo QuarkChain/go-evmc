@@ -65,9 +65,6 @@ func Clibs(ctx llvm.Context, mod llvm.Module) map[string]CHostFunc {
 	bswap256FnType := llvm.FunctionType(i256, []llvm.Type{i256}, false)
 	bswap256Fn := llvm.AddFunction(mod, BIT_SWAP256, bswap256FnType)
 
-	// bswap64FnType := llvm.FunctionType(i256, []llvm.Type{i256}, false)
-	// bswap64Fn := llvm.AddFunction(mod, BIT_SWAP64, bswap64FnType)
-
 	// Memory* type is treated as i8*
 	memPtrType := i8ptr
 	// Memory* memory_new(void)
@@ -125,7 +122,6 @@ func Clibs(ctx llvm.Context, mod llvm.Module) map[string]CHostFunc {
 
 	cHostFns := make(map[string]CHostFunc)
 	cHostFns[BIT_SWAP256] = CHostFunc{bswap256FnType, bswap256Fn}
-	// cHostFns[BIT_SWAP64] = CHostFunc{bswap64FnType, bswap64Fn}
 	cHostFns[MEMORY_NEW] = CHostFunc{memNewType, memNewFn}
 	cHostFns[MEMORY_FREE] = CHostFunc{memFreeType, memFreeFn}
 	cHostFns[MEMORY_RESIZE] = CHostFunc{resizeType, memResizeFn}
