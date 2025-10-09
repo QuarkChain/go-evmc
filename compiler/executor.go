@@ -8,7 +8,6 @@ import "C"
 import (
 	"encoding/binary"
 	"fmt"
-	"runtime/cgo"
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -175,7 +174,7 @@ func (e *EVMExecutor) Run(contract *Contract, input []byte, readOnly bool) (ret 
 }
 
 // Helper function to call native function pointer (requires CGO)
-func (e *EVMExecutor) callNativeFunction(funcPtr FuncPtr, inst cgo.Handle, stack unsafe.Pointer, gas uint64) (int64, int64, int64, *C.Memory) {
+func (e *EVMExecutor) callNativeFunction(funcPtr FuncPtr, inst uint64, stack unsafe.Pointer, gas uint64) (int64, int64, int64, *C.Memory) {
 	var output [OUTPUT_SIZE]byte
 	cmem := C.execute(C.uint64_t(funcPtr), C.uintptr_t(inst), stack, nil, C.uint64_t(gas), unsafe.Pointer(&output[0]))
 	errorCode := binary.LittleEndian.Uint64(output[OUTPUT_IDX_ERROR_CODE*8:])
